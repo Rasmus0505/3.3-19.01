@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unlock Anything - AI 语言习得平台</title>
+    <style>
+        :root {
+            --bg-dark: #030712;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --cyan: #06b6d4;
+            --cyan-glow: rgba(6, 182, 212, 0.3);
+            --purple: #8b5cf6;
+            --purple-glow: rgba(139, 92, 246, 0.3);
+            --emerald: #10b981;
+            --rose: #f43f5e;
+            --amber: #f59e0b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --glass-bg: rgba(30, 41, 59, 0.5);
+            --glass-border: rgba(255,255,255,0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            overflow: hidden;
+            width: 100vw; height: 100vh;
+        }
+
+        #presentation-wrapper {
+            position: relative;
+            width: 100vw;
+            height: calc(100vh - 60px);
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #presentation-area {
+            position: absolute;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            transform-origin: center center;
+        }
+
+        .slide {
+            display: none !important;
+            width: 1920px; height: 1080px;
+            padding: 50px 90px; box-sizing: border-box;
+            flex-direction: column;
+        }
+        .slide.active { display: flex !important; }
+
+        /* Tag */
+        .tag {
+            display: inline-block; padding: 6px 18px; border-radius: 50px;
+            background: rgba(6, 182, 212, 0.1); color: var(--cyan);
+            font-weight: bold; letter-spacing: 2px; font-size: 18px;
+            margin-bottom: 14px; border: 1px solid var(--cyan);
+            align-self: flex-start;
+        }
+
+        /* Title / subtitle */
+        .title {
+            font-size: 50px; font-weight: 900; margin-bottom: 10px;
+            color: #fff; line-height: 1.2;
+        }
+        .subtitle {
+            font-size: 24px; color: var(--text-muted); margin-bottom: 30px;
+        }
+
+        /* Grid system */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+        .grid-2x3 { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(2, 1fr); gap: 20px; }
+
+        /* Bento card */
+        .bento {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            backdrop-filter: blur(12px);
+        }
+
+        .b-title { font-size: 26px; font-weight: bold; margin-bottom: 14px; color: var(--cyan); }
+        .b-desc { font-size: 20px; color: #e2e8f0; line-height: 1.6; }
+        .b-num { font-size: 36px; font-weight: 900; margin-bottom: 6px; }
+
+        ul { margin-left: 24px; margin-top: 10px; }
+        li { font-size: 22px; color: #e2e8f0; margin-bottom: 12px; line-height: 1.5; }
+
+        .placeholder-box {
+            border: 3px dashed rgba(6,182,212,0.4);
+            background: rgba(6, 182, 212, 0.03);
+            border-radius: 20px;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 300px;
+            color: var(--cyan); font-size: 26px; font-weight: bold;
+        }
+
+        /* HUD */
+        #hud {
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 60px;
+            background: rgba(15, 23, 42, 0.95); border-top: 1px solid rgba(255,255,255,0.08);
+            display: flex; justify-content: space-between; align-items: center; padding: 0 30px;
+            backdrop-filter: blur(10px); z-index: 100;
+        }
+        .btn {
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            color: white; padding: 8px 18px; font-size: 16px; border-radius: 8px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn:hover { background: var(--cyan); border-color: var(--cyan); }
+        .slide-counter { font-size: 20px; font-weight: bold; color: var(--cyan); font-variant-numeric: tabular-nums; }
+
+        /* Bento hover glow */
+        .bento-glow:hover { box-shadow: 0 0 30px var(--cyan-glow); transition: box-shadow 0.3s; }
+
+        /* Code block */
+        .code-block {
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(6,182,212,0.3);
+            border-radius: 12px; padding: 20px; font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 18px; color: #a5f3fc; line-height: 1.6; white-space: pre-wrap;
+        }
+
+        /* Formula */
+        .formula {
+            font-family: 'Cambria Math', 'Times New Roman', serif;
+            font-size: 48px; font-style: italic; color: var(--cyan);
+            text-align: center; padding: 20px 0;
+        }
+
+        /* Flow arrow */
+        .flow-arrow { color: var(--cyan); font-size: 28px; display: flex; align-items: center; padding: 0 8px; }
+
+        /* Big number */
+        .big-number {
+            font-size: 100px; font-weight: 900; line-height: 1;
+            background: linear-gradient(135deg, var(--cyan), var(--purple));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Radar canvas */
+        .radar-container { position: relative; display: flex; justify-content: center; align-items: center; }
+
+        /* Bento directory item */
+        .bento-dir {
+            background: var(--glass-bg); border: 1px solid var(--glass-border);
+            border-radius: 16px; padding: 24px 28px; backdrop-filter: blur(12px);
+            transition: box-shadow 0.3s, border-color 0.3s;
+        }
+        .bento-dir:hover {
+            border-color: var(--cyan);
+            box-shadow: 0 0 20px var(--cyan-glow);
+        }
+        .bento-dir .dir-num { font-size: 32px; font-weight: 900; color: var(--cyan); margin-bottom: 8px; }
+        .bento-dir .dir-title { font-size: 22px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+        .bento-dir .dir-desc { font-size: 16px; color: var(--text-muted); line-height: 1.4; }
+
+        /* Architecture layer */
+        .arch-layer {
+            padding: 20px 30px; border-radius: 14px; text-align: center;
+            font-size: 22px; font-weight: 600; position: relative;
+        }
+        .arch-arrow { text-align: center; font-size: 28px; color: var(--cyan); padding: 6px 0; }
+    </style>
+</head>
+<body>
+
+    <div id="presentation-wrapper">
+    <div id="presentation-area">
+
+        <!-- ============================================ -->
+        <!-- Slide 01: 封面 -->
+        <!-- ============================================ -->
+        <div class="slide active" id="s1">
+            <div style="text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
+                <h1 style="font-size: 110px; font-weight: 900; margin-bottom: 24px; background: linear-gradient(135deg, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: 2px;">Unlock Anything</h1>
+                <h2 style="font-size: 42px; margin-bottom: 30px; color: #e2e8f0; font-weight: 400;">万物皆可解锁为 i+1 学习材料</h2>
+                <p style="font-size: 26px; color: var(--text-muted); margin-bottom: 50px;">基于大语言模型与多智能体的自适应语言习得平台</p>
+                <div style="display: flex; gap: 16px; justify-content: center;">
+                    <span style="padding: 10px 28px; border-radius: 50px; background: rgba(6,182,212,0.1); border: 1px solid var(--cyan); color: var(--cyan); font-size: 20px; font-weight: 600;">DeepSeek V3.2 引擎</span>
+                    <span style="padding: 10px 28px; border-radius: 50px; background: rgba(139,92,246,0.1); border: 1px solid var(--purple); color: var(--purple); font-size: 20px; font-weight: 600;">19 项习得理论工程化</span>
+                    <span style="padding: 10px 28px; border-radius: 50px; background: rgba(16,185,129,0.1); border: 1px solid var(--emerald); color: var(--emerald); font-size: 20px; font-weight: 600;">全栈多模态交互</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 02: 汇报目录 (Bento六宫格) -->
+        <!-- ============================================ -->
+        <div class="slide" id="s2">
+            <div class="tag">CONTENTS</div>
+            <h1 class="title">汇报目录</h1>
+            <div class="grid-2x3" style="flex: 1; margin-top: 10px;">
+                <div class="bento-dir bento-glow">
+                    <div class="dir-num">01</div>
+                    <div class="dir-title">行业痛点与市场定位</div>
+                    <div class="dir-desc">现有产品断层分析与 2亿+ 用户的真实困境</div>
+                </div>
+                <div class="bento-dir bento-glow">
+                    <div class="dir-num">02</div>
+                    <div class="dir-title">理论与范式创新</div>
+                    <div class="dir-desc">19项权威二语习得与认知理论的代码映射</div>
+                </div>
+                <div class="bento-dir bento-glow">
+                    <div class="dir-num">03</div>
+                    <div class="dir-title">核心AI技术与架构</div>
+                    <div class="dir-desc">DeepSeek/Qwen 驱动的双轨管线与微服务</div>
+                </div>
+                <div class="bento-dir bento-glow">
+                    <div class="dir-num">04</div>
+                    <div class="dir-title">系统实机演示</div>
+                    <div class="dir-desc">多 Agent 互动、沉浸式界面直观展现</div>
+                </div>
+                <div class="bento-dir bento-glow">
+                    <div class="dir-num">05</div>
+                    <div class="dir-title">竞品对比与效果验证</div>
+                    <div class="dir-desc">31款竞品雷达图降维打击及实测指标</div>
+                </div>
+                <div class="bento-dir bento-glow">
+                    <div class="dir-num">06</div>
+                    <div class="dir-title">商业逻辑与未来规划</div>
+                    <div class="dir-desc">边际成本革命带来的普惠教育愿景</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 03: 市场演进与目标用户 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s3">
+            <div class="tag">01 / 市场演进</div>
+            <h1 class="title">千亿市场下的演进与目标用户</h1>
+            <p class="subtitle">英语学习市场迈入 3.0 自适应时代</p>
+            <div class="grid-2" style="flex: 1;">
+                <!-- 左侧: 发展史表格 -->
+                <div>
+                    <div style="background: rgba(15,23,42,0.4); border: 1px solid rgba(6,182,212,0.2); border-radius: 16px; padding: 24px; backdrop-filter: blur(10px);">
+                        <h3 style="font-size: 22px; font-weight: bold; color: var(--cyan); margin-bottom: 16px;">英语教育产品发展史</h3>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 17px;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid rgba(6,182,212,0.4);">
+                                    <th style="padding: 12px 10px; text-align: left; color: var(--cyan); background: rgba(6,182,212,0.08);">时代</th>
+                                    <th style="padding: 12px 10px; text-align: left; color: var(--cyan); background: rgba(6,182,212,0.08);">时间</th>
+                                    <th style="padding: 12px 10px; text-align: left; color: var(--cyan); background: rgba(6,182,212,0.08);">核心技术</th>
+                                    <th style="padding: 12px 10px; text-align: left; color: var(--cyan); background: rgba(6,182,212,0.08);">代表产品</th>
+                                    <th style="padding: 12px 10px; text-align: left; color: var(--cyan); background: rgba(6,182,212,0.08);">核心价值</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                    <td style="padding: 14px 10px; color: var(--cyan); font-weight: 700;">1.0 工具时代</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">2011-2017</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">遗忘曲线算法</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">百词斩/墨墨/扇贝</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">把单词本装进手机</td>
+                                </tr>
+                                <tr style="border-bottom: 1px solid rgba(255,255,255,0.06);">
+                                    <td style="padding: 14px 10px; color: var(--purple); font-weight: 700;">2.0 内容时代</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">2017-2023</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">视频处理+真人外教</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">VIPKID/流利说</td>
+                                    <td style="padding: 14px 10px; color: #e2e8f0;">真人教学+海量资源</td>
+                                </tr>
+                                <tr style="background: linear-gradient(90deg, rgba(6,182,212,0.15), rgba(139,92,246,0.12)); border-left: 4px solid var(--emerald);">
+                                    <td style="padding: 16px 10px; color: var(--emerald); font-weight: 900; font-size: 18px;">3.0 AI时代 ★</td>
+                                    <td style="padding: 16px 10px; color: #a5f3fc; font-weight: 600;">2023-至今</td>
+                                    <td style="padding: 16px 10px; color: #a5f3fc; font-weight: 600;">GPT大模型+ASR+TTS</td>
+                                    <td style="padding: 16px 10px; color: #a5f3fc; font-weight: 600;">Speak/Duolingo Max</td>
+                                    <td style="padding: 16px 10px; font-weight: 700;"><span style="background: linear-gradient(120deg, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">边际成本降99%</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <!-- 右侧: 目标用户 -->
+                <div style="display: flex; flex-direction: column; gap: 20px;">
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <span style="padding: 10px 22px; border-radius: 50px; background: rgba(139,92,246,0.15); border: 1.5px solid rgba(139,92,246,0.6); color: #d8b4fe; font-weight: 600; font-size: 17px;">👥 18-35岁自学者</span>
+                        <span style="padding: 10px 22px; border-radius: 50px; background: rgba(244,63,94,0.15); border: 1.5px solid rgba(244,63,94,0.6); color: #fda4af; font-weight: 600; font-size: 17px;">🎓 CET4/6备考生</span>
+                        <span style="padding: 10px 22px; border-radius: 50px; background: rgba(6,182,212,0.15); border: 1.5px solid rgba(6,182,212,0.6); color: #22d3ee; font-weight: 600; font-size: 17px;">💼 职场进阶人士</span>
+                    </div>
+                    <div class="bento" style="flex: 1;">
+                        <h3 class="b-title">核心人群</h3>
+                        <p class="b-desc" style="font-size: 22px;">18-35 岁英语自学者<br>CET4/6备考生、职场人士</p>
+                    </div>
+                    <div style="display: flex; gap: 16px;">
+                        <div class="bento" style="flex: 1; text-align: center;">
+                            <div style="font-size: 16px; color: var(--text-muted); margin-bottom: 8px;">国内基数</div>
+                            <div style="font-size: 42px; color: #fda4af; font-weight: 900;">2亿+</div>
+                        </div>
+                        <div class="bento" style="flex: 1; text-align: center;">
+                            <div style="font-size: 16px; color: var(--text-muted); margin-bottom: 8px;">AI 成本革命</div>
+                            <div style="font-size: 28px; color: #22d3ee; font-weight: 700;">$30/h <span style="color: var(--text-muted);">→</span> $0.3/h</div>
+                            <div style="font-size: 16px; color: var(--emerald); font-weight: 600; margin-top: 4px;">降低 99%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 04: 用户困境与传统产品断层 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s4">
+            <div class="tag">01 / 用户困境</div>
+            <h1 class="title">用户的真实困境与传统闭环断层</h1>
+            <p class="subtitle">无法学以致用，根源在于"五大环节"的严重割裂</p>
+            <div class="grid-2" style="flex: 1;">
+                <!-- 左: 痛点(红色调) -->
+                <div class="bento" style="border-color: rgba(244,63,94,0.5); border-width: 2px;">
+                    <h3 class="b-title" style="color: var(--rose);">💔 传统产品的痛点</h3>
+                    <p class="b-desc" style="margin-top: 16px; font-size: 22px;">
+                        Duolingo 坚持 <b style="color: var(--rose);">500 天</b>仍无法对话<br>
+                        背词软件记住 <b style="color: var(--rose);">9000 词</b>仍听不懂播客
+                    </p>
+                    <div style="margin-top: 30px; padding: 24px; border: 2px dashed var(--rose); border-radius: 14px; text-align: center;">
+                        <div style="font-size: 24px; color: var(--rose); font-weight: 700; letter-spacing: 2px;">
+                            输入(死背考纲) <span style="font-size: 30px;">❌</span> 理解(硬翻母语) <span style="font-size: 30px;">❌</span> 输出(缺乏语境)
+                        </div>
+                        <div style="font-size: 18px; color: var(--text-muted); margin-top: 10px;">断层路径：每个环节都严重割裂</div>
+                    </div>
+                </div>
+                <!-- 右: 解决方案(青色调) -->
+                <div class="bento" style="border-color: rgba(6,182,212,0.5); border-width: 2px;">
+                    <h3 class="b-title" style="color: var(--cyan);">✨ Unlock Anything 的全链路闭环</h3>
+                    <p class="b-desc" style="margin-top: 10px; font-size: 20px; color: var(--text-muted);">打造首个覆盖"五维闭环"的全栈 AI 生态</p>
+                    <div style="margin-top: 20px; display: flex; flex-direction: column; gap: 12px;">
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <span style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6,182,212,0.2); border: 2px solid var(--cyan); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; color: var(--cyan); flex-shrink: 0;">1</span>
+                            <span style="font-size: 22px; color: #e2e8f0;"><b style="color: var(--cyan);">输入</b> — 全网URL一键转录</span>
+                        </div>
+                        <div style="text-align: center; color: var(--cyan); font-size: 20px;">⬇</div>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <span style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6,182,212,0.2); border: 2px solid var(--cyan); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; color: var(--cyan); flex-shrink: 0;">2</span>
+                            <span style="font-size: 22px; color: #e2e8f0;"><b style="color: var(--cyan);">理解</b> — 大模型伴随语境讲解</span>
+                        </div>
+                        <div style="text-align: center; color: var(--cyan); font-size: 20px;">⬇</div>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <span style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6,182,212,0.2); border: 2px solid var(--cyan); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; color: var(--cyan); flex-shrink: 0;">3</span>
+                            <span style="font-size: 22px; color: #e2e8f0;"><b style="color: var(--cyan);">输出</b> — SOE音素级口语评测</span>
+                        </div>
+                        <div style="text-align: center; color: var(--cyan); font-size: 20px;">⬇</div>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <span style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6,182,212,0.2); border: 2px solid var(--cyan); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; color: var(--cyan); flex-shrink: 0;">4</span>
+                            <span style="font-size: 22px; color: #e2e8f0;"><b style="color: var(--cyan);">反馈</b> — 多Agent虚拟课堂</span>
+                        </div>
+                        <div style="text-align: center; color: var(--cyan); font-size: 20px;">⬇</div>
+                        <div style="display: flex; align-items: center; gap: 14px;">
+                            <span style="width: 36px; height: 36px; border-radius: 50%; background: rgba(6,182,212,0.2); border: 2px solid var(--cyan); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 16px; color: var(--cyan); flex-shrink: 0;">5</span>
+                            <span style="font-size: 22px; color: #e2e8f0;"><b style="color: var(--cyan);">巩固</b> — 保留视频原声的SRS算法</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 05: 核心理论基石 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s5">
+            <div class="tag">02 / 核心理论</div>
+            <h1 class="title">站在巨人的肩膀上：核心理论基石</h1>
+            <p class="subtitle">拒绝拍脑门设计，产品底层逻辑严密遵循认知科学</p>
+            <div class="grid-3" style="flex: 1;">
+                <div class="bento bento-glow" style="display: flex; flex-direction: column;">
+                    <div style="text-align: center; font-size: 48px; margin-bottom: 12px;">🧠</div>
+                    <h3 class="b-title" style="text-align: center;">Krashen (1985)</h3>
+                    <div style="font-size: 30px; font-weight: 900; color: var(--cyan); text-align: center; margin-bottom: 12px;">i+1 可理解性输入假说</div>
+                    <p class="b-desc" style="font-style: italic; border-left: 3px solid var(--cyan); padding-left: 14px;">"语言习得发生在理解略高于当前水平(i+1)的输入时。"</p>
+                    <p class="b-desc" style="margin-top: 14px; color: var(--emerald); font-weight: 600;">产品应用：杜绝过难(i+2)导致的挫败感和过易(i-1)导致的无效学习。</p>
+                </div>
+                <div class="bento bento-glow" style="display: flex; flex-direction: column;">
+                    <div style="text-align: center; font-size: 48px; margin-bottom: 12px;">📉</div>
+                    <h3 class="b-title" style="text-align: center;">Ebbinghaus</h3>
+                    <div style="font-size: 30px; font-weight: 900; color: var(--emerald); text-align: center; margin-bottom: 12px;">遗忘曲线算法</div>
+                    <p class="b-desc" style="font-style: italic; border-left: 3px solid var(--emerald); padding-left: 14px;">记忆不是状态，而是随时间指数衰减的过程。</p>
+                    <p class="b-desc" style="margin-top: 14px; color: var(--emerald); font-weight: 600;">产品应用：采用浮点计算精准捕捉遗忘临界点，实施动态调度复习。</p>
+                </div>
+                <div class="bento bento-glow" style="display: flex; flex-direction: column;">
+                    <div style="text-align: center; font-size: 48px; margin-bottom: 12px;">💜</div>
+                    <h3 class="b-title" style="text-align: center;">Pekrun (2006)</h3>
+                    <div style="font-size: 30px; font-weight: 900; color: var(--purple); text-align: center; margin-bottom: 12px;">情感价值模型(CVT)</div>
+                    <p class="b-desc" style="font-style: italic; border-left: 3px solid var(--purple); padding-left: 14px;">低控制感+低价值感=无聊，预测学习倦怠(β=0.48)。</p>
+                    <p class="b-desc" style="margin-top: 14px; color: var(--emerald); font-weight: 600;">产品应用：通过数据看板与正向反馈，赋予极高"控制感"，维持内驱力。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 06: 理论工程化映射矩阵 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s6">
+            <div class="tag">02 / 范式创新</div>
+            <h1 class="title">范式创新：理论的硬核代码映射</h1>
+            <p class="subtitle">将 19 项权威理论 (被引超25万次) 精确落地为系统功能</p>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 16px;">
+                <div class="bento" style="display: flex; align-items: center; gap: 24px; padding: 24px 30px;">
+                    <span style="font-size: 36px;">📖</span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 22px; font-weight: 700; color: var(--cyan); margin-bottom: 6px;">i+1 输入假说</div>
+                    </div>
+                    <span style="font-size: 28px; color: var(--cyan);">➡</span>
+                    <div style="flex: 1.5;">
+                        <div class="code-block" style="padding: 14px 18px; font-size: 17px;">CEFR 词汇画像识别 + DeepSeek V3 动态难词替换降维</div>
+                    </div>
+                </div>
+                <div class="bento" style="display: flex; align-items: center; gap: 24px; padding: 24px 30px;">
+                    <span style="font-size: 36px;">🤝</span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 22px; font-weight: 700; color: var(--cyan); margin-bottom: 6px;">Vygotsky 最近发展区 (ZPD)</div>
+                    </div>
+                    <span style="font-size: 28px; color: var(--cyan);">➡</span>
+                    <div style="flex: 1.5;">
+                        <div class="code-block" style="padding: 14px 18px; font-size: 17px;">多 Agent 虚拟课堂搭建 AI 脚手架，提供引导式提问</div>
+                    </div>
+                </div>
+                <div class="bento" style="display: flex; align-items: center; gap: 24px; padding: 24px 30px;">
+                    <span style="font-size: 36px;">🧩</span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 22px; font-weight: 700; color: var(--cyan); margin-bottom: 6px;">认知负荷理论 (CLT)</div>
+                    </div>
+                    <span style="font-size: 28px; color: var(--cyan);">➡</span>
+                    <div style="flex: 1.5;">
+                        <div class="code-block" style="padding: 14px 18px; font-size: 17px;">分屏UI设计：音视频+字幕双通道同步，消解内在认知负荷</div>
+                    </div>
+                </div>
+                <div class="bento" style="display: flex; align-items: center; gap: 24px; padding: 24px 30px;">
+                    <span style="font-size: 36px;">⏳</span>
+                    <div style="flex: 1;">
+                        <div style="font-size: 22px; font-weight: 700; color: var(--cyan); margin-bottom: 6px;">间隔重复 (SRS)</div>
+                    </div>
+                    <span style="font-size: 28px; color: var(--cyan);">➡</span>
+                    <div style="flex: 1.5;">
+                        <div class="code-block" style="padding: 14px 18px; font-size: 17px;">0-1 浮点记忆评分复习法，锚定原始视频语境重现</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 07: 总体技术架构图 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s7">
+            <div class="tag">03 / 系统架构</div>
+            <h1 class="title">全栈云边协同技术架构</h1>
+            <p class="subtitle">高性能前后端分离与多模态微服务设计</p>
+            <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 0; max-width: 1200px; margin: 0 auto;">
+                <div class="arch-layer" style="background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.15);">
+                    <div style="font-size: 16px; color: var(--text-muted); margin-bottom: 4px;">Layer 4 — 客户端展示层</div>
+                    <div style="font-size: 24px; font-weight: 700;">React 18, Vite, Tailwind, Zustand</div>
+                </div>
+                <div class="arch-arrow">⬆⬇</div>
+                <div class="arch-layer" style="background: rgba(6,182,212,0.12); color: #a5f3fc; border: 2px solid rgba(6,182,212,0.4);">
+                    <div style="font-size: 16px; color: var(--cyan); margin-bottom: 4px;">Layer 3 — 核心微服务网关</div>
+                    <div style="font-size: 24px; font-weight: 700;">Python FastAPI, 异步调度, FFmpeg 音视频处理</div>
+                </div>
+                <div class="arch-arrow">⬆⬇</div>
+                <div class="arch-layer" style="background: rgba(139,92,246,0.12); color: #d8b4fe; border: 2px solid rgba(139,92,246,0.4);">
+                    <div style="font-size: 16px; color: var(--purple); margin-bottom: 4px;">Layer 2 — 多模态AI算力层</div>
+                    <div style="font-size: 24px; font-weight: 700;">DeepSeek V3.2, Qwen3 ASR, 腾讯 SOE, DashScope TTS</div>
+                </div>
+                <div class="arch-arrow">⬆⬇</div>
+                <div class="arch-layer" style="background: rgba(255,255,255,0.06); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.15);">
+                    <div style="font-size: 16px; color: var(--text-muted); margin-bottom: 4px;">Layer 1 — 基础数据层</div>
+                    <div style="font-size: 24px; font-weight: 700;">PostgreSQL, SQLite, CEFR 5万词库矩阵</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 08: 核心技术一 - 双轨ASR + 雷达图 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s8">
+            <div class="tag">03 / 核心技术一</div>
+            <h1 class="title">核心技术一：多模态双轨 ASR 解析管线</h1>
+            <p class="subtitle">边缘本地加速 vs 云端大模型，完美平衡隐私与性能</p>
+            <div class="grid-2" style="flex: 1;">
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    <div class="bento" style="border-left: 4px solid var(--cyan);">
+                        <h3 class="b-title">[轨 1] 离线极速轨：faster-whisper</h3>
+                        <ul>
+                            <li>采用 INT8 量化与 CTranslate2 引擎，推理提速 <b style="color: var(--cyan);">4 倍</b>。</li>
+                            <li>保护隐私录音，支持 <b style="color: var(--cyan);">100% 断网</b>侧端处理。</li>
+                        </ul>
+                    </div>
+                    <div class="bento" style="border-left: 4px solid var(--purple);">
+                        <h3 class="b-title" style="color: var(--purple);">[轨 2] 云端精准轨：Qwen3 大模型</h3>
+                        <ul>
+                            <li>FFmpeg 切片无缝拼接，处理超长 YouTube 视频。</li>
+                            <li>面对复杂背景音提供极限抗噪能力与口音鲁棒性。</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="radar-container">
+                    <canvas id="radarASR" width="520" height="520"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 09: 核心技术二 - DeepSeek i+1 降维引擎 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s9">
+            <div class="tag">03 / 核心技术二</div>
+            <h1 class="title">核心技术二：DeepSeek 驱动的动态降维引擎</h1>
+            <p class="subtitle">业界首次将 CEFR 词库与 LLM 文本重写结合，实现千人千面的内容呈现</p>
+            <!-- 流水线 -->
+            <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin: 20px 0;">
+                <div style="padding: 18px 22px; background: rgba(255,255,255,0.08); border-radius: 14px; font-size: 19px; font-weight: 600; text-align: center; flex: 1;">1. 原始文本<br>提取</div>
+                <div class="flow-arrow">➡</div>
+                <div style="padding: 18px 22px; background: rgba(255,255,255,0.08); border-radius: 14px; font-size: 19px; font-weight: 600; text-align: center; flex: 1;">2. 5万+ CEFR<br>词库筛查定位超纲词</div>
+                <div class="flow-arrow">➡</div>
+                <div style="padding: 18px 22px; background: rgba(139,92,246,0.2); border: 2px solid var(--purple); border-radius: 14px; font-size: 19px; font-weight: 600; text-align: center; flex: 1;">3. DeepSeek V3.2<br>无损重写</div>
+                <div class="flow-arrow">➡</div>
+                <div style="padding: 18px 22px; background: rgba(16,185,129,0.2); border: 2px solid var(--emerald); border-radius: 14px; font-size: 19px; font-weight: 600; text-align: center; flex: 1;">4. 输出适配用户<br>的 i+1 文本</div>
+            </div>
+            <!-- Before/After -->
+            <div class="bento" style="margin-top: 20px; text-align: center; padding: 36px;">
+                <div style="font-size: 18px; color: var(--text-muted); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 3px;">Before / After 实例</div>
+                <div style="font-size: 30px; color: #e2e8f0; margin-bottom: 14px;">
+                    The <span style="color: var(--rose); font-weight: 900; text-decoration: underline; text-decoration-color: var(--rose);">ubiquitous</span> nature of smartphones...
+                </div>
+                <div style="font-size: 20px; color: var(--amber); margin-bottom: 14px;">
+                    ⬇ AI 判定：<b>ubiquitous</b> 为 C2 级别，当前用户仅 B1，启动无损替换 ⬇
+                </div>
+                <div style="font-size: 30px; color: var(--emerald); font-weight: 700;">
+                    The fact that smartphones are <span style="background: rgba(16,185,129,0.2); padding: 2px 8px; border-radius: 6px;">found everywhere</span>...
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 10: 核心技术三 - SRS公式 + SOE JSON -->
+        <!-- ============================================ -->
+        <div class="slide" id="s10">
+            <div class="tag">03 / 核心技术三</div>
+            <h1 class="title">核心技术三：上下文锚定 SRS 与音素级发音引擎</h1>
+            <p class="subtitle">告别孤立背词与哑巴英语，打造真实发声闭环</p>
+            <div class="grid-2" style="flex: 1;">
+                <div class="bento" style="display: flex; flex-direction: column; justify-content: center;">
+                    <h3 class="b-title">🧠 上下文锚定记忆算法</h3>
+                    <div class="formula" style="margin: 16px 0;">R = e<sup>−t/S</sup></div>
+                    <div style="text-align: center; font-size: 18px; color: var(--text-muted); margin-bottom: 16px;">(R:保留率, t:流逝时间, S:记忆强度)</div>
+                    <p class="b-desc">复习时算法通过 <code style="background: rgba(6,182,212,0.15); padding: 2px 8px; border-radius: 4px; color: var(--cyan);">source_sentence_id</code> 自动调取视频原片重播，还原真实语境，连续浮点精准调度。</p>
+                </div>
+                <div class="bento" style="display: flex; flex-direction: column; justify-content: center;">
+                    <h3 class="b-title">🎙️ Tencent SOE 引擎接入</h3>
+                    <p class="b-desc" style="margin-bottom: 16px;">不仅给总体流利度，还能精准到"音素级"（Phoneme-level）缺陷定位。</p>
+                    <div class="code-block" style="font-size: 17px;">{
+  "Word": "ubiquitous",
+  "Accuracy": 45,
+  "Phonemes": [
+    { "ph": "juː", "score": 82 },
+    { "ph": "ˈbɪ",  "score": 35, "error": "重音错误" },
+    { "ph": "kwɪ", "score": 70 },
+    { "ph": "təs", "score": 68 }
+  ]
+}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 11: 演示1 - 万能导入与沉浸式精听 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s11">
+            <div class="tag">04 / 演示一</div>
+            <h1 class="title">实机演示：一键导入与沉浸式精听</h1>
+            <div class="grid-2" style="flex: 1; align-items: center;">
+                <div class="bento">
+                    <ul style="margin-left: 16px;">
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">1️⃣ URL 万能导入</b>：一键粘贴 B站/YouTube 链接，AI 自动转录排版。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">2️⃣ CEFR 等级高亮</b>：根据 A1-C2 等级使用不同颜色对字幕生词进行标记。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">3️⃣ 极致 UI 质感</b>：毛玻璃视差滚动与聚光灯悬浮反馈，降低认知疲劳。</li>
+                    </ul>
+                </div>
+                <div class="placeholder-box">
+                    【插入 播放器与CEFR高亮 截图区域】
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 12: 演示2 - 多智能体虚拟课堂 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s12">
+            <div class="tag">04 / 演示二</div>
+            <h1 class="title">实机演示：多智能体虚拟课堂互动</h1>
+            <div class="grid-2" style="flex: 1; align-items: center;">
+                <div class="bento">
+                    <ul style="margin-left: 16px;">
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">1️⃣ Agent 协作</b>：AI 伴读同学主动提问引导，AI 导师进行知识点升华。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">2️⃣ 语码转换</b> (Code-switching)：AI 捕捉到用户理解困难时，自动切入中文解释。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">3️⃣ AST 语法树解析</b>：点击长难句，系统自动拆解主谓宾结构。</li>
+                    </ul>
+                </div>
+                <div class="placeholder-box">
+                    【插入 虚拟课堂对话框 截图区域】
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 13: 演示3 - 口语纠音与智能生词本 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s13">
+            <div class="tag">04 / 演示三</div>
+            <h1 class="title">实机演示：口语评测与生词本日历</h1>
+            <div class="grid-2" style="flex: 1; align-items: center;">
+                <div class="bento">
+                    <ul style="margin-left: 16px;">
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">1️⃣ 四维打分面板</b>：直观展现流利度、完整度、准度、重音。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">2️⃣ 音标红绿高亮</b>：精准定位哪个音节发错，及时纠正。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">3️⃣ 复习原声再现</b>：复习生词时触发源视频浮窗，在真实语境中强化记忆。</li>
+                    </ul>
+                </div>
+                <div class="placeholder-box">
+                    【插入 SOE面板与生词本日历 截图区域】
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 14: 演示4 - 全景数据看板 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s14">
+            <div class="tag">04 / 演示四</div>
+            <h1 class="title">实机演示：全景数据看板 Dashboard</h1>
+            <div class="grid-2" style="flex: 1; align-items: center;">
+                <div class="bento">
+                    <ul style="margin-left: 16px;">
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">1️⃣ GitHub 式热力图</b>：直观展现一年内的连续学习投入程度。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">2️⃣ 词汇漏斗分布</b>：用户掌握的词汇在 CEFR 六个等级中的比重环形图。</li>
+                        <li style="font-size: 24px;"><b style="color: var(--cyan);">3️⃣ 落地 CVT 理论</b>：赋予学习者极高的数据掌控感与成就感。</li>
+                    </ul>
+                </div>
+                <div class="placeholder-box">
+                    【插入 数据看板仪表盘 截图区域】
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 15: 全球31款竞品雷达图 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s15">
+            <div class="tag">05 / 竞品对比</div>
+            <h1 class="title">市场降维打击：全球 31 款竞品评估</h1>
+            <p class="subtitle">在"真实语境"与"学习闭环"层面形成断层领先</p>
+            <div class="grid-2" style="flex: 1;">
+                <div class="radar-container">
+                    <canvas id="radarCompetitor" width="540" height="540"></canvas>
+                </div>
+                <div style="display: flex; flex-direction: column; justify-content: center; gap: 16px;">
+                    <div class="bento" style="border-left: 4px solid var(--cyan); padding: 22px 28px;">
+                        <div style="font-size: 28px; font-weight: 900; color: var(--cyan);">🥇 1. Unlock Anything (本作品) ★★★★★</div>
+                    </div>
+                    <div class="bento" style="border-left: 4px solid var(--rose); padding: 22px 28px;">
+                        <div style="font-size: 24px; font-weight: 700; color: #fda4af;">🥈 2. Speak ★★★★☆</div>
+                        <div style="font-size: 18px; color: var(--text-muted); margin-top: 4px;">海外口语巨头：缺应试词库/单场景</div>
+                    </div>
+                    <div class="bento" style="border-left: 4px solid var(--amber); padding: 22px 28px;">
+                        <div style="font-size: 24px; font-weight: 700; color: #fcd34d;">🥉 3. Duolingo Max ★★★☆☆</div>
+                        <div style="font-size: 18px; color: var(--text-muted); margin-top: 4px;">综合巨头：单点练习缺视频语境</div>
+                    </div>
+                    <div class="bento" style="border-left: 4px solid rgba(255,255,255,0.3); padding: 22px 28px;">
+                        <div style="font-size: 24px; font-weight: 700; color: var(--text-muted);">4. 墨墨背单词 ★★☆☆☆</div>
+                        <div style="font-size: 18px; color: var(--text-muted); margin-top: 4px;">传统工具：只有记忆，全无 AI 闭环</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 16: 实验数据验证 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s16">
+            <div class="tag">05 / 实测数据</div>
+            <h1 class="title">实测数据与效果验证</h1>
+            <div class="grid-3" style="flex: 1; align-items: center;">
+                <div class="bento" style="text-align: center; padding: 40px 24px;">
+                    <div class="big-number" style="font-size: 110px;">55s</div>
+                    <p class="b-desc" style="margin-top: 20px; font-size: 20px;">处理生成一节 5 分钟 YouTube 课程全管线耗时<br><span style="color: var(--text-muted); font-size: 16px;">（含ASR/翻译/结构化）</span></p>
+                </div>
+                <div class="bento" style="text-align: center; padding: 40px 24px;">
+                    <div class="big-number" style="font-size: 110px; background: linear-gradient(135deg, var(--emerald), var(--cyan)); -webkit-background-clip: text; background-clip: text;">84.4%</div>
+                    <p class="b-desc" style="margin-top: 20px; font-size: 20px;">50,000+ CEFR 核心词库系统<br>经严格人工双盲精核准度</p>
+                </div>
+                <div class="bento" style="text-align: center; padding: 40px 24px;">
+                    <div class="big-number" style="font-size: 110px; background: linear-gradient(135deg, var(--purple), var(--rose)); -webkit-background-clip: text; background-clip: text;">+42%</div>
+                    <p class="b-desc" style="margin-top: 20px; font-size: 20px;">对比传统闪卡，使用上下文锚定 SRS 后的<br><b style="color: var(--emerald);">7 日记忆保留率提升</b></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 17: 三大核心创新点 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s17">
+            <div class="tag">05 / 创新凝练</div>
+            <h1 class="title">三大核心创新点凝练</h1>
+            <p class="subtitle">我们究竟做对了什么？</p>
+            <div class="grid-3" style="flex: 1;">
+                <div class="bento bento-glow" style="border-top: 5px solid var(--cyan); display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 36px;">
+                    <div style="font-size: 60px; margin-bottom: 16px;">🥇</div>
+                    <h3 class="b-title" style="font-size: 30px; text-align: center;">技术创新</h3>
+                    <p class="b-desc" style="font-size: 22px;">首创 CEFR 词汇库 × 大模型重写引擎融合，实现全网开源语料实时 i+1 难度<b style="color: var(--cyan);">无损降维</b>。</p>
+                </div>
+                <div class="bento bento-glow" style="border-top: 5px solid var(--emerald); display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 36px;">
+                    <div style="font-size: 60px; margin-bottom: 16px;">🥇</div>
+                    <h3 class="b-title" style="font-size: 30px; text-align: center; color: var(--emerald);">理论创新</h3>
+                    <p class="b-desc" style="font-size: 22px;">构建"理论驱动型产品"范式，将 19 个经典认知科学与二语习得理论，<b style="color: var(--emerald);">系统级映射为底层代码</b>。</p>
+                </div>
+                <div class="bento bento-glow" style="border-top: 5px solid var(--purple); display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 36px;">
+                    <div style="font-size: 60px; margin-bottom: 16px;">🥇</div>
+                    <h3 class="b-title" style="font-size: 30px; text-align: center; color: var(--purple);">产品创新</h3>
+                    <p class="b-desc" style="font-size: 22px;">填补单点工具严重割裂，打造首个覆盖"输入-理解-输出-记忆-情感"<b style="color: var(--purple);">五维闭环</b>的全栈 AI 产品。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 18: 商业逻辑与社会价值 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s18">
+            <div class="tag">06 / 商业与愿景</div>
+            <h1 class="title">商业模式与普惠教育愿景</h1>
+            <div class="grid-2" style="flex: 1; align-items: center;">
+                <div class="bento" style="border-left: 4px solid var(--amber);">
+                    <div style="text-align: center; font-size: 48px; margin-bottom: 16px;">💰</div>
+                    <h3 class="b-title" style="color: var(--amber);">商业护城河</h3>
+                    <ul>
+                        <li>AI 边际成本摩尔定律式下降降幅 <b style="color: var(--amber);">99%</b>。</li>
+                        <li>高并发 Token 计费钱包体系，极高毛利空间。</li>
+                        <li>B端支持批量机构兑换码下发能力。</li>
+                    </ul>
+                </div>
+                <div class="bento" style="border-left: 4px solid var(--emerald);">
+                    <div style="text-align: center; font-size: 48px; margin-bottom: 16px;">🌍</div>
+                    <h3 class="b-title" style="color: var(--emerald);">教育的终极平权</h3>
+                    <p class="b-desc" style="font-size: 24px; line-height: 1.8;">
+                        让三四线城市的学生，能以不足人工私教 <b style="color: var(--emerald);">1%</b> 的价格，获得顶级、无倦怠的 <b style="color: var(--emerald);">24 小时</b> AI 私人陪伴语言导师。
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 19: 技术演进路线图 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s19">
+            <div class="tag">06 / Roadmap</div>
+            <h1 class="title">未来技术演进路线图 (Roadmap)</h1>
+            <div class="grid-3" style="flex: 1; align-items: center;">
+                <div class="bento bento-glow" style="position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--text-muted);"></div>
+                    <h3 style="font-size: 18px; color: var(--text-muted); margin-bottom: 8px; margin-top: 8px;">阶段一</h3>
+                    <div style="font-size: 28px; font-weight: 900; margin-bottom: 6px;">参赛版 v3.3</div>
+                    <div style="font-size: 22px; font-weight: 700; color: var(--cyan); margin-bottom: 14px;">多模态摄取与结构化</div>
+                    <p class="b-desc">完善音视频提取、双轨 ASR 及基础 i+1 课堂生成。</p>
+                </div>
+                <div class="bento bento-glow" style="border: 2px solid var(--cyan); position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background: linear-gradient(90deg, var(--cyan), var(--purple));"></div>
+                    <h3 style="font-size: 18px; color: var(--cyan); margin-bottom: 8px; margin-top: 8px;">阶段二</h3>
+                    <div style="font-size: 28px; font-weight: 900; margin-bottom: 6px;">研发中 v4.0</div>
+                    <div style="font-size: 22px; font-weight: 700; color: var(--cyan); margin-bottom: 14px;">AI 配图与流式引擎</div>
+                    <p class="b-desc">引入生成式 AI 配图，实时流式 TTS 降低延迟。</p>
+                </div>
+                <div class="bento bento-glow" style="position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--purple);"></div>
+                    <h3 style="font-size: 18px; color: var(--purple); margin-bottom: 8px; margin-top: 8px;">阶段三</h3>
+                    <div style="font-size: 28px; font-weight: 900; margin-bottom: 6px;">愿景 v5.0</div>
+                    <div style="font-size: 22px; font-weight: 700; color: var(--purple); margin-bottom: 14px;">全双工实时同传级陪练</div>
+                    <p class="b-desc">电话级打断、低延迟对话环境，无限逼近真人。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================ -->
+        <!-- Slide 20: 封底与致谢 -->
+        <!-- ============================================ -->
+        <div class="slide" id="s20">
+            <div style="text-align: center; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%;">
+                <h1 style="font-size: 90px; font-weight: 900; margin-bottom: 24px; background: linear-gradient(135deg, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">Unlock Anything</h1>
+                <h2 style="font-size: 36px; color: var(--cyan); margin-bottom: 60px; font-weight: 400;">—— 让世界上没有难懂的材料 ——</h2>
+
+                <div style="display: flex; gap: 40px; max-width: 900px; margin-bottom: 60px;">
+                    <div style="flex: 1; text-align: left;">
+                        <div style="font-size: 18px; color: var(--text-muted); margin-bottom: 8px;">致谢理论巨匠</div>
+                        <div style="font-size: 20px; color: #e2e8f0;">S. Krashen, R. Pekrun, H. Ebbinghaus 等</div>
+                    </div>
+                    <div style="flex: 1; text-align: left;">
+                        <div style="font-size: 18px; color: var(--text-muted); margin-bottom: 8px;">致谢技术底座</div>
+                        <div style="font-size: 20px; color: #e2e8f0;">DeepSeek, 阿里千问, 腾讯 SOE</div>
+                    </div>
+                </div>
+
+                <div style="font-size: 48px; font-weight: 900; color: var(--text-muted); letter-spacing: 8px;">Q & A</div>
+            </div>
+        </div>
+
+    </div><!-- /presentation-area -->
+    </div><!-- /presentation-wrapper -->
+
+    <!-- 底部 HUD -->
+    <div id="hud">
+        <div>
+            <button class="btn" id="prevBtn" onclick="prevSlide()">◀ 上一页</button>
+            <button class="btn" id="nextBtn" onclick="nextSlide()" style="margin-left: 8px;">下一页 ▶</button>
+        </div>
+        <div class="slide-counter"><span id="currentSlideNum">01</span> / 20</div>
+    </div>
+
+    <script>
+        /* =======================
+           Slide Navigation
+        ======================== */
+        const totalSlides = 20;
+        let currentIdx = 1;
+        const slides = document.querySelectorAll('.slide');
+        const counterEl = document.getElementById('currentSlideNum');
+
+        function handleResize() {
+            const wrapper = document.getElementById('presentation-wrapper');
+            const area = document.getElementById('presentation-area');
+            const scale = Math.min(wrapper.clientWidth / 1920, wrapper.clientHeight / 1080);
+            area.style.transform = `scale(${scale})`;
+        }
+        window.addEventListener('resize', handleResize);
+        handleResize();
+
+        function updateView() {
+            slides.forEach(s => s.classList.remove('active'));
+            document.getElementById('s' + currentIdx).classList.add('active');
+            counterEl.innerText = String(currentIdx).padStart(2, '0');
+            // Draw radar charts when their slides become active
+            if (currentIdx === 8) drawRadarASR();
+            if (currentIdx === 15) drawRadarCompetitor();
+        }
+
+        function nextSlide() { if (currentIdx < totalSlides) { currentIdx++; updateView(); } }
+        function prevSlide() { if (currentIdx > 1) { currentIdx--; updateView(); } }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') nextSlide();
+            else if (e.key === 'ArrowLeft' || e.key === 'PageUp') prevSlide();
+        });
+
+        /* =======================
+           Radar Chart Renderer
+        ======================== */
+        function drawRadar(canvasId, labels, datasets, opts = {}) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width, H = canvas.height;
+            const cx = W / 2, cy = H / 2;
+            const R = Math.min(W, H) / 2 - 60;
+            const n = labels.length;
+            const angleStep = (Math.PI * 2) / n;
+            const startAngle = -Math.PI / 2;
+
+            ctx.clearRect(0, 0, W, H);
+
+            // Draw grid rings
+            for (let ring = 1; ring <= 5; ring++) {
+                const r = (R * ring) / 5;
+                ctx.beginPath();
+                for (let i = 0; i <= n; i++) {
+                    const angle = startAngle + angleStep * (i % n);
+                    const x = cx + r * Math.cos(angle);
+                    const y = cy + r * Math.sin(angle);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+
+            // Draw axes & labels
+            for (let i = 0; i < n; i++) {
+                const angle = startAngle + angleStep * i;
+                const ex = cx + R * Math.cos(angle);
+                const ey = cy + R * Math.sin(angle);
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(ex, ey);
+                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                ctx.stroke();
+
+                // Label
+                const lx = cx + (R + 30) * Math.cos(angle);
+                const ly = cy + (R + 30) * Math.sin(angle);
+                ctx.fillStyle = '#cbd5e1';
+                ctx.font = '16px "Microsoft YaHei", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(labels[i], lx, ly);
+            }
+
+            // Draw datasets
+            datasets.forEach(ds => {
+                ctx.beginPath();
+                for (let i = 0; i <= n; i++) {
+                    const idx = i % n;
+                    const angle = startAngle + angleStep * idx;
+                    const val = ds.data[idx] / 100;
+                    const x = cx + R * val * Math.cos(angle);
+                    const y = cy + R * val * Math.sin(angle);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = ds.fill;
+                ctx.fill();
+                ctx.strokeStyle = ds.stroke;
+                ctx.lineWidth = ds.lineWidth || 2.5;
+                if (ds.dash) ctx.setLineDash(ds.dash);
+                else ctx.setLineDash([]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Dots
+                for (let i = 0; i < n; i++) {
+                    const angle = startAngle + angleStep * i;
+                    const val = ds.data[i] / 100;
+                    const x = cx + R * val * Math.cos(angle);
+                    const y = cy + R * val * Math.sin(angle);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 4, 0, Math.PI * 2);
+                    ctx.fillStyle = ds.stroke;
+                    ctx.fill();
+                }
+            });
+
+            // Legend
+            if (opts.legend) {
+                let ly = H - 20;
+                ctx.font = '14px "Microsoft YaHei", sans-serif';
+                let totalW = 0;
+                opts.legend.forEach(l => { totalW += ctx.measureText(l.label).width + 40; });
+                let lx = (W - totalW) / 2;
+                opts.legend.forEach(l => {
+                    ctx.fillStyle = l.color;
+                    ctx.fillRect(lx, ly - 6, 18, 12);
+                    ctx.fillStyle = '#cbd5e1';
+                    ctx.fillText(l.label, lx + 24, ly);
+                    lx += ctx.measureText(l.label).width + 44;
+                });
+            }
+        }
+
+        function drawRadarASR() {
+            drawRadar('radarASR',
+                ['推流速度', '防噪准确率', '长文本处理', '隐私安全性', '部署成本'],
+                [
+                    { data: [95, 70, 40, 100, 90], fill: 'rgba(6,182,212,0.15)', stroke: '#06b6d4', lineWidth: 3 },
+                    { data: [60, 98, 100, 50, 40], fill: 'rgba(139,92,246,0.15)', stroke: '#8b5cf6', lineWidth: 3 },
+                ],
+                { legend: [
+                    { label: '本地轨 (faster-whisper)', color: '#06b6d4' },
+                    { label: '云端轨 (Qwen3)', color: '#8b5cf6' },
+                ]}
+            );
+        }
+
+        function drawRadarCompetitor() {
+            drawRadar('radarCompetitor',
+                ['AI对话深度', '学习闭环完整度', '真实语境沉浸', '发音评测细粒度', 'SRS科学记忆'],
+                [
+                    { data: [90, 100, 100, 90, 100], fill: 'rgba(6,182,212,0.2)', stroke: '#06b6d4', lineWidth: 3 },
+                    { data: [95, 60, 50, 70, 40], fill: 'rgba(244,63,94,0.08)', stroke: '#f43f5e', lineWidth: 2, dash: [6, 4] },
+                    { data: [20, 40, 30, 20, 80], fill: 'rgba(148,163,184,0.06)', stroke: '#64748b', lineWidth: 2, dash: [4, 4] },
+                ],
+                { legend: [
+                    { label: 'Unlock Anything', color: '#06b6d4' },
+                    { label: 'Speak (海外)', color: '#f43f5e' },
+                    { label: '国内背词软件', color: '#64748b' },
+                ]}
+            );
+        }
+
+        // Initial draw for slide 8 if it happens to be first visible
+        setTimeout(() => { drawRadarASR(); drawRadarCompetitor(); }, 100);
+    </script>
+</body>
+</html>

@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>英语学习产品竞品分析报告 — Bottle English</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+:root {
+  --primary: #6C5CE7;
+  --primary-light: #A29BFE;
+  --primary-dark: #5A4BD1;
+  --accent: #00CEC9;
+  --accent-light: #55EFC4;
+  --danger: #FF6B6B;
+  --warning: #FDCB6E;
+  --dark: #2D3436;
+  --gray: #636E72;
+  --light: #F8F9FA;
+  --white: #FFFFFF;
+  --gradient-1: linear-gradient(135deg, #6C5CE7 0%, #A29BFE 100%);
+  --gradient-2: linear-gradient(135deg, #00CEC9 0%, #55EFC4 100%);
+  --gradient-3: linear-gradient(135deg, #FF6B6B 0%, #FDCB6E 100%);
+  --gradient-hero: linear-gradient(135deg, #0c0c1d 0%, #1a1a3e 30%, #2d1b69 60%, #6C5CE7 100%);
+  --shadow: 0 10px 40px rgba(0,0,0,0.15);
+  --shadow-sm: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #0c0c1d;
+  color: var(--white);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Slide Container */
+.slides-container {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+.slide {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0; left: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 60px 80px;
+  opacity: 0;
+  transform: translateX(60px);
+  transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  overflow-y: auto;
+}
+
+.slide.active {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: all;
+}
+
+.slide.prev {
+  opacity: 0;
+  transform: translateX(-60px);
+}
+
+/* Navigation */
+.nav-bar {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255,255,255,0.08);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 50px;
+  padding: 10px 24px;
+  z-index: 100;
+}
+
+.nav-btn {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: var(--white);
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-btn:hover { background: var(--primary); transform: scale(1.1); }
+.nav-btn:disabled { opacity: 0.3; cursor: default; transform: none; }
+
+.slide-counter {
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  min-width: 60px;
+  text-align: center;
+}
+
+.progress-dots {
+  display: flex;
+  gap: 6px;
+  max-width: 300px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+.dot.active { background: var(--primary); width: 24px; border-radius: 4px; }
+.dot.visited { background: rgba(108,92,231,0.5); }
+
+/* Typography */
+.section-tag {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.slide-title {
+  font-size: 48px;
+  font-weight: 900;
+  line-height: 1.2;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.slide-subtitle {
+  font-size: 20px;
+  color: rgba(255,255,255,0.6);
+  font-weight: 300;
+  max-width: 700px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* Hero Slide */
+.hero-slide {
+  background: var(--gradient-hero);
+  text-align: center;
+}
+.hero-slide .hero-badge {
+  display: inline-block;
+  padding: 8px 24px;
+  border-radius: 30px;
+  border: 1px solid rgba(108,92,231,0.5);
+  background: rgba(108,92,231,0.15);
+  font-size: 14px;
+  color: var(--primary-light);
+  letter-spacing: 2px;
+  margin-bottom: 40px;
+}
+.hero-slide .hero-title {
+  font-size: 72px;
+  font-weight: 900;
+  line-height: 1.1;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #fff 0%, var(--primary-light) 50%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-slide .hero-sub {
+  font-size: 24px;
+  color: rgba(255,255,255,0.5);
+  font-weight: 300;
+  margin-bottom: 60px;
+}
+.hero-stats {
+  display: flex;
+  gap: 60px;
+  justify-content: center;
+}
+.hero-stat {
+  text-align: center;
+}
+.hero-stat .num {
+  font-size: 48px;
+  font-weight: 900;
+  background: var(--gradient-2);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.hero-stat .label {
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  margin-top: 4px;
+}
+
+/* Content Cards */
+.card-grid {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+  max-width: 1200px;
+}
+.card-grid-2 { grid-template-columns: repeat(2, 1fr); }
+.card-grid-3 { grid-template-columns: repeat(3, 1fr); }
+.card-grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 28px;
+  transition: all 0.3s;
+}
+.card:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(108,92,231,0.3);
+  transform: translateY(-4px);
+}
+
+.card-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.card-icon.purple { background: rgba(108,92,231,0.2); }
+.card-icon.cyan { background: rgba(0,206,201,0.2); }
+.card-icon.red { background: rgba(255,107,107,0.2); }
+.card-icon.yellow { background: rgba(253,203,110,0.2); }
+
+.card-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.card-desc {
+  font-size: 14px;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.6;
+}
+
+/* Tables */
+.styled-table {
+  width: 100%;
+  max-width: 1100px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.styled-table thead th {
+  background: rgba(108,92,231,0.2);
+  color: var(--primary-light);
+  padding: 12px 16px;
+  font-weight: 600;
+  text-align: center;
+  border-bottom: 2px solid rgba(108,92,231,0.3);
+  white-space: nowrap;
+}
+.styled-table thead th:first-child {
+  border-radius: 10px 0 0 0;
+  text-align: left;
+}
+.styled-table thead th:last-child {
+  border-radius: 0 10px 0 0;
+}
+.styled-table tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  text-align: center;
+  color: rgba(255,255,255,0.7);
+}
+.styled-table tbody td:first-child {
+  text-align: left;
+  color: var(--white);
+  font-weight: 500;
+}
+.styled-table tbody tr:hover {
+  background: rgba(255,255,255,0.03);
+}
+.star { color: var(--warning); }
+
+/* Timeline */
+.timeline {
+  display: flex;
+  gap: 0;
+  width: 100%;
+  max-width: 1000px;
+  position: relative;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  top: 50px;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(108,92,231,0.3);
+  border-radius: 2px;
+}
+.timeline-item {
+  flex: 1;
+  text-align: center;
+  position: relative;
+  padding: 0 10px;
+}
+.timeline-dot {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 3px solid var(--primary-light);
+  margin: 40px auto 16px;
+  position: relative;
+  z-index: 1;
+}
+.timeline-item:nth-child(3) .timeline-dot {
+  background: var(--accent);
+  border-color: var(--accent-light);
+  box-shadow: 0 0 20px rgba(0,206,201,0.4);
+}
+.timeline-year {
+  font-size: 14px;
+  color: var(--accent);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.timeline-label {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.timeline-desc {
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+  line-height: 1.5;
+}
+
+/* Highlight boxes */
+.highlight-box {
+  background: rgba(108,92,231,0.1);
+  border: 1px solid rgba(108,92,231,0.3);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 900px;
+  text-align: center;
+}
+.highlight-box.accent {
+  background: rgba(0,206,201,0.08);
+  border-color: rgba(0,206,201,0.3);
+}
+.highlight-box.danger {
+  background: rgba(255,107,107,0.08);
+  border-color: rgba(255,107,107,0.3);
+}
+.highlight-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.highlight-desc {
+  font-size: 16px;
+  color: rgba(255,255,255,0.6);
+  line-height: 1.6;
+}
+
+/* Feature list */
+.feature-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 800px;
+}
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px 20px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 12px;
+  border-left: 3px solid var(--primary);
+}
+.feature-item:nth-child(even) { border-left-color: var(--accent); }
+.feature-num {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--primary);
+  min-width: 30px;
+}
+.feature-text {
+  font-size: 15px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.6;
+}
+.feature-text strong {
+  color: var(--white);
+}
+
+/* Rank bars */
+.rank-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  width: 100%;
+  max-width: 800px;
+}
+.rank-name {
+  min-width: 120px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: right;
+}
+.rank-bar-bg {
+  flex: 1;
+  height: 28px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+}
+.rank-bar-fill {
+  height: 100%;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: width 1s ease;
+}
+.rank-score {
+  min-width: 40px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* Strategy cards */
+.strategy-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 1000px;
+  margin-bottom: 16px;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+.strategy-num {
+  font-size: 36px;
+  font-weight: 900;
+  background: var(--gradient-1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  min-width: 50px;
+}
+.strategy-content { flex: 1; }
+.strategy-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.strategy-desc { font-size: 14px; color: rgba(255,255,255,0.5); line-height: 1.6; }
+
+/* Architecture diagram */
+.arch-box {
+  background: rgba(108,92,231,0.08);
+  border: 2px solid rgba(108,92,231,0.3);
+  border-radius: 16px;
+  padding: 32px;
+  width: 100%;
+  max-width: 900px;
+}
+.arch-title {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  color: var(--primary-light);
+}
+.arch-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.arch-cell {
+  background: rgba(255,255,255,0.06);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+.arch-cell-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+.arch-cell-item {
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.5;
+}
+.arch-base {
+  background: rgba(255,255,255,0.03);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+  font-size: 14px;
+  color: rgba(255,255,255,0.6);
+  border: 1px dashed rgba(255,255,255,0.15);
+}
+
+/* Roadmap */
+.roadmap {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  width: 100%;
+  max-width: 1100px;
+}
+.roadmap-phase {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  padding: 24px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.roadmap-phase::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+.roadmap-phase:nth-child(1)::before { background: var(--gradient-1); }
+.roadmap-phase:nth-child(2)::before { background: var(--gradient-2); }
+.roadmap-phase:nth-child(3)::before { background: var(--gradient-3); }
+.roadmap-phase:nth-child(4)::before { background: linear-gradient(135deg, #6C5CE7 0%, #00CEC9 100%); }
+.roadmap-version {
+  font-size: 12px;
+  color: var(--primary-light);
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.roadmap-time {
+  font-size: 12px;
+  color: rgba(255,255,255,0.35);
+  margin: 4px 0 12px;
+}
+.roadmap-goal {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.roadmap-features {
+  list-style: none;
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  line-height: 1.8;
+}
+.roadmap-features li::before {
+  content: '›';
+  margin-right: 6px;
+  color: var(--accent);
+}
+
+/* Conclusion slide */
+.conclusion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 900px;
+}
+.conclusion-item {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 20px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 14px;
+  border-left: 4px solid;
+}
+.conclusion-item:nth-child(1) { border-left-color: #FF6B6B; }
+.conclusion-item:nth-child(2) { border-left-color: #FDCB6E; }
+.conclusion-item:nth-child(3) { border-left-color: #00CEC9; }
+.conclusion-item:nth-child(4) { border-left-color: #6C5CE7; }
+.conclusion-item:nth-child(5) { border-left-color: #55EFC4; }
+.conclusion-item:nth-child(6) { border-left-color: #A29BFE; }
+.conclusion-num {
+  font-size: 24px;
+  font-weight: 900;
+  min-width: 36px;
+}
+.conclusion-text {
+  font-size: 15px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.6;
+}
+.conclusion-text strong {
+  color: var(--white);
+  font-weight: 600;
+}
+
+/* Market map */
+.market-map {
+  width: 100%;
+  max-width: 800px;
+  height: 400px;
+  position: relative;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.02);
+  padding: 40px;
+}
+.map-axis-x {
+  position: absolute;
+  bottom: 16px;
+  left: 80px;
+  right: 40px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+}
+.map-axis-y {
+  position: absolute;
+  top: 40px;
+  bottom: 40px;
+  left: 16px;
+  writing-mode: vertical-lr;
+  text-orientation: mixed;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.4);
+}
+.map-point {
+  position: absolute;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  transition: all 0.3s;
+}
+.map-point:hover { transform: translate(-50%, -50%) scale(1.15); z-index: 10; }
+.map-point.t1 { background: rgba(0,206,201,0.25); color: #55EFC4; border: 1px solid rgba(0,206,201,0.4); }
+.map-point.t2 { background: rgba(108,92,231,0.25); color: #A29BFE; border: 1px solid rgba(108,92,231,0.4); }
+.map-point.t3 { background: rgba(253,203,110,0.2); color: #FDCB6E; border: 1px solid rgba(253,203,110,0.3); }
+.map-point.t4 { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.5); border: 1px solid rgba(255,255,255,0.15); }
+.map-opportunity {
+  position: absolute;
+  width: 140px;
+  height: 80px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(0,206,201,0.05);
+  animation: pulse-border 2s ease infinite;
+}
+@keyframes pulse-border {
+  0%, 100% { border-color: var(--accent); box-shadow: 0 0 0 0 rgba(0,206,201,0.2); }
+  50% { border-color: var(--accent-light); box-shadow: 0 0 20px 4px rgba(0,206,201,0.15); }
+}
+
+/* Scroll for longer slides */
+.slide-inner {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+
+/* Keyboard hint */
+.keyboard-hint {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.25);
+  z-index: 100;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.slide.active .card,
+.slide.active .timeline-item,
+.slide.active .feature-item,
+.slide.active .rank-item,
+.slide.active .strategy-card,
+.slide.active .conclusion-item,
+.slide.active .roadmap-phase,
+.slide.active .styled-table tr {
+  animation: fadeInUp 0.5s ease forwards;
+  opacity: 0;
+}
+.slide.active .card:nth-child(1), .slide.active .feature-item:nth-child(1),
+.slide.active .timeline-item:nth-child(1), .slide.active .conclusion-item:nth-child(1),
+.slide.active .roadmap-phase:nth-child(1), .slide.active .rank-item:nth-child(1),
+.slide.active .styled-table tbody tr:nth-child(1) { animation-delay: 0.1s; }
+.slide.active .card:nth-child(2), .slide.active .feature-item:nth-child(2),
+.slide.active .timeline-item:nth-child(2), .slide.active .conclusion-item:nth-child(2),
+.slide.active .roadmap-phase:nth-child(2), .slide.active .rank-item:nth-child(2),
+.slide.active .styled-table tbody tr:nth-child(2) { animation-delay: 0.2s; }
+.slide.active .card:nth-child(3), .slide.active .feature-item:nth-child(3),
+.slide.active .timeline-item:nth-child(3), .slide.active .conclusion-item:nth-child(3),
+.slide.active .roadmap-phase:nth-child(3), .slide.active .rank-item:nth-child(3),
+.slide.active .styled-table tbody tr:nth-child(3) { animation-delay: 0.3s; }
+.slide.active .card:nth-child(4), .slide.active .feature-item:nth-child(4),
+.slide.active .timeline-item:nth-child(4), .slide.active .conclusion-item:nth-child(4),
+.slide.active .roadmap-phase:nth-child(4), .slide.active .rank-item:nth-child(4),
+.slide.active .styled-table tbody tr:nth-child(4) { animation-delay: 0.4s; }
+.slide.active .card:nth-child(5), .slide.active .feature-item:nth-child(5),
+.slide.active .conclusion-item:nth-child(5), .slide.active .rank-item:nth-child(5),
+.slide.active .styled-table tbody tr:nth-child(5) { animation-delay: 0.5s; }
+.slide.active .card:nth-child(6), .slide.active .feature-item:nth-child(6),
+.slide.active .conclusion-item:nth-child(6), .slide.active .rank-item:nth-child(6),
+.slide.active .styled-table tbody tr:nth-child(6) { animation-delay: 0.6s; }
+.slide.active .rank-item:nth-child(7), .slide.active .styled-table tbody tr:nth-child(7) { animation-delay: 0.7s; }
+.slide.active .rank-item:nth-child(8), .slide.active .styled-table tbody tr:nth-child(8) { animation-delay: 0.8s; }
+.slide.active .rank-item:nth-child(9), .slide.active .styled-table tbody tr:nth-child(9) { animation-delay: 0.9s; }
+.slide.active .rank-item:nth-child(10) { animation-delay: 1.0s; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .slide { padding: 40px 30px; }
+  .hero-slide .hero-title { font-size: 40px; }
+  .slide-title { font-size: 32px; }
+  .card-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .card-grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .roadmap { grid-template-columns: repeat(2, 1fr); }
+  .hero-stats { gap: 30px; }
+  .hero-stat .num { font-size: 32px; }
+  .arch-row { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div class="keyboard-hint">← → 键翻页</div>
+
+<div class="slides-container" id="slidesContainer">
+
+<!-- Slide 1: Hero -->
+<div class="slide hero-slide active">
+  <div class="hero-badge">COMPETITIVE ANALYSIS REPORT</div>
+  <div class="hero-title">英语学习产品<br>竞品分析报告</div>
+  <div class="hero-sub">31款产品 × 5大品类 × 12维度深度剖析</div>
+  <div class="hero-stats">
+    <div class="hero-stat">
+      <div class="num">31</div>
+      <div class="label">竞品产品</div>
+    </div>
+    <div class="hero-stat">
+      <div class="num">5</div>
+      <div class="label">品类覆盖</div>
+    </div>
+    <div class="hero-stat">
+      <div class="num">12</div>
+      <div class="label">分析维度</div>
+    </div>
+    <div class="hero-stat">
+      <div class="num">7</div>
+      <div class="label">核心能力缺口</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 2: Industry Evolution -->
+<div class="slide">
+  <div class="section-tag">Chapter 01</div>
+  <div class="slide-title">行业三阶段演进</div>
+  <div class="slide-subtitle">从工具到内容到AI，英语学习正在经历范式级变革</div>
+  <div class="timeline">
+    <div class="timeline-item">
+      <div class="timeline-year">2011-2017</div>
+      <div class="timeline-dot"></div>
+      <div class="timeline-label">1.0 工具时代</div>
+      <div class="timeline-desc">移动互联网+遗忘曲线<br>把单词本装进手机<br>代表：百词斩、墨墨、扇贝</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-year">2017-2023</div>
+      <div class="timeline-dot"></div>
+      <div class="timeline-label">2.0 内容时代</div>
+      <div class="timeline-desc">视频+外教+社区<br>真人教学+海量资源<br>代表：VIPKID、流利说</div>
+    </div>
+    <div class="timeline-item">
+      <div class="timeline-year">2023-Now</div>
+      <div class="timeline-dot"></div>
+      <div class="timeline-label">3.0 AI时代</div>
+      <div class="timeline-desc">GPT大模型+语音识别<br>AI自由对话+个性化<br>代表：Speak、Duolingo Max</div>
+    </div>
+  </div>
+  <div class="highlight-box accent" style="margin-top:32px;">
+    <div class="highlight-title">当前正处于 2.0 → 3.0 的范式切换期</div>
+    <div class="highlight-desc">传统产品面临AI化转型压力，AI原生产品正在建立新竞争壁垒</div>
+  </div>
+</div>
+
+<!-- Slide 3: Five Key Trends -->
+<div class="slide">
+  <div class="section-tag">Chapter 01</div>
+  <div class="slide-title">五大关键趋势</div>
+  <div class="slide-subtitle">正在重塑英语学习市场的核心力量</div>
+  <div class="card-grid card-grid-3" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-icon purple">🤖</div>
+      <div class="card-title">AI对话取代脚本练习</div>
+      <div class="card-desc">Speak的GPT-4自由对话代表口语训练的未来方向，传统脚本化练习正在被淘汰</div>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">🎮</div>
+      <div class="card-title">游戏化成为标配</div>
+      <div class="card-desc">Duolingo证明游戏化是驱动坚持的最有效手段，但"坚持≠习得"</div>
+    </div>
+    <div class="card">
+      <div class="card-icon red">💰</div>
+      <div class="card-title">真人外教成本塌方</div>
+      <div class="card-desc">AI导师可以1/10的价格提供接近真人的1对1对话体验，Cambly/VIPKID模式受冲击</div>
+    </div>
+    <div class="card">
+      <div class="card-icon yellow">🔄</div>
+      <div class="card-title">单一→全技能</div>
+      <div class="card-desc">用户不再满足于"只会背词"或"只会听力"，要求听说读写一体化</div>
+    </div>
+    <div class="card">
+      <div class="card-icon purple">👤</div>
+      <div class="card-title">通用→个性化</div>
+      <div class="card-desc">大模型让每个用户拥有定制化的学习路径和内容成为可能</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 4: Category Comparison -->
+<div class="slide">
+  <div class="section-tag">Chapter 02</div>
+  <div class="slide-title">五大品类市场格局</div>
+  <table class="styled-table">
+    <thead>
+      <tr>
+        <th>品类</th><th>代表产品</th><th>用户规模</th><th>成熟度</th><th>AI化程度</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>国内背词类</td><td>百词斩/扇贝/墨墨</td><td>2亿+</td><td>★★★★★</td><td>★★★☆☆</td></tr>
+      <tr><td>国内听说读类</td><td>流利说/每日英语听力</td><td>1亿+</td><td>★★★★☆</td><td>★★☆☆☆</td></tr>
+      <tr><td>海外综合类</td><td>Duolingo/Babbel</td><td>全球5亿+</td><td>★★★★★</td><td>★★★★☆</td></tr>
+      <tr><td>海外AI口语类</td><td>Speak/ELSA</td><td>数千万</td><td>★★★☆☆</td><td>★★★★★</td></tr>
+      <tr><td>语言交换类</td><td>HelloTalk/Tandem</td><td>5000万+</td><td>★★★★☆</td><td>★★☆☆☆</td></tr>
+      <tr><td>真人外教类</td><td>italki/Cambly/VIPKID</td><td>数千万</td><td>★★★★★</td><td>★☆☆☆☆</td></tr>
+      <tr><td>少儿英语类</td><td>斑马/伴鱼/51Talk</td><td>数千万</td><td>★★★★☆</td><td>★★★☆☆</td></tr>
+      <tr><td>考试工具类</td><td>雅思哥/Quizlet</td><td>3亿+</td><td>★★★★★</td><td>★★★☆☆</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Slide 5: Domestic Products Deep Dive -->
+<div class="slide">
+  <div class="section-tag">Chapter 02</div>
+  <div class="slide-title">国内背词/听说读类对比</div>
+  <table class="styled-table">
+    <thead>
+      <tr>
+        <th>维度</th><th>百词斩</th><th>扇贝</th><th>墨墨</th><th>不背单词</th><th>流利说</th><th>每日英语听力</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>记忆方法</td><td>图片联想</td><td>AI+语境</td><td>遗忘算法</td><td>原声语境</td><td>AI评分</td><td>听力训练</td></tr>
+      <tr><td>记忆深度</td><td>★★☆</td><td>★★★★</td><td>★★★★★</td><td>★★★★</td><td>★★★</td><td>★★★★</td></tr>
+      <tr><td>学习趣味</td><td>★★★★★</td><td>★★★</td><td>★★</td><td>★★★★</td><td>★★★</td><td>★★☆</td></tr>
+      <tr><td>AI能力</td><td>★★☆</td><td>★★★★</td><td>★★★</td><td>★★</td><td>★★★</td><td>★☆</td></tr>
+      <tr><td>考试适配</td><td>★★★</td><td>★★★★★</td><td>★★★</td><td>★★</td><td>★★★</td><td>★★★★</td></tr>
+      <tr><td>用户规模</td><td>★★★★★</td><td>★★★★</td><td>★★★</td><td>★★★</td><td>★★★★</td><td>★★★</td></tr>
+    </tbody>
+  </table>
+  <div class="highlight-box danger" style="margin-top:24px;">
+    <div class="highlight-title">品类核心发现："背词"的天花板</div>
+    <div class="highlight-desc">背词产品解决了"记住单词"的问题，但用户真正需要的是"使用英语"——从"记住"到"使用"之间存在巨大鸿沟</div>
+  </div>
+</div>
+
+<!-- Slide 6: Overseas Products Deep Dive -->
+<div class="slide">
+  <div class="section-tag">Chapter 02</div>
+  <div class="slide-title">海外综合/AI英语学习类对比</div>
+  <table class="styled-table">
+    <thead>
+      <tr>
+        <th>维度</th><th>Duolingo</th><th>Babbel</th><th>Busuu</th><th>Speak</th><th>ELSA</th><th>Cake</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>游戏化</td><td>★★★★★</td><td>★★</td><td>★★★</td><td>★★★</td><td>★★★</td><td>★★★★</td></tr>
+      <tr><td>AI对话</td><td>★★★★</td><td>★★</td><td>★★</td><td>★★★★★</td><td>★★</td><td>★★★</td></tr>
+      <tr><td>发音分析</td><td>★★</td><td>★★</td><td>★★</td><td>★★★</td><td>★★★★★</td><td>★★★</td></tr>
+      <tr><td>课程专业</td><td>★★★</td><td>★★★★★</td><td>★★★★</td><td>★★★</td><td>★★★</td><td>★★</td></tr>
+      <tr><td>免费内容</td><td>★★★★★</td><td>★</td><td>★★★</td><td>★★</td><td>★★</td><td>★★★★</td></tr>
+      <tr><td>品牌力</td><td>★★★★★</td><td>★★★★</td><td>★★★</td><td>★★★</td><td>★★★</td><td>★★</td></tr>
+    </tbody>
+  </table>
+  <div class="highlight-box accent" style="margin-top:24px;">
+    <div class="highlight-title">Speak 是品类标杆</div>
+    <div class="highlight-desc">GPT-4驱动的自由对话代表了AI英语学习的最高水平，但语种少、价格高、课程体系弱</div>
+  </div>
+</div>
+
+<!-- Slide 7: Seven Product Models -->
+<div class="slide">
+  <div class="section-tag">Chapter 03</div>
+  <div class="slide-title">七大产品模式</div>
+  <div class="slide-subtitle">31款产品可归纳为7种底层产品模式</div>
+  <div class="card-grid card-grid-4" style="margin-top:16px;">
+    <div class="card">
+      <div class="card-icon purple">🎮</div>
+      <div class="card-title">游戏化驱动</div>
+      <div class="card-desc">有趣=坚持=学习<br>代表：Duolingo/百词斩<br>坚持率最高，但坚持≠习得</div>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">🧠</div>
+      <div class="card-title">算法驱动</div>
+      <div class="card-desc">科学=高效=记住<br>代表：墨墨/扇贝<br>记忆效果最好，但记住≠会用</div>
+    </div>
+    <div class="card">
+      <div class="card-icon red">💬</div>
+      <div class="card-title">AI对话驱动</div>
+      <div class="card-desc">开口=表达=习得<br>代表：Speak/ELSA<br>最接近真实交流，AI偶有幻觉</div>
+    </div>
+    <div class="card">
+      <div class="card-icon yellow">👨‍🏫</div>
+      <div class="card-title">真人外教驱动</div>
+      <div class="card-desc">真人=最好=有效<br>代表：italki/VIPKID<br>质量天花板高，但贵+不可规模化</div>
+    </div>
+    <div class="card">
+      <div class="card-icon purple">👥</div>
+      <div class="card-title">社区驱动</div>
+      <div class="card-desc">社交=动力=坚持<br>代表：HelloTalk/Busuu<br>免费+有趣，效率低</div>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">📚</div>
+      <div class="card-title">内容驱动</div>
+      <div class="card-desc">大量输入=自然习得<br>代表：每日英语听力/LingQ<br>资源丰富，无输出训练</div>
+    </div>
+    <div class="card">
+      <div class="card-icon red">📝</div>
+      <div class="card-title">考试驱动</div>
+      <div class="card-desc">应试=刚需=付费<br>代表：雅思哥/Quizlet<br>付费意愿强，天花板低</div>
+    </div>
+    <div class="card" style="border-color:rgba(0,206,201,0.4);background:rgba(0,206,201,0.06);">
+      <div class="card-icon cyan">🔑</div>
+      <div class="card-title" style="color:#55EFC4;">关键洞察</div>
+      <div class="card-desc" style="color:rgba(255,255,255,0.7);">没有单一模式能解决所有问题——真正的机会在于用AI将完整学习闭环集成到一个产品中</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 8: Learning Loop -->
+<div class="slide">
+  <div class="section-tag">Chapter 03</div>
+  <div class="slide-title">完整学习闭环 — 当前市场的碎片化困局</div>
+  <div class="arch-box">
+    <div class="arch-title">语言习得完整闭环</div>
+    <div class="arch-row">
+      <div class="arch-cell">
+        <div class="arch-cell-title">输入（听/读）</div>
+        <div class="arch-cell-item">每日英语听力<br>LingQ<br>可可英语</div>
+      </div>
+      <div class="arch-cell">
+        <div class="arch-cell-title">理解（词汇/语法）</div>
+        <div class="arch-cell-item">百词斩/墨墨/扇贝<br>不背单词<br>Quizlet</div>
+      </div>
+      <div class="arch-cell">
+        <div class="arch-cell-title">输出（说/写）</div>
+        <div class="arch-cell-item">Speak/ELSA<br>流利说/趣配音<br>Cambly/italki</div>
+      </div>
+      <div class="arch-cell">
+        <div class="arch-cell-title">反馈（纠正/强化）</div>
+        <div class="arch-cell-item">ELSA发音分析<br>流利说AI评分<br>真人批改</div>
+      </div>
+    </div>
+    <div class="arch-base">间隔重复复习 — 贯穿全流程 ← 遗忘曲线 + 个性化路径</div>
+  </div>
+  <div class="highlight-box accent" style="margin-top:24px;">
+    <div class="highlight-title">每个产品只在一个环节做到极致，但语言习得需要完整闭环</div>
+    <div class="highlight-desc">背词产品缺乏"输出"，听力产品缺乏"输出"，口语产品缺乏"系统输入"，外教产品成本过高<br><strong>真正的机会：用AI将完整学习闭环集成到一个产品中</strong></div>
+  </div>
+</div>
+
+<!-- Slide 9: AI Capability Ranking -->
+<div class="slide">
+  <div class="section-tag">Chapter 04</div>
+  <div class="slide-title">AI能力五维横评</div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;">
+    <div class="rank-item">
+      <div class="rank-name">Speak</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:84%;background:linear-gradient(90deg,#00CEC9,#55EFC4);">语音4·对话5·路径3·生成4·反馈4</div></div>
+      <div class="rank-score">4.2</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">Duolingo Max</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:72%;background:linear-gradient(90deg,#6C5CE7,#A29BFE);">语音3·对话4·路径4·生成4·反馈3</div></div>
+      <div class="rank-score">3.6</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">ELSA Speak</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:68%;background:linear-gradient(90deg,#FF6B6B,#FDCB6E);">语音5·对话2·路径3·生成2·反馈5</div></div>
+      <div class="rank-score">3.4</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">流利说</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:60%;background:linear-gradient(90deg,#6C5CE7,#A29BFE);">语音4·对话2·路径3·生成2·反馈4</div></div>
+      <div class="rank-score">3.0</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">扇贝单词</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:56%;background:linear-gradient(90deg,#6C5CE7,#A29BFE);">语音2·对话1·路径5·生成4·反馈2</div></div>
+      <div class="rank-score">2.8</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">Quizlet</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:56%;background:linear-gradient(90deg,#6C5CE7,#A29BFE);">语音2·对话3·路径3·生成4·反馈2</div></div>
+      <div class="rank-score">2.8</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">百词斩</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:32%;background:rgba(255,255,255,0.15);">语音2·对话1·路径2·生成1·反馈2</div></div>
+      <div class="rank-score">1.6</div>
+    </div>
+    <div class="rank-item">
+      <div class="rank-name">墨墨背单词</div>
+      <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:28%;background:rgba(255,255,255,0.15);">语音1·对话0·路径4·生成1·反馈0</div></div>
+      <div class="rank-score">1.4</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 10: AI Tiers -->
+<div class="slide">
+  <div class="section-tag">Chapter 04</div>
+  <div class="slide-title">AI能力四梯队</div>
+  <div class="card-grid card-grid-2" style="max-width:900px;">
+    <div class="card" style="border-color:rgba(0,206,201,0.4);background:rgba(0,206,201,0.06);">
+      <div style="font-size:13px;color:#55EFC4;font-weight:700;letter-spacing:2px;margin-bottom:8px;">第一梯队 · AI原生</div>
+      <div class="card-title">Speak · Duolingo Max</div>
+      <div class="card-desc">GPT-4/大模型驱动，AI是产品的核心而非辅助</div>
+    </div>
+    <div class="card" style="border-color:rgba(108,92,231,0.4);background:rgba(108,92,231,0.06);">
+      <div style="font-size:13px;color:#A29BFE;font-weight:700;letter-spacing:2px;margin-bottom:8px;">第二梯队 · AI增强</div>
+      <div class="card-title">ELSA · 流利说 · 扇贝 · Quizlet</div>
+      <div class="card-desc">AI在特定维度（发音/记忆/内容生成）有深度应用</div>
+    </div>
+    <div class="card" style="border-color:rgba(253,203,110,0.3);background:rgba(253,203,110,0.04);">
+      <div style="font-size:13px;color:#FDCB6E;font-weight:700;letter-spacing:2px;margin-bottom:8px;">第三梯队 · AI初级</div>
+      <div class="card-title">Busuu · Cake · 斑马 · 伴鱼 · 雅思哥</div>
+      <div class="card-desc">有基础AI功能，但不是核心竞争力</div>
+    </div>
+    <div class="card" style="border-color:rgba(255,255,255,0.1);background:rgba(255,255,255,0.02);">
+      <div style="font-size:13px;color:rgba(255,255,255,0.4);font-weight:700;letter-spacing:2px;margin-bottom:8px;">第四梯队 · AI缺失</div>
+      <div class="card-title">百词斩 · 墨墨 · HelloTalk · Cambly...</div>
+      <div class="card-desc">AI能力很弱或完全缺失，产品形态停留在2.0时代</div>
+    </div>
+  </div>
+  <div class="highlight-box accent" style="margin-top:24px;">
+    <div class="highlight-title">L3 层 AI 能力是品类颠覆性的</div>
+    <div class="highlight-desc">不只提升效率，而是创造真人外教之外的"第三种选择"，成本仅为真人的1/10~1/100</div>
+  </div>
+</div>
+
+<!-- Slide 11: AI Reshaping Industry -->
+<div class="slide">
+  <div class="section-tag">Chapter 04</div>
+  <div class="slide-title">大模型对行业的六大重塑</div>
+  <div class="card-grid card-grid-2" style="max-width:1000px;">
+    <div class="card">
+      <div class="card-icon red">🔄</div>
+      <div class="card-title">脚本→自由对话</div>
+      <div class="card-desc">口语训练从"模仿"升级为"表达"<br><span style="color:rgba(255,255,255,0.35)">流利说 → Speak</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">♾️</div>
+      <div class="card-title">预录→AI动态生成</div>
+      <div class="card-desc">内容无限扩展，成本趋零<br><span style="color:rgba(255,255,255,0.35)">Memrise/趣配音 → AI场景</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon purple">🛤️</div>
+      <div class="card-title">固定→个性化路径</div>
+      <div class="card-desc">每个用户拥有定制化学习旅程<br><span style="color:rgba(255,255,255,0.35)">Babbel → AI路径</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon yellow">🤖</div>
+      <div class="card-title">真人→AI导师</div>
+      <div class="card-desc">价格降至1/10，7×24小时可用<br><span style="color:rgba(255,255,255,0.35)">Cambly/VIPKID → AI导师</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon red">✍️</div>
+      <div class="card-title">人工→AI即时批改</div>
+      <div class="card-desc">反馈即时化、成本趋零<br><span style="color:rgba(255,255,255,0.35)">人工写作批改 → AI即时批改</span></div>
+    </div>
+    <div class="card">
+      <div class="card-icon cyan">🤝</div>
+      <div class="card-title">社区互改→AI+人混合</div>
+      <div class="card-desc">效率+温度兼顾<br><span style="color:rgba(255,255,255,0.35)">Busuu → AI+人混合反馈</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 12: Ten Contradictions -->
+<div class="slide">
+  <div class="section-tag">Chapter 05</div>
+  <div class="slide-title">用户体验的十个关键矛盾</div>
+  <div class="slide-subtitle">谁最能解决这些矛盾，谁就能赢得市场</div>
+  <div class="card-grid card-grid-2" style="max-width:1000px;margin-top:12px;">
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">1. 坚持 vs 效果</div>
+      <div class="card-desc">Duolingo坚持500天仍无法对话 → 游戏化负责"启动"，AI对话负责"效果"</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">2. 记忆 vs 应用</div>
+      <div class="card-desc">墨墨记住9000词仍不会说 → 在记忆基础上加入AI场景对话</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">3. 趣味 vs 深度</div>
+      <div class="card-desc">百词斩有趣但浅，墨墨深但枯燥 → AI生成个性化有趣内容+科学算法</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">4. 自由 vs 结构</div>
+      <div class="card-desc">Speak自由但无课程，Babbel系统但无自由 → 双引擎模式</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">5. 即时 vs 预约</div>
+      <div class="card-desc">Cambly即时但贵，italki便宜需预约 → AI 7×24即时对话</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">6. 免费 vs 付费</div>
+      <div class="card-desc">Duolingo免费但浅，Babbel专业但贵 → 免费AI基础+高级AI付费</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">7. 效率 vs 沉浸</div>
+      <div class="card-desc">百词斩快但忘得快，LingQ慢但记得牢 → AI推荐最适合的沉浸内容</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">8. 个性化 vs 规模化</div>
+      <div class="card-desc">真人个性化但不可规模化 → AI实现"规模化个性化"</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">9. 输入 vs 输出</div>
+      <div class="card-desc">LingQ大量输入无输出，Speak有输出无系统输入 → 完整闭环</div>
+    </div>
+    <div class="card">
+      <div class="card-title" style="font-size:15px;">10. 技术 vs 温度</div>
+      <div class="card-desc">AI高效但无人情味 → "AI高频+真人低频"混合模式</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 13: Pricing Model -->
+<div class="slide">
+  <div class="section-tag">Chapter 06</div>
+  <div class="slide-title">收费模式与AI颠覆</div>
+  <div class="card-grid card-grid-2" style="max-width:1000px;">
+    <div class="card">
+      <div class="card-icon purple">💰</div>
+      <div class="card-title">五种收费模式</div>
+      <div class="card-desc" style="line-height:2;">
+        免费+广告 → Duolingo<br>
+        免费+增值 → ELSA/扇贝/Busuu $5-15/月<br>
+        纯订阅 → Babbel/Rosetta $8-15/月<br>
+        课时包 → italki/VIPKID 数千-数万元<br>
+        单词额度 → 墨墨 ~50元/4500词
+      </div>
+    </div>
+    <div class="card" style="border-color:rgba(0,206,201,0.4);background:rgba(0,206,201,0.06);">
+      <div class="card-icon cyan">⚡</div>
+      <div class="card-title">AI 对商业模式的颠覆</div>
+      <div class="card-desc" style="line-height:2.2;">
+        边际成本：<strong style="color:#55EFC4;">降低99%</strong> ($10-50 → ≈$0.1-1/小时)<br>
+        可用时间：<strong style="color:#55EFC4;">7×24小时</strong> 无限扩展<br>
+        价格天花板：<strong style="color:#55EFC4;">降低90%</strong> ($200 → $20/月)<br>
+        毛利率：<strong style="color:#55EFC4;">30-50% → 70-90%</strong>
+      </div>
+    </div>
+  </div>
+  <div class="highlight-box accent" style="margin-top:24px;">
+    <div class="highlight-title">AI将1对1英语教学从"奢侈品"变为"日用品"</div>
+    <div class="highlight-desc">市场规模可扩大10倍以上 — $10-20/月的AI全技能学习将成为主流价格带</div>
+  </div>
+</div>
+
+<!-- Slide 14: Opportunity Matrix -->
+<div class="slide">
+  <div class="section-tag">Chapter 07</div>
+  <div class="slide-title">竞品定位矩阵与市场空白</div>
+  <div class="market-map">
+    <div class="map-axis-x">学习内容丰富度 →</div>
+    <div class="map-axis-y">AI对话能力 →</div>
+    <div class="map-point t1" style="left:35%;top:15%;">ELSA Speak</div>
+    <div class="map-point t1" style="left:45%;top:8%;">Speak</div>
+    <div class="map-point t2" style="left:65%;top:30%;">Duolingo Max</div>
+    <div class="map-point t3" style="left:40%;top:42%;">流利说</div>
+    <div class="map-point t3" style="left:70%;top:50%;">扇贝</div>
+    <div class="map-point t4" style="left:55%;top:62%;">百词斩</div>
+    <div class="map-point t4" style="left:45%;top:68%;">墨墨</div>
+    <div class="map-point t4" style="left:30%;top:72%;">每日英语听力</div>
+    <div class="map-point t4" style="left:75%;top:75%;">雅思哥</div>
+    <div class="map-point t4" style="left:60%;top:80%;">HelloTalk</div>
+    <div class="map-point t4" style="left:82%;top:82%;">Quizlet</div>
+    <div class="map-opportunity" style="left:55%;top:18%;">Bottle English<br>机会窗口</div>
+  </div>
+</div>
+
+<!-- Slide 15: 7 Capabilities Gap -->
+<div class="slide">
+  <div class="section-tag">Chapter 07</div>
+  <div class="slide-title">最关键的市场空白：7种能力无人整合</div>
+  <div class="slide-subtitle">市场上不存在一款同时具备以下能力的产品</div>
+  <div class="feature-list" style="margin-top:20px;">
+    <div class="feature-item">
+      <div class="feature-num">01</div>
+      <div class="feature-text"><strong>GPT-4级AI自由对话</strong> — Speak的能力：场景化自由对话、角色扮演</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-num">02</div>
+      <div class="feature-text"><strong>游戏化坚持驱动</strong> — Duolingo的能力：连胜记录+经验值+排行榜+联盟赛</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-num">03</div>
+      <div class="feature-text"><strong>科学记忆算法</strong> — 墨墨/扇贝的能力：遗忘曲线+个性化路径+间隔重复</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-num">04</div>
+      <div class="feature-text"><strong>音素级发音分析</strong> — ELSA的能力：音素级分析+母语干扰诊断</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-num">05</div>
+      <div class="feature-text"><strong>真实语境内容</strong> — 不背单词/LingQ的能力：影视原声+分级阅读+可导入内容</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-num">06</div>
+      <div class="feature-text"><strong>社群陪伴机制</strong> — 薄荷阅读的能力：学习群+AI导师+打卡机制</div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-num">07</div>
+      <div class="feature-text"><strong>考试适配能力</strong> — 扇贝/雅思哥的能力：AI题型生成+考试预测+口语测评</div>
+    </div>
+  </div>
+  <div class="highlight-box danger" style="margin-top:20px;">
+    <div class="highlight-title">谁能率先整合7大能力，谁就定义下一代</div>
+  </div>
+</div>
+
+<!-- Slide 16: Bottle English Strategy -->
+<div class="slide">
+  <div class="section-tag">Chapter 08</div>
+  <div class="slide-title">Bottle English 产品架构</div>
+  <div class="arch-box" style="max-width:1000px;">
+    <div class="arch-title">Bottle English — AI驱动的全技能英语学习平台</div>
+    <div class="arch-row">
+      <div class="arch-cell" style="border:1px solid rgba(0,206,201,0.3);background:rgba(0,206,201,0.06);">
+        <div class="arch-cell-title">AI对话引擎</div>
+        <div class="arch-cell-item">· 自由对话<br>· 场景角色<br>· 发音纠正<br>· 即时反馈<br>· AI评分</div>
+      </div>
+      <div class="arch-cell" style="border:1px solid rgba(108,92,231,0.3);background:rgba(108,92,231,0.06);">
+        <div class="arch-cell-title">科学记忆引擎</div>
+        <div class="arch-cell-item">· 遗忘预测<br>· 个性化路径<br>· 词文串学<br>· 题型生成<br>· 间隔重复</div>
+      </div>
+      <div class="arch-cell" style="border:1px solid rgba(253,203,110,0.3);background:rgba(253,203,110,0.06);">
+        <div class="arch-cell-title">沉浸阅读引擎</div>
+        <div class="arch-cell-item">· 真实语境<br>· 分级阅读<br>· 影视学英语<br>· 随身听<br>· 词汇追踪</div>
+      </div>
+      <div class="arch-cell" style="border:1px solid rgba(255,107,107,0.3);background:rgba(255,107,107,0.06);">
+        <div class="arch-cell-title">社群陪伴引擎</div>
+        <div class="arch-cell-item">· 学习群打卡<br>· AI导师鼓励<br>· 排行榜竞争<br>· 成就系统<br>· 学习报告</div>
+      </div>
+    </div>
+    <div class="arch-base" style="margin-top:8px;">大模型 + 语音识别 + 知识图谱 + 游戏化坚持系统 + 考试适配</div>
+  </div>
+</div>
+
+<!-- Slide 17: Roadmap -->
+<div class="slide">
+  <div class="section-tag">Chapter 08</div>
+  <div class="slide-title">分阶段发展路线</div>
+  <div class="roadmap">
+    <div class="roadmap-phase">
+      <div class="roadmap-version">V1.0 MVP</div>
+      <div class="roadmap-time">1-3月</div>
+      <div class="roadmap-goal">验证核心体验</div>
+      <ul class="roadmap-features">
+        <li>AI场景对话</li>
+        <li>科学背词</li>
+        <li>基础游戏化</li>
+      </ul>
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;">参考：Speak+墨墨</div>
+    </div>
+    <div class="roadmap-phase">
+      <div class="roadmap-version">V2.0 增长</div>
+      <div class="roadmap-time">4-6月</div>
+      <div class="roadmap-goal">建立坚持机制</div>
+      <ul class="roadmap-features">
+        <li>连胜/排行榜</li>
+        <li>真实语境内容</li>
+        <li>发音分析</li>
+      </ul>
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;">参考：Duolingo+ELSA</div>
+    </div>
+    <div class="roadmap-phase">
+      <div class="roadmap-version">V3.0 闭环</div>
+      <div class="roadmap-time">7-12月</div>
+      <div class="roadmap-goal">构建完整闭环</div>
+      <ul class="roadmap-features">
+        <li>听说读写一体化</li>
+        <li>社群机制</li>
+        <li>考试适配</li>
+      </ul>
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;">参考：扇贝+薄荷阅读</div>
+    </div>
+    <div class="roadmap-phase">
+      <div class="roadmap-version">V4.0 平台</div>
+      <div class="roadmap-time">12月+</div>
+      <div class="roadmap-goal">扩展商业模式</div>
+      <ul class="roadmap-features">
+        <li>少儿版</li>
+        <li>企业版</li>
+        <li>AI+真人混合</li>
+      </ul>
+      <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;">参考：伴鱼+Busuu</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 18: Differentiation -->
+<div class="slide">
+  <div class="section-tag">Chapter 08</div>
+  <div class="slide-title">五维差异化策略</div>
+  <div style="display:flex;flex-direction:column;gap:14px;width:100%;max-width:900px;">
+    <div class="strategy-card">
+      <div class="strategy-num">01</div>
+      <div class="strategy-content">
+        <div class="strategy-title">vs 背词类（百词斩/扇贝/墨墨）</div>
+        <div class="strategy-desc">不只是记住单词，更要会用单词 — AI对话让每个背过的单词都在真实场景中被激活</div>
+      </div>
+    </div>
+    <div class="strategy-card">
+      <div class="strategy-num">02</div>
+      <div class="strategy-content">
+        <div class="strategy-title">vs AI口语类（Speak/ELSA）</div>
+        <div class="strategy-desc">不只是练口语，更要系统学习 — 科学记忆+课程体系+考试适配</div>
+      </div>
+    </div>
+    <div class="strategy-card">
+      <div class="strategy-num">03</div>
+      <div class="strategy-content">
+        <div class="strategy-title">vs 游戏化类（Duolingo）</div>
+        <div class="strategy-desc">不只是坚持打卡，更要真正习得 — AI对话确保学习效果</div>
+      </div>
+    </div>
+    <div class="strategy-card">
+      <div class="strategy-num">04</div>
+      <div class="strategy-content">
+        <div class="strategy-title">vs 外教类（italki/Cambly）</div>
+        <div class="strategy-desc">不只是便宜替代，更是更好体验 — 7×24即时+无焦虑+个性化</div>
+      </div>
+    </div>
+    <div class="strategy-card">
+      <div class="strategy-num">05</div>
+      <div class="strategy-content">
+        <div class="strategy-title">vs 综合类（可可英语）</div>
+        <div class="strategy-desc">不只是大而全，更要深而精 — AI深度融入每个学习环节</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 19: Core Conclusions -->
+<div class="slide">
+  <div class="section-tag">Chapter 09</div>
+  <div class="slide-title">六条核心结论</div>
+  <div class="conclusion-list">
+    <div class="conclusion-item">
+      <div class="conclusion-num" style="color:#FF6B6B;">1</div>
+      <div class="conclusion-text"><strong>AI自由对话是英语学习的终局形态</strong> — 未来3年，不能提供AI自由对话的产品将被边缘化</div>
+    </div>
+    <div class="conclusion-item">
+      <div class="conclusion-num" style="color:#FDCB6E;">2</div>
+      <div class="conclusion-text"><strong>单一技能产品的天花板已经显现</strong> — 下一代的赢家必须是全技能产品</div>
+    </div>
+    <div class="conclusion-item">
+      <div class="conclusion-num" style="color:#00CEC9;">3</div>
+      <div class="conclusion-text"><strong>游戏化是"入场券"而非"护城河"</strong> — 是必须具备的基础能力，但不是核心竞争力</div>
+    </div>
+    <div class="conclusion-item">
+      <div class="conclusion-num" style="color:#6C5CE7;">4</div>
+      <div class="conclusion-text"><strong>AI导师将颠覆真人外教的定价体系</strong> — $10-20/月的AI全技能学习将成为主流</div>
+    </div>
+    <div class="conclusion-item">
+      <div class="conclusion-num" style="color:#55EFC4;">5</div>
+      <div class="conclusion-text"><strong>最大机会在于"AI全技能一体化"</strong> — 谁率先整合7大能力，谁就定义下一代产品</div>
+    </div>
+    <div class="conclusion-item">
+      <div class="conclusion-num" style="color:#A29BFE;">6</div>
+      <div class="conclusion-text"><strong>中国市场的AI英语学习仍处于早期</strong> — 国内产品AI能力普遍落后，国产大模型提供了基础能力，机会巨大</div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 20: Final -->
+<div class="slide hero-slide" style="background:linear-gradient(135deg, #0c0c1d 0%, #1a1a3e 30%, #1b4332 60%, #00CEC9 100%);">
+  <div class="hero-badge" style="border-color:rgba(0,206,201,0.5);background:rgba(0,206,201,0.15);color:var(--accent-light);">THE OPPORTUNITY</div>
+  <div class="hero-title" style="background:linear-gradient(135deg, #fff 0%, #55EFC4 50%, #00CEC9 100%);-webkit-background-clip:text;">AI全技能一体化<br>是最大的机会</div>
+  <div class="hero-sub" style="max-width:600px;">31款产品中没有一款同时具备AI对话+科学记忆+游戏化+发音分析+真实语境+社群陪伴+考试适配七大能力<br>谁能率先整合，谁就定义下一代</div>
+  <div style="margin-top:40px;font-size:14px;color:rgba(255,255,255,0.3);">Bottle English 竞品分析报告 · 2026.04</div>
+</div>
+
+</div>
+
+<!-- Navigation Bar -->
+<div class="nav-bar">
+  <button class="nav-btn" id="prevBtn" onclick="changeSlide(-1)">←</button>
+  <div class="progress-dots" id="progressDots"></div>
+  <div class="slide-counter" id="slideCounter">1 / 20</div>
+  <button class="nav-btn" id="nextBtn" onclick="changeSlide(1)">→</button>
+</div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+const totalSlides = slides.length;
+let currentSlide = 0;
+
+// Init dots
+const dotsContainer = document.getElementById('progressDots');
+for (let i = 0; i < totalSlides; i++) {
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.onclick = () => goToSlide(i);
+  dotsContainer.appendChild(dot);
+}
+
+function updateSlide() {
+  slides.forEach((s, i) => {
+    s.classList.remove('active', 'prev');
+    if (i === currentSlide) s.classList.add('active');
+    else if (i < currentSlide) s.classList.add('prev');
+  });
+  
+  const dots = document.querySelectorAll('.dot');
+  dots.forEach((d, i) => {
+    d.classList.remove('active', 'visited');
+    if (i === currentSlide) d.classList.add('active');
+    else if (i < currentSlide) d.classList.add('visited');
+  });
+  
+  document.getElementById('slideCounter').textContent = `${currentSlide + 1} / ${totalSlides}`;
+  document.getElementById('prevBtn').disabled = currentSlide === 0;
+  document.getElementById('nextBtn').disabled = currentSlide === totalSlides - 1;
+}
+
+function changeSlide(dir) {
+  const next = currentSlide + dir;
+  if (next >= 0 && next < totalSlides) {
+    currentSlide = next;
+    updateSlide();
+  }
+}
+
+function goToSlide(index) {
+  currentSlide = index;
+  updateSlide();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') changeSlide(1);
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') changeSlide(-1);
+});
+
+// Touch support
+let touchStartX = 0;
+document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', (e) => {
+  const diff = touchStartX - e.changedTouches[0].clientX;
+  if (Math.abs(diff) > 50) changeSlide(diff > 0 ? 1 : -1);
+});
+
+// Animate rank bars on slide entry
+const observer = new MutationObserver(() => {
+  if (slides[8].classList.contains('active')) {
+    document.querySelectorAll('.rank-bar-fill').forEach(bar => {
+      const width = bar.style.width;
+      bar.style.width = '0%';
+      setTimeout(() => { bar.style.width = width; }, 100);
+    });
+  }
+});
+slides.forEach(s => observer.observe(s, { attributes: true, attributeFilter: ['class'] }));
+</script>
+</body>
+</html>

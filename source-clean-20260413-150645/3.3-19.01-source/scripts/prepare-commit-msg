@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PS_SCRIPT="$REPO_ROOT/scripts/prepare-commit-msg.ps1"
+
+if [[ ! -f "$PS_SCRIPT" ]]; then
+  echo "prepare-commit-msg: missing PowerShell script: $PS_SCRIPT" >&2
+  exit 1
+fi
+
+if command -v pwsh >/dev/null 2>&1; then
+  exec pwsh -NoProfile -File "$PS_SCRIPT" "$@"
+fi
+
+if command -v powershell.exe >/dev/null 2>&1; then
+  exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PS_SCRIPT" "$@"
+fi
+
+if command -v powershell >/dev/null 2>&1; then
+  exec powershell -NoProfile -ExecutionPolicy Bypass -File "$PS_SCRIPT" "$@"
+fi
+
+echo "prepare-commit-msg: neither pwsh nor powershell was found in PATH" >&2
+exit 127

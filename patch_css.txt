@@ -1,0 +1,39 @@
+/* Presentation Engine */
+#presentation-area { width: 1920px; height: 1080px; position: relative; z-index: 10; transform-origin: center center; }
+.slide { position: absolute; inset: 0; padding: 40px 60px 80px 60px; display: none; opacity: 0; flex-direction: column; transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1); transform: scale(0.96) translateY(20px); }
+.slide.active { display: flex; opacity: 1; transform: scale(1) translateY(0); pointer-events: all; }
+
+/* Navigation & HUD */
+#hud { position: fixed; bottom: 30px; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: 0 40px; z-index: 100; pointer-events: none; }
+.nav-group { display: flex; gap: 12px; align-items: center; background: rgba(15,23,42,0.8); backdrop-filter: blur(12px); border: 1px solid var(--border); padding: 10px 24px; border-radius: 100px; pointer-events: all; }
+.nav-btn { background: transparent; border: none; color: var(--text-muted); font-size: 18px; cursor: pointer; transition: 0.2s; padding: 4px 8px; border-radius: 4px; }
+.nav-btn:hover { color: var(--text-main); background: rgba(255,255,255,0.1); }
+.nav-dots { display: flex; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 4px; background: var(--border); cursor: pointer; transition: 0.3s; }
+.dot.active { width: 24px; background: var(--cyan); box-shadow: 0 0 10px var(--cyan); }
+#counter { font-size: 14px; font-weight: 600; color: var(--text-muted); font-family: 'Inter', monospace; }
+#progress-bar { position: fixed; top: 0; left: 0; height: 4px; background: linear-gradient(90deg, var(--cyan), var(--purple)); transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1); z-index: 100; box-shadow: 0 0 12px rgba(6,182,212,0.6); }
+
+/* Typography & Layout */
+.tag { display: inline-flex; align-items: center; font-size: 16px; font-weight: 800; padding: 8px 24px; border-radius: 20px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; background: rgba(59,130,246,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.4); }
+.title { font-size: 68px; font-weight: 900; line-height: 1.1; margin-bottom: 12px; background: linear-gradient(135deg, #ffffff 20%, #94a3b8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.subtitle { font-size: 28px; color: var(--text-muted); font-weight: 500; margin-bottom: 24px; }
+.g-text { background: linear-gradient(to right, var(--cyan), var(--purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; flex: 1; min-height: 0; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; flex: 1; min-height: 0; }
+.grid-7-5 { display: grid; grid-template-columns: 7fr 5fr; gap: 32px; flex: 1; min-height: 0; }
+
+/* Bento Box & Glass Cards */
+.bento { background: var(--bg-card); backdrop-filter: blur(16px); border: 1px solid var(--border); border-radius: 24px; padding: 40px; display: flex; flex-direction: column; position: relative; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
+.bento::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 100%); pointer-events: none; }
+.bento-title { font-size: 28px; font-weight: 800; color: var(--text-main); margin-bottom: 24px; display: flex; align-items: center; gap: 14px; }
+.bento-icon { width: 44px; height: 44px; border-radius: 12px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; font-size: 22px; border: 1px solid var(--border); }
+.glow-border { position: relative; }
+.glow-border::after { content:''; position:absolute; inset:-1px; border-radius:25px; background:linear-gradient(45deg, var(--cyan), transparent, var(--purple)); z-index:-1; opacity:0.3; }
+
+/* Feature Lists */
+.f-list { list-style: none; display: flex; flex-direction: column; gap: 24px; }
+.f-item { display: flex; gap: 16px; font-size: 22px; line-height: 1.6; color: var(--text-dark); align-items: flex-start; }
+.f-bullet { color: var(--cyan); font-size: 24px; font-weight: 900; margin-top: 2px; }
+.f-item strong { color: var(--text-main); }

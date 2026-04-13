@@ -1,0 +1,9 @@
+// Chart.js Global Setup
+if(typeof Chart !== 'undefined') {
+  Chart.defaults.color = '#94a3b8';
+  Chart.defaults.font.family = "'Inter', 'Noto Sans SC', sans-serif";
+  Chart.defaults.font.size = 18;
+  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(15, 23, 42, 0.9)';
+  Chart.defaults.plugins.tooltip.titleFont = { size: 24, weight: 'bold' };
+  Chart.defaults.plugins.tooltip.bodyFont = { size: 20 };
+  Chart.defaults.plugins.tooltip.padding = 16;

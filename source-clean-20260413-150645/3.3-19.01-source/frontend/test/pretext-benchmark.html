@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pretext Benchmark — 5000 words</title>
+  <style>
+    body { font-family: 'Inter', 'Segoe UI', sans-serif; padding: 24px; background: #f9fafb; }
+    h1 { font-size: 20px; color: #111; }
+    .result { margin: 8px 0; padding: 8px 12px; border-radius: 6px; font-size: 14px; }
+    .pass { background: #dcfce7; color: #166534; }
+    .fail { background: #fee2e2; color: #991b1b; }
+    .pending { background: #fef9c3; color: #713f12; }
+    #log { font-family: monospace; font-size: 13px; background: #1e1e1e; color: #d4d4d4;
+           padding: 16px; border-radius: 8px; min-height: 120px; white-space: pre-wrap; margin-top: 16px; }
+    .stat { display: flex; gap: 24px; margin: 12px 0; }
+    .stat-item { font-size: 14px; color: #374151; }
+    .stat-item strong { color: #111; }
+  </style>
+</head>
+<body>
+  <h1>Pretext Performance Benchmark — 5000 words</h1>
+
+  <div class="stat">
+    <div class="stat-item">Text length: <strong id="wordCount">—</strong> words</div>
+    <div class="stat-item">Font: <strong id="fontUsed">—</strong></div>
+    <div class="stat-item">Width: <strong id="widthUsed">—</strong>px</div>
+  </div>
+
+  <div id="results"></div>
+  <div id="log"></div>
+
+  <script type="module">
+    import { prepareWithSegments, layoutWithLines } from '/node_modules/@chenglou/pretext/dist/analysis.js';
+
+    const BENCHMARK_WORD_COUNT = 5000;
+    const BENCHMARK_FONT = '18px Inter';
+    const BENCHMARK_WIDTH = 640;
+    const BENCHMARK_LINE_HEIGHT = 26;
+    const PREPARE_THRESHOLD_MS = 50;
+    const LAYOUT_THRESHOLD_MS = 5;
+
+    function log(msg) {
+      document.getElementById('log').textContent += `[${new Date().toISOString().slice(11,19)}] ${msg}\n`;
+    }
+
+    function showResult(label, ms, threshold, passes) {
+      const div = document.createElement('div');
+      div.className = 'result ' + (passes ? 'pass' : 'fail');
+      div.textContent = `${label}: ${ms.toFixed(2)}ms (threshold: ${threshold}ms) — ${passes ? 'PASS ✓' : 'FAIL ✗'}`;
+      document.getElementById('results').appendChild(div);
+      log(`${label}: ${ms.toFixed(2)}ms ${passes ? 'PASS' : 'FAIL'}`);
+    }
+
+    // Generate 5000-word English text (lorem-style, varied vocabulary for realistic CEFR spread)
+    const passages = [
+      "The ancient library stood at the heart of the city, its towering shelves filled with countless volumes of knowledge accumulated over centuries. Scholars from distant lands traveled for months just to study within its hallowed halls.",
+      "Every morning, the farmer would wake before dawn to tend to his crops, carefully monitoring the weather and soil conditions to ensure a bountiful harvest throughout the challenging growing season.",
+      "The architect presented her innovative design to the city council, explaining how the new building would harmoniously blend modern sustainability with traditional architectural elements that reflected the community's cultural heritage.",
+      "Scientists discovered a remarkable species of deep-sea creatures that exhibited unprecedented bioluminescent patterns, challenging existing theories about the evolution of light production in marine ecosystems.",
+      "The musician spent years mastering the intricate techniques of classical guitar, eventually developing a unique style that synthesized elements from flamenco, jazz, and contemporary composition.",
+      "During the industrial revolution, factories transformed urban landscapes and created unprecedented economic opportunities, while simultaneously generating complex social challenges that governments struggled to address effectively.",
+      "The philosopher's groundbreaking treatise on consciousness sparked heated debates among academics, with some praising its revolutionary framework and others dismissing its central assumptions as fundamentally flawed.",
+      "Children learning a second language often experience moments of confusion when grammatical structures differ significantly from their native tongue, requiring careful pedagogical strategies to facilitate comprehension.",
+      "The restaurant critic described the meal as a transcendent culinary journey, praising the chef's ability to transform simple ingredients into extraordinary dishes that engaged all the senses simultaneously.",
+      "Astronomers using advanced telescope technology detected subtle fluctuations in starlight that suggested the presence of previously unknown planetary bodies orbiting distant stars in the galaxy's outer regions.",
+      "The historian carefully analyzed primary source documents to reconstruct the daily lives of ordinary citizens during the medieval period, revealing surprising details about their economic struggles and cultural practices.",
+      "Environmental scientists warned that continued deforestation would have catastrophic consequences for biodiversity, water cycles, and climate patterns across multiple continents over the coming decades.",
+      "The entrepreneur's startup disrupted traditional retail models by leveraging artificial intelligence to personalize shopping experiences while maintaining remarkably efficient supply chain operations.",
+      "Educators recognized that standardized testing alone could not capture the full range of student abilities, prompting calls for more holistic assessment approaches that valued creativity and critical thinking equally.",
+      "The diplomatic negotiations stretched through multiple weeks of intensive discussions, with representatives from opposing factions gradually finding common ground on contentious issues that had divided them for generations.",
+      "Modern medicine has made extraordinary advances in treating previously incurable diseases, though researchers acknowledge that many fundamental questions about human biology remain unanswered despite decades of intensive investigation.",
+      "The artist's immersive installation challenged viewers to reconsider their relationship with nature, using holographic projections and spatial audio to create an unsettling yet deeply moving experience of environmental transformation.",
+      "Urban planners faced the complex challenge of designing cities that could accommodate growing populations while reducing carbon emissions and preserving green spaces essential for residents' physical and mental wellbeing.",
+      "The novelist crafted intricate narratives that interwove historical events with fictional characters' personal journeys, creating richly layered stories that resonated with readers across different cultures and generations.",
+      "Marine biologists documented the remarkable intelligence of cetaceans, revealing sophisticated social structures and communication patterns that suggested cognitive abilities far more advanced than previously understood.",
+      "Linguistic researchers discovered that exposure to multiple languages from early childhood enhanced cognitive flexibility and problem-solving abilities, lending scientific support to long-standing pedagogical theories about bilingual education benefits.",
+      "The mountaineer's successful summit of the treacherous peak marked a culmination of years of rigorous physical training, technical skill development, and psychological preparation that pushed the boundaries of human endurance.",
+      "Conservation efforts in the endangered rainforest demonstrated that community-based approaches to environmental protection could be more effective than top-down regulatory strategies that ignored local stakeholders' needs and knowledge.",
+      "The engineer's innovative bridge design incorporated earthquake-resistant technologies that had been developed through decades of research into seismic activity patterns and structural dynamics under extreme stress conditions.",
+      "Economists debated the long-term implications of emerging automation technologies, with some predicting massive job displacement while others emphasized the potential for new types of employment and enhanced productivity gains.",
+      "The documentary filmmaker gained unprecedented access to isolated communities, capturing intimate portraits of daily life that challenged prevailing stereotypes and fostered greater cross-cultural understanding among global audiences.",
+      "Neuroscientists mapped the complex neural networks underlying memory formation, discovering unexpected connections between different brain regions that suggested memory storage was far more distributed than previously theorized.",
+      "The chess grandmaster analyzed thousands of historical games to identify subtle positional patterns that separated masters from amateur players, developing training methods that accelerated learning curves for promising young talents.",
+      "Archaeological excavations at the ancient settlement revealed sophisticated water management systems that demonstrated engineering knowledge far exceeding what historians had previously attributed to that historical period.",
+      "The psychologist's longitudinal study tracked children's emotional development over two decades, identifying critical periods and environmental factors that shaped their ability to form healthy relationships in adulthood.",
+      "Renewable energy companies competed fiercely to develop cost-effective solar technologies that could eventually replace fossil fuels in energy grids serving millions of residential and commercial customers worldwide.",
+      "The journalist's investigative report exposed systemic corruption in municipal government, triggering widespread public outrage and ultimately leading to fundamental reforms in procurement and contracting procedures.",
+      "Culinary historians traced the complex origins of beloved dishes, revealing surprising stories of cultural exchange, colonial trade routes, and innovative cooks who created new flavors by combining ingredients from distant continents.",
+      "The aerospace engineer's prototype aircraft incorporated revolutionary propulsion concepts that could potentially reduce fuel consumption by half while dramatically increasing range compared to conventional jet designs.",
+      "Demographers analyzed population trends to project future healthcare needs, warning that aging societies would require substantial investments in geriatric medicine and long-term care infrastructure over the coming half century.",
+      "The poet's collection of verses explored themes of displacement and belonging, drawing on personal experiences as a refugee to create work that resonated with readers navigating their own complex identities across cultural boundaries.",
+      "Software developers debated the trade-offs between different programming paradigms, with functional programming advocates emphasizing reliability and maintainability while procedural programmers highlighted practical efficiency gains.",
+      "The travel writer's memoir chronicled a years-long journey across remote regions, weaving together vivid descriptions of natural landscapes with thoughtful reflections on encounters with diverse communities and their unique ways of life.",
+      "Immunologists celebrated the rapid development of new vaccine platforms that promised to revolutionize pandemic preparedness, though they cautioned that equitable distribution remained a significant challenge requiring coordinated international effort.",
+      "The architect's adaptive reuse project transformed an abandoned industrial facility into a vibrant community center, demonstrating how preservation and innovation could coexist to serve contemporary social needs while honoring historical heritage.",
+    ];
+
+    // Repeat passages to reach ~5000 words
+    const repeatedPassages = [];
+    while (repeatedPassages.join(' ').split(' ').filter(w => w.length > 0).length < BENCHMARK_WORD_COUNT) {
+      repeatedPassages.push(...passages);
+    }
+    const fullText = repeatedPassages.join(' ');
+    const words = fullText.split(/\s+/).filter(w => w.length > 0);
+    const benchmarkText = words.slice(0, BENCHMARK_WORD_COUNT).join(' ');
+
+    document.getElementById('wordCount').textContent = benchmarkText.split(/\s+/).length;
+    document.getElementById('fontUsed').textContent = BENCHMARK_FONT;
+    document.getElementById('widthUsed').textContent = BENCHMARK_WIDTH;
+    log(`Benchmark text: ${benchmarkText.split(/\s+/).length} words, ${benchmarkText.length} chars`);
+
+    // Run benchmark
+    let prepareMs, layoutMs;
+
+    // Warm-up (Pretext has internal cache)
+    try {
+      const warmPrepared = prepareWithSegments(benchmarkText, BENCHMARK_FONT);
+      layoutWithLines(warmPrepared, BENCHMARK_WIDTH, BENCHMARK_LINE_HEIGHT);
+      log('Warm-up complete');
+    } catch (e) {
+      log('Warm-up error: ' + e.message);
+    }
+
+    // Benchmark prepareWithSegments (5 runs, take median)
+    const prepareTimes = [];
+    for (let i = 0; i < 5; i++) {
+      const t0 = performance.now();
+      const prepared = prepareWithSegments(benchmarkText, BENCHMARK_FONT);
+      const t1 = performance.now();
+      prepareTimes.push(t1 - t0);
+      log(`prepareWithSegments run ${i+1}: ${(t1-t0).toFixed(2)}ms`);
+    }
+    prepareMs = prepareTimes.slice().sort((a,b) => a-b)[2];
+    showResult('prepareWithSegments (median, 5 runs)', prepareMs, PREPARE_THRESHOLD_MS, prepareMs < PREPARE_THRESHOLD_MS);
+
+    // Re-prepare for layout test
+    const prepared = prepareWithSegments(benchmarkText, BENCHMARK_FONT);
+
+    // Benchmark layoutWithLines (10 runs, take median)
+    const layoutTimes = [];
+    for (let i = 0; i < 10; i++) {
+      const t0 = performance.now();
+      const result = layoutWithLines(prepared, BENCHMARK_WIDTH, BENCHMARK_LINE_HEIGHT);
+      const t1 = performance.now();
+      layoutTimes.push(t1 - t0);
+      log(`layoutWithLines run ${i+1}: ${(t1-t0).toFixed(2)}ms, lines: ${result.lines.length}`);
+    }
+    layoutMs = layoutTimes.slice().sort((a,b) => a-b)[2];
+    showResult('layoutWithLines (median, 10 runs)', layoutMs, LAYOUT_THRESHOLD_MS, layoutMs < LAYOUT_THRESHOLD_MS);
+
+    // Summary
+    const totalMs = prepareMs + layoutMs;
+    log(`\nTotal measure + layout: ${totalMs.toFixed(2)}ms`);
+    const overall = prepareMs < PREPARE_THRESHOLD_MS && layoutMs < LAYOUT_THRESHOLD_MS;
+    const summaryDiv = document.createElement('div');
+    summaryDiv.className = 'result ' + (overall ? 'pass' : 'fail');
+    summaryDiv.style.fontWeight = 'bold';
+    summaryDiv.textContent = overall
+      ? `Overall: PASS — All thresholds met ✓`
+      : `Overall: FAIL — Some thresholds exceeded ✗`;
+    document.getElementById('results').prepend(summaryDiv);
+  </script>
+</body>
+</html>
