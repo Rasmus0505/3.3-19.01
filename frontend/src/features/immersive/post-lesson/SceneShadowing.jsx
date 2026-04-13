@@ -98,6 +98,7 @@ export function SceneShadowing({ lesson, apiClient, accessToken, onComplete, onS
           currentSentence.text_en,
           currentSentence.idx != null ? String(currentSentence.idx) : undefined,
           lesson?.id != null ? String(lesson.id) : undefined,
+          accessToken,
         );
         setSoeResult(result);
         if (result?.ok) {

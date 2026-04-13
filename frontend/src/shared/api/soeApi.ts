@@ -59,6 +59,7 @@ export async function assessSentence(
   refText: string,
   sentenceId?: string,
   lessonId?: string,
+  accessToken?: string,
 ): Promise<SOEResult> {
   const formData = new FormData();
   formData.append("audio_file", audioBlob, "recording.webm");
@@ -73,7 +74,7 @@ export async function assessSentence(
   const resp = await client("/api/soe/assess", {
     method: "POST",
     body: formData,
-  });
+  }, accessToken);
 
   return parseResponse(resp) as SOEResult;
 }
@@ -81,6 +82,7 @@ export async function assessSentence(
 export async function getSoeHistory(
   client: ReturnType<typeof import("./client").createApiClient>,
   params?: SOEHistoryParams,
+  accessToken?: string,
 ): Promise<SOEResult[]> {
   const searchParams = new URLSearchParams();
   if (params?.lesson_id) {
@@ -96,7 +98,7 @@ export async function getSoeHistory(
   const query = searchParams.toString();
   const path = query ? `/api/soe/history?${query}` : "/api/soe/history";
 
-  const resp = await client(path, { method: "GET" });
+  const resp = await client(path, { method: "GET" }, accessToken);
   const data = (await parseResponse(resp)) as { results?: SOEResult[] };
   return Array.isArray(data.results) ? data.results : [];
 }

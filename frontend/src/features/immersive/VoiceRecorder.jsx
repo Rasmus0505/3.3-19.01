@@ -66,6 +66,7 @@ export function VoiceRecorder({ refText, lessonId, sentenceIdx, accessToken, api
             refText.trim(),
             sentenceIdx != null ? String(sentenceIdx) : undefined,
             lessonId != null ? String(lessonId) : undefined,
+            accessToken,
           );
 
           if (result?.ok && String(result.user_text || "").trim()) {

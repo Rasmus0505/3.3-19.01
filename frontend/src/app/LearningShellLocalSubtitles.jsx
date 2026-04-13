@@ -763,7 +763,7 @@ export function LearningShellLocalSubtitles() {
               <ImmersiveLessonPage
                 lesson={currentLesson}
                 accessToken={accessToken}
-                apiClient={api}
+                apiClient={(path, options = {}) => api(path, options, accessToken)}
                 onProgressSynced={refreshCurrentLesson}
                 immersiveActive={immersiveLayoutActive}
                 onExitImmersive={handleExitImmersive}

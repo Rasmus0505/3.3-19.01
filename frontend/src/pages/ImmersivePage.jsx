@@ -88,7 +88,7 @@ export default function ImmersivePage() {
     <ImmersiveLessonPage
       lesson={lesson}
       accessToken={accessToken}
-      apiClient={api}
+      apiClient={(path, options = {}) => api(path, options, accessToken)}
       immersiveActive={true}
       onExitImmersive={handleBack}
     />
