@@ -100,6 +100,7 @@ export function ChatMessage({ message, accessToken, apiClient }) {
   const isUser = message.role === "user";
   const [showSoeDetail, setShowSoeDetail] = useState(false);
   const avatarSrc = resolveAvatarSrc(message);
+  const speakerName = isUser ? "You" : "AI Teacher";
 
   if (isUser) {
     return (
@@ -108,7 +109,8 @@ export function ChatMessage({ message, accessToken, apiClient }) {
           <div className="chat-msg__avatar">
             <img src={avatarSrc} alt="You" className="chat-msg__avatar-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
           </div>
-          <div className="chat-msg__user-body">
+          <div className="chat-msg__body chat-msg__body--user">
+            <span className="chat-msg__meta">{speakerName}</span>
             <div className="chat-msg__bubble chat-msg__bubble--user">
               <p className="chat-msg__text">{message.content}</p>
             </div>
@@ -129,9 +131,11 @@ export function ChatMessage({ message, accessToken, apiClient }) {
       <div className="chat-msg__avatar">
         <img src={avatarSrc} alt="AI" className="chat-msg__avatar-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
       </div>
-      <div className="chat-msg__ai-body">
-        <span className="chat-msg__ai-name">AI Teacher</span>
-        <p className="chat-msg__text">{message.content}</p>
+      <div className="chat-msg__body chat-msg__body--ai">
+        <span className="chat-msg__meta">{speakerName}</span>
+        <div className="chat-msg__bubble chat-msg__bubble--ai">
+          <p className="chat-msg__text">{message.content}</p>
+        </div>
         {accessToken && apiClient && (
           <div className="chat-msg__actions">
             <TtsButton text={message.content} accessToken={accessToken} apiClient={apiClient} />
@@ -148,12 +152,14 @@ export function ChatTypingIndicator() {
       <div className="chat-msg__avatar">
         <img src={resolvePublicAssetUrl("/avatars/teacher.png")} alt="AI" className="chat-msg__avatar-img" onError={(e) => { e.currentTarget.style.display = "none"; }} />
       </div>
-      <div className="chat-msg__ai-body">
-        <span className="chat-msg__ai-name">AI Teacher</span>
-        <div className="chat-typing-dots">
-          <span style={{ animationDelay: "0ms" }} />
-          <span style={{ animationDelay: "160ms" }} />
-          <span style={{ animationDelay: "320ms" }} />
+      <div className="chat-msg__body chat-msg__body--ai">
+        <span className="chat-msg__meta">AI Teacher</span>
+        <div className="chat-msg__bubble chat-msg__bubble--ai chat-msg__bubble--typing">
+          <div className="chat-typing-dots">
+            <span style={{ animationDelay: "0ms" }} />
+            <span style={{ animationDelay: "160ms" }} />
+            <span style={{ animationDelay: "320ms" }} />
+          </div>
         </div>
       </div>
     </div>

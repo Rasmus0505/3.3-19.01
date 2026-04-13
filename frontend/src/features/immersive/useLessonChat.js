@@ -1,5 +1,71 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { parseResponse } from "../../shared/api/client";
+
+const CHAT_STORAGE_KEY_PREFIX = "immersive-lesson-chat-v1";
+
+function buildStorageKey(lessonId) {
+  return `${CHAT_STORAGE_KEY_PREFIX}:${lessonId}`;
+}
+
+function normalizeStoredMessage(message, index) {
+  if (!message || typeof message !== "object") return null;
+
+  const role = message.role === "assistant" ? "assistant" : message.role === "user" ? "user" : "";
+  const content = String(message.content || "").trim();
+
+  if (!role || !content) return null;
+
+  return {
+    id: String(message.id || `${role}-${index + 1}`),
+    role,
+    content,
+    inputMode: message.inputMode === "voice" ? "voice" : "text",
+    avatarKey: String(message.avatarKey || (role === "user" ? "user" : "teacher")),
+    soeData: message.soeData && typeof message.soeData === "object" ? message.soeData : null,
+  };
+}
+
+function readStoredMessages(lessonId) {
+  if (!lessonId || typeof window === "undefined" || !window.localStorage) {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(buildStorageKey(lessonId));
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.map(normalizeStoredMessage).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredMessages(lessonId, messages) {
+  if (!lessonId || typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(buildStorageKey(lessonId), JSON.stringify(messages));
+  } catch {
+    // Ignore storage quota or privacy-mode errors and keep chat usable.
+  }
+}
+
+function clearStoredMessages(lessonId) {
+  if (!lessonId || typeof window === "undefined" || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(buildStorageKey(lessonId));
+  } catch {
+    // Ignore localStorage failures and clear in-memory state only.
+  }
+}
 
 export function useLessonChat({ lessonId, accessToken, apiClient }) {
   const [messages, setMessages] = useState([]);
@@ -12,9 +78,23 @@ export function useLessonChat({ lessonId, accessToken, apiClient }) {
     setMessages((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
       messagesRef.current = next;
+      writeStoredMessages(lessonId, next);
       return next;
     });
-  }, []);
+  }, [lessonId]);
+
+  useEffect(() => {
+    if (abortRef.current) {
+      abortRef.current.abort?.();
+      abortRef.current = null;
+    }
+
+    const restoredMessages = readStoredMessages(lessonId);
+    messagesRef.current = restoredMessages;
+    setMessages(restoredMessages);
+    setError("");
+    setIsLoading(false);
+  }, [lessonId]);
 
   const sendMessage = useCallback(
     async (text, options = {}) => {
@@ -114,10 +194,16 @@ export function useLessonChat({ lessonId, accessToken, apiClient }) {
   );
 
   const clearHistory = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort?.();
+      abortRef.current = null;
+    }
     messagesRef.current = [];
+    clearStoredMessages(lessonId);
     setMessages([]);
     setError("");
-  }, []);
+    setIsLoading(false);
+  }, [lessonId]);
 
   return {
     messages,

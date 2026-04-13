@@ -2088,6 +2088,8 @@ export function ImmersiveLessonPage({
       explanationProps={{
         sentence: currentSentence,
         explanation: showExplanation ? currentExplanation : null,
+        previousSentence: previousSentence?.text_en || "",
+        previousSentenceTranslation: previousSentence?.text_zh || "",
         audioUrl: showExplanation ? explanationAudioUrl : null,
         audioRef: explanationAudioRef,
         isAudioPlaying: isExplanationPlaying,

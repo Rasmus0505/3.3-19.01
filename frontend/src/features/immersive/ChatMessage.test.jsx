@@ -42,7 +42,7 @@ describe("ChatMessage", () => {
   });
 
   it("renders assistant avatar with public asset path", () => {
-    render(
+    const { container } = render(
       <ChatMessage
         message={{
           id: "assistant-1",
@@ -57,5 +57,41 @@ describe("ChatMessage", () => {
 
     const avatar = screen.getByAltText("AI");
     expect(avatar.getAttribute("src")).toContain("/avatars/teacher.png");
+    expect(screen.getByText("AI Teacher")).toBeTruthy();
+    expect(container.querySelector(".chat-msg__bubble--ai")).toBeTruthy();
+  });
+
+  it("renders user and assistant messages as distinct chat bubbles", () => {
+    const { container, rerender } = render(
+      <ChatMessage
+        message={{
+          id: "user-2",
+          role: "user",
+          content: "I only caught the last part.",
+          avatarKey: "user",
+        }}
+        accessToken=""
+        apiClient={null}
+      />,
+    );
+
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(container.querySelector(".chat-msg__bubble--user")).toBeTruthy();
+
+    rerender(
+      <ChatMessage
+        message={{
+          id: "assistant-2",
+          role: "assistant",
+          content: "Try listening again for the transition phrase.",
+          avatarKey: "teacher",
+        }}
+        accessToken=""
+        apiClient={null}
+      />,
+    );
+
+    expect(screen.getByText("AI Teacher")).toBeTruthy();
+    expect(container.querySelector(".chat-msg__bubble--ai")).toBeTruthy();
   });
 });

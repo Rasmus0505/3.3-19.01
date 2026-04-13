@@ -3,8 +3,59 @@ import { describe, expect, it, vi } from "vitest";
 
 import { useLessonChat } from "./useLessonChat";
 
+const storageKey = (lessonId) => `immersive-lesson-chat-v1:${lessonId}`;
+
 describe("useLessonChat", () => {
+  it("hydrates stored history per lesson and switches cleanly between lessons", () => {
+    window.localStorage.clear();
+    window.localStorage.setItem(
+      storageKey(42),
+      JSON.stringify([
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Let's start with the key sentence.",
+          avatarKey: "teacher",
+        },
+      ]),
+    );
+    window.localStorage.setItem(
+      storageKey(77),
+      JSON.stringify([
+        {
+          id: "user-1",
+          role: "user",
+          content: "I think the speaker sounds nervous.",
+          avatarKey: "user",
+        },
+      ]),
+    );
+
+    const apiClient = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ lessonId }) => useLessonChat({ lessonId, accessToken: "token", apiClient }),
+      { initialProps: { lessonId: 42 } },
+    );
+
+    expect(result.current.messages).toMatchObject([
+      {
+        role: "assistant",
+        content: "Let's start with the key sentence.",
+      },
+    ]);
+
+    rerender({ lessonId: 77 });
+
+    expect(result.current.messages).toMatchObject([
+      {
+        role: "user",
+        content: "I think the speaker sounds nervous.",
+      },
+    ]);
+  });
+
   it("appends a scored voice message only after successful SOE result", async () => {
+    window.localStorage.clear();
     const apiClient = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -64,5 +115,44 @@ describe("useLessonChat", () => {
       }),
       "token",
     );
+    expect(JSON.parse(window.localStorage.getItem(storageKey(42)) || "[]")).toMatchObject([
+      {
+        role: "user",
+        content: "I am good today",
+        inputMode: "voice",
+      },
+      {
+        role: "assistant",
+        content: "Tell me more about that scene.",
+      },
+    ]);
+  });
+
+  it("clears in-memory and persisted chat history together", async () => {
+    window.localStorage.clear();
+    window.localStorage.setItem(
+      storageKey(42),
+      JSON.stringify([
+        {
+          id: "assistant-1",
+          role: "assistant",
+          content: "Stored reply",
+          avatarKey: "teacher",
+        },
+      ]),
+    );
+
+    const { result } = renderHook(() =>
+      useLessonChat({ lessonId: 42, accessToken: "token", apiClient: vi.fn() }),
+    );
+
+    expect(result.current.messages).toHaveLength(1);
+
+    await act(async () => {
+      result.current.clearHistory();
+    });
+
+    expect(result.current.messages).toEqual([]);
+    expect(window.localStorage.getItem(storageKey(42))).toBeNull();
   });
 });

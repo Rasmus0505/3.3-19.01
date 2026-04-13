@@ -27,15 +27,37 @@ function shouldMaskKeyword(keyword, expectedTokens, wordStatuses) {
 export default function ExplanationSidebarContent({
   sentence,
   explanation,
+  previousSentence,
+  previousSentenceTranslation,
   wordStatuses,
   expectedTokens,
   sentenceTypingDone,
   showKeywordHints,
 }) {
+  const previousSentenceText = previousSentence || "(当前是第一句，暂时没有上一句字幕)";
+  const previousSentenceZhText = previousSentenceTranslation || "(暂无上一句翻译)";
+
+  const previousSentenceBlock = (
+    <section className="immersive-explanation-panel__context-card">
+      <div className="immersive-explanation-panel__context-head">
+        <span className="immersive-explanation-panel__context-kicker">Previous subtitle</span>
+        <span className="immersive-explanation-panel__context-badge">上一句</span>
+      </div>
+      <p className="immersive-explanation-panel__context-line immersive-explanation-panel__context-line--en">
+        {previousSentenceText}
+      </p>
+      <p className="immersive-explanation-panel__context-line immersive-explanation-panel__context-line--zh">
+        {previousSentenceZhText}
+      </p>
+    </section>
+  );
+
   // State 3: Typing done — show full explanation (without original sentence text)
   if (sentenceTypingDone && explanation) {
     return (
       <div className="immersive-explanation-panel">
+        {previousSentenceBlock}
+
         <div className="immersive-explanation-panel__header">
           <div className="immersive-explanation-panel__header-copy">
             <p className="immersive-explanation-panel__eyebrow">Key Expressions</p>
@@ -90,6 +112,8 @@ export default function ExplanationSidebarContent({
   if (showKeywordHints && explanation?.key_explanations?.length > 0) {
     return (
       <div className="immersive-explanation-panel">
+        {previousSentenceBlock}
+
         <div className="immersive-explanation-panel__header">
           <div className="immersive-explanation-panel__header-copy">
             <p className="immersive-explanation-panel__eyebrow">Keyword Hints</p>
@@ -120,6 +144,8 @@ export default function ExplanationSidebarContent({
   // State 1: Typing in progress, no hints — show empty placeholder
   return (
     <div className="immersive-explanation-panel">
+      {previousSentenceBlock}
+
       <div className="immersive-explanation-panel__empty-state">
         <div className="immersive-explanation-panel__empty-state-icon">
           <BookOpen className="size-5" style={{ opacity: 0.4 }} />
