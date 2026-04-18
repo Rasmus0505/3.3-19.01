@@ -104,52 +104,6 @@ function renderWordSlots({
   return <div className="immersive-word-row immersive-word-row--multi-line-left">{expectedTokens.map(renderToken)}</div>;
 }
 
-function renderWordbookSentenceTokens({
-  tokens,
-  selectedIndexes,
-  successIndexes,
-  cefrMap,
-  cefrAnalyzerRef,
-  cefrLevel,
-  lookupCefrLevelFromMap,
-  onTokenClick,
-  busy,
-}) {
-  if (!Array.isArray(tokens) || tokens.length === 0) return null;
-
-  return (
-    <div className="immersive-sentence-card__token-wrap">
-      {tokens.map((token, tokenIndex) => {
-        const trimmedToken = String(token || "").trim();
-        const selected = Array.isArray(selectedIndexes) && selectedIndexes.includes(tokenIndex);
-        const success = Array.isArray(successIndexes) && successIndexes.includes(tokenIndex);
-        const cefrClass = computeCefrClassName(
-          lookupCefrLevelFromMap(cefrMap, token, cefrAnalyzerRef.current),
-          cefrLevel,
-        );
-
-        return (
-          <button
-            key={`${trimmedToken || "token"}-${tokenIndex}`}
-            type="button"
-            data-wordbook-token-index={tokenIndex}
-            className={cn(
-              "immersive-wordbook-token",
-              cefrClass,
-              selected ? "immersive-wordbook-token--selected" : "",
-              success ? "wordbook-token--success" : "",
-            )}
-            onClick={() => onTokenClick?.(tokenIndex)}
-            disabled={busy || !trimmedToken}
-          >
-            {trimmedToken || token}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 const TypingPanel = forwardRef(function TypingPanel(
   {
     sentenceCount,
@@ -168,21 +122,6 @@ const TypingPanel = forwardRef(function TypingPanel(
     wordRevealComparableIndices,
     showPreviousSentenceBlock,
     canRenderInteractiveWordbook,
-    wordbookSentence,
-    wordbookSentenceTokens,
-    wordbookSelectedTokenIndexes,
-    wordbookBusy,
-    wordbookSuccessAnimationIndexes,
-    handleWordbookTokenClick,
-    requestInteractiveWordbookSentencePlayback,
-    wordbookSentencePlaybackLabel,
-    collectWordbookEntry,
-    selectedWordbookTokens,
-    selectedWordbookStart,
-    selectedWordbookEnd,
-    selectedWordbookText,
-    wordbookSuccessMessage,
-    wordbookSentenceZh,
     soeTargetSentence,
     previousSentence,
     requestPreviousSentencePlayback,
@@ -247,76 +186,6 @@ const TypingPanel = forwardRef(function TypingPanel(
           sentenceTypingDone,
         })}
       </div>
-
-      {canRenderInteractiveWordbook ? (
-        <section className="immersive-wordbook-panel" aria-label="生词本选择区">
-          <div className="immersive-wordbook-panel__head">
-            <div className="immersive-wordbook-panel__title-wrap">
-              <span className="immersive-wordbook-panel__eyebrow">Wordbook</span>
-              <p className="immersive-wordbook-panel__title">
-                {wordbookSentencePlaybackLabel === "播放本句" ? "本句选词" : "上一句选词"}
-              </p>
-            </div>
-            <div className="immersive-wordbook-panel__actions">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => requestInteractiveWordbookSentencePlayback?.("wordbook_sentence_panel")}
-              >
-                <Volume2 className="size-4" />
-                {wordbookSentencePlaybackLabel}
-              </Button>
-              {wordbookSelectedTokenIndexes.length > 0 ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={wordbookBusy}
-                  onClick={() =>
-                    collectWordbookEntry?.({
-                      sentence: wordbookSentence,
-                      entryType: selectedWordbookTokens.length >= 2 ? "phrase" : "word",
-                      entryText: selectedWordbookText,
-                      startTokenIndex: selectedWordbookStart,
-                      endTokenIndex: selectedWordbookEnd,
-                    })
-                  }
-                >
-                  {wordbookBusy ? "加入中..." : "加入生词本"}
-                </Button>
-              ) : null}
-            </div>
-          </div>
-
-          {renderWordbookSentenceTokens({
-            tokens: wordbookSentenceTokens,
-            selectedIndexes: wordbookSelectedTokenIndexes,
-            successIndexes: wordbookSuccessAnimationIndexes,
-            cefrMap: wordbookSentenceCefrMap,
-            cefrAnalyzerRef,
-            cefrLevel,
-            lookupCefrLevelFromMap,
-            onTokenClick: handleWordbookTokenClick,
-            busy: wordbookBusy,
-          })}
-
-          <div className="immersive-wordbook-panel__footer">
-            <p className="immersive-wordbook-panel__hint">
-              点击一个词选择单词；再点另一个词，自动选择首尾之间的连续短语。
-            </p>
-            {selectedWordbookText ? (
-              <p className="immersive-wordbook-panel__selection">
-                已选：{selectedWordbookText}
-                {wordbookSentenceZh ? ` · ${wordbookSentenceZh}` : ""}
-              </p>
-            ) : (
-              <p className="immersive-wordbook-panel__selection">
-                {wordbookSuccessMessage || "未选择词条"}
-              </p>
-            )}
-          </div>
-        </section>
-      ) : null}
 
       {fullscreenStudyMode ? (
         <section className="immersive-typing__fullscreen-context" aria-label="全屏学习字幕参考">

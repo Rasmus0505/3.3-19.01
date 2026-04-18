@@ -1,4 +1,8 @@
-import { BookOpenText, Lightbulb, BookOpen } from "lucide-react";
+import { BookOpenText, Lightbulb, BookOpen, Volume2 } from "lucide-react";
+
+import { Button } from "../../shared/ui";
+import { cn } from "../../lib/utils";
+import { computeCefrClassName } from "./CefrBadge";
 
 /**
  * Mask a word for hint display: show first letter + underscores.
@@ -29,6 +33,26 @@ export default function ExplanationSidebarContent({
   explanation,
   previousSentence,
   previousSentenceTranslation,
+  wordbookSentenceHeading,
+  wordbookSentenceTokens,
+  wordbookSelectedTokenIndexes,
+  wordbookSuccessAnimationIndexes,
+  wordbookSentenceCefrMap,
+  cefrAnalyzerRef,
+  cefrLevel,
+  lookupCefrLevelFromMap,
+  handleWordbookTokenClick,
+  requestInteractiveWordbookSentencePlayback,
+  wordbookSentencePlaybackLabel,
+  collectWordbookEntry,
+  selectedWordbookTokens,
+  selectedWordbookStart,
+  selectedWordbookEnd,
+  selectedWordbookText,
+  wordbookSuccessMessage,
+  wordbookSentenceZh,
+  wordbookSentence,
+  wordbookBusy,
   wordStatuses,
   expectedTokens,
   sentenceTypingDone,
@@ -36,18 +60,91 @@ export default function ExplanationSidebarContent({
 }) {
   const previousSentenceText = previousSentence || "(当前是第一句，暂时没有上一句字幕)";
   const previousSentenceZhText = previousSentenceTranslation || "(暂无上一句翻译)";
+  const hasWordbookContext = Array.isArray(wordbookSentenceTokens) && wordbookSentenceTokens.length > 0;
+
+  const tokenRow = hasWordbookContext ? (
+    <div className="immersive-explanation-panel__context-token-wrap">
+      {wordbookSentenceTokens.map((token, tokenIndex) => {
+        const trimmedToken = String(token || "").trim();
+        const selected = Array.isArray(wordbookSelectedTokenIndexes) && wordbookSelectedTokenIndexes.includes(tokenIndex);
+        const success = Array.isArray(wordbookSuccessAnimationIndexes) && wordbookSuccessAnimationIndexes.includes(tokenIndex);
+        const cefrClass = computeCefrClassName(
+          lookupCefrLevelFromMap(wordbookSentenceCefrMap, token, cefrAnalyzerRef.current),
+          cefrLevel,
+        );
+
+        return (
+          <button
+            key={`${trimmedToken || "token"}-${tokenIndex}`}
+            type="button"
+            data-wordbook-token-index={tokenIndex}
+            className={cn(
+              "immersive-wordbook-token",
+              cefrClass,
+              selected ? "immersive-wordbook-token--selected" : "",
+              success ? "wordbook-token--success" : "",
+            )}
+            onClick={() => handleWordbookTokenClick?.(tokenIndex)}
+            disabled={wordbookBusy || !trimmedToken}
+          >
+            {trimmedToken || token}
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
 
   const previousSentenceBlock = (
     <section className="immersive-explanation-panel__context-card">
       <div className="immersive-explanation-panel__context-head">
         <span className="immersive-explanation-panel__context-kicker">Previous subtitle</span>
-        <span className="immersive-explanation-panel__context-badge">上一句</span>
+        <div className="immersive-explanation-panel__context-actions">
+          <span className="immersive-explanation-panel__context-badge">{wordbookSentenceHeading || "上一句"}</span>
+          {hasWordbookContext ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="immersive-explanation-panel__context-button"
+              onClick={() => requestInteractiveWordbookSentencePlayback?.("wordbook_sentence_context")}
+            >
+              <Volume2 className="size-4" />
+              {wordbookSentencePlaybackLabel}
+            </Button>
+          ) : null}
+          {selectedWordbookText ? (
+            <Button
+              type="button"
+              size="sm"
+              className="immersive-explanation-panel__context-button"
+              disabled={wordbookBusy}
+              onClick={() =>
+                collectWordbookEntry?.({
+                  sentence: wordbookSentence,
+                  entryType: selectedWordbookTokens.length >= 2 ? "phrase" : "word",
+                  entryText: selectedWordbookText,
+                  startTokenIndex: selectedWordbookStart,
+                  endTokenIndex: selectedWordbookEnd,
+                })
+              }
+            >
+              {wordbookBusy ? "加入中..." : "加入生词本"}
+            </Button>
+          ) : null}
+        </div>
       </div>
-      <p className="immersive-explanation-panel__context-line immersive-explanation-panel__context-line--en">
-        {previousSentenceText}
-      </p>
+      {tokenRow || (
+        <p className="immersive-explanation-panel__context-line immersive-explanation-panel__context-line--en">
+          {previousSentenceText}
+        </p>
+      )}
       <p className="immersive-explanation-panel__context-line immersive-explanation-panel__context-line--zh">
-        {previousSentenceZhText}
+        {wordbookSentenceZh || previousSentenceZhText}
+      </p>
+      <p className="immersive-explanation-panel__context-tip">
+        {selectedWordbookText
+          ? `已选：${selectedWordbookText}`
+          : wordbookSuccessMessage || "点击一个词选择单词；再点另一个词选择连续短语。"}
       </p>
     </section>
   );
