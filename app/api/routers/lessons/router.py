@@ -27,6 +27,9 @@ from app.schemas import (
     LessonBulkDeleteResponse,
     LessonDeleteResponse,
     LessonDetailResponse,
+    GeneratedContentStatusResponse,
+    LessonGenerateMissingRequest,
+    LessonGenerationOptions,
     LessonItemResponse,
     LessonRenameRequest,
     LessonSubtitleVariantErrorEvent,
@@ -71,6 +74,7 @@ from app.services.lesson_task_manager import (
     get_task,
     upsert_lesson_workspace_summary,
 )
+from app.services.lessons.content_options import normalize_generation_options
 from app.services.media import MediaError, cleanup_dir, create_request_dir, extract_audio_for_asr, save_upload_file_stream
 
 
@@ -91,6 +95,17 @@ def _to_lesson_subtitle_variant_response(lesson_id: int, variant: dict) -> Lesso
 
 def _format_sse_event(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _parse_generation_options_form_value(value: str) -> dict[str, bool]:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return normalize_generation_options(None)
+    try:
+        payload = json.loads(normalized)
+    except Exception:
+        payload = {}
+    return normalize_generation_options(payload if isinstance(payload, dict) else None)
 
 
 def _build_task_lesson_response(task: dict, db: Session) -> LessonDetailResponse | None:
@@ -134,6 +149,9 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         current_text=str(task.get("current_text", "")),
         stages=list(task.get("stages", [])),
         counters=dict(task.get("counters", {})),
+        requested_generation_options=LessonGenerationOptions.model_validate(task.get("requested_generation_options") or {}),
+        effective_generation_options=LessonGenerationOptions.model_validate(task.get("effective_generation_options") or {}),
+        generated_content_status=GeneratedContentStatusResponse.model_validate(task.get("generated_content_status") or {}),
         lesson=_build_task_lesson_response(task, db),
         subtitle_cache_seed=task.get("subtitle_cache_seed"),
         translation_debug=task.get("translation_debug"),
@@ -211,6 +229,7 @@ async def create_lesson(
 )
 async def create_lesson_task(
     asr_model: str = Form(""),
+    generation_options_json: str = Form(""),
     dashscope_file_id: str = Form(...),
     dashscope_file_url: str = Form(""),
     source_filename: str = Form(""),
@@ -234,6 +253,7 @@ async def create_lesson_task(
         payload = create_lesson_task_from_dashscope_file(
             owner_user_id=current_user.id,
             asr_model=selected_model,
+            generation_options=_parse_generation_options_form_value(generation_options_json),
             dashscope_file_id=normalized_dashscope_file_id,
             dashscope_file_url=normalized_dashscope_file_url or None,
             source_filename=normalized_source_filename or None,
@@ -246,6 +266,8 @@ async def create_lesson_task(
             effective_asr_model=str(payload.get("effective_asr_model") or ""),
             model_fallback_applied=bool(payload.get("model_fallback_applied")),
             model_fallback_reason=str(payload.get("model_fallback_reason") or ""),
+            requested_generation_options=LessonGenerationOptions.model_validate(payload.get("requested_generation_options") or {}),
+            effective_generation_options=LessonGenerationOptions.model_validate(payload.get("effective_generation_options") or {}),
         ).model_dump(mode="json")
         admission = dict(payload.get("admission") or {})
         if admission:
@@ -326,6 +348,7 @@ def create_local_asr_lesson_task(
             source_duration_ms=int(payload.source_duration_ms or 0),
             runtime_kind=str(payload.runtime_kind or "").strip() or "local_browser",
             asr_payload=dict(payload.asr_payload or {}),
+            generation_options=payload.generation_options.model_dump() if payload.generation_options else None,
             owner_user_id=current_user.id,
             asr_model=selected_model,
             db=db,
@@ -337,6 +360,8 @@ def create_local_asr_lesson_task(
             effective_asr_model=str(task_payload.get("effective_asr_model") or ""),
             model_fallback_applied=bool(task_payload.get("model_fallback_applied")),
             model_fallback_reason=str(task_payload.get("model_fallback_reason") or ""),
+            requested_generation_options=LessonGenerationOptions.model_validate(task_payload.get("requested_generation_options") or {}),
+            effective_generation_options=LessonGenerationOptions.model_validate(task_payload.get("effective_generation_options") or {}),
         ).model_dump(mode="json")
         admission = dict(task_payload.get("admission") or {})
         if admission:
@@ -583,6 +608,38 @@ def get_lesson(lesson_id: int, db: Session = Depends(get_db), current_user: User
     if payload is None:
         return error_response(404, "LESSON_NOT_FOUND", "课程不存在")
     return payload
+
+
+@router.post(
+    "/{lesson_id}/generate-missing",
+    response_model=LessonCreateResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+)
+def generate_missing_lesson_content(
+    lesson_id: int,
+    payload: LessonGenerateMissingRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    lesson = require_lesson_owner(db, lesson_id, current_user.id)
+    try:
+        updated_lesson = LessonService.generate_missing_content(
+            lesson=lesson,
+            requested_options={
+                "zh_translation": bool(payload.zh_translation),
+                "cefr_annotation": bool(payload.cefr_annotation),
+                "word_explanation": bool(payload.word_explanation),
+            },
+            db=db,
+        )
+        invalidate_lesson_related_queries(current_user.id)
+        sentences = get_lesson_sentences(db, updated_lesson.id)
+        return LessonCreateResponse(ok=True, lesson=to_lesson_detail_response(updated_lesson, sentences))
+    except BillingError as exc:
+        return map_billing_error(exc)
+    except Exception as exc:
+        db.rollback()
+        return error_response(500, "INTERNAL_ERROR", "补生成失败", str(exc)[:1200])
 
 
 @router.post(

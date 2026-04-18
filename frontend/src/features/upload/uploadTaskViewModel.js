@@ -111,7 +111,9 @@ export function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSna
   const isTaskSucceeded = normalizedPhase === "success" || taskStatus === "succeeded";
   const isTranscribingStage = hasTask && (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe");
   const isLessonBuildingStage = hasTask && (currentTaskStageKey === "build_lesson" || currentTaskStageKey === "translate_zh");
-  const isCefrStage = hasTask && (currentTaskStageKey === "cefr_explain" || currentTaskStageKey === "write_lesson");
+  const isCefrStage =
+    hasTask &&
+    (currentTaskStageKey === "cefr_annotation" || currentTaskStageKey === "word_explanation" || currentTaskStageKey === "write_lesson");
   const uploadStage = buildBottle2CloudStageItem({
     key: "upload",
     label: "上传素材",
@@ -145,12 +147,12 @@ export function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSna
     statusText: isTaskFailed && !isTranscribingStage ? (currentTaskText || "生成课程失败") : (isTaskSucceeded || isCefrStage ? "已完成" : (isLessonBuildingStage ? (currentTaskText || "生成课程中") : "等待开始")),
   });
   const cefrStage = buildBottle2CloudStageItem({
-    key: "cefr_explain",
-    label: "生成讲解",
+    key: "content_enrichment",
+    label: "补充内容",
     status: isTaskFailed && isCefrStage && !isLessonBuildingStage ? "failed" : (isTaskSucceeded ? "completed" : (isCefrStage ? "running" : "pending")),
     progressPercent: isTaskSucceeded ? 100 : (isCefrStage ? Math.max(10, clampPercent(((Math.max(85, Number(taskSnapshot?.overall_percent || 0)) - 85) / 7) * 100)) : 0),
     detailText: isTaskSucceeded ? "1/1" : (isCefrStage ? `${Math.max(85, clampPercent(taskSnapshot?.overall_percent || 0))}%` : "--"),
-    statusText: isTaskFailed && isCefrStage ? (currentTaskText || "生成讲解失败") : (isTaskSucceeded ? "已完成" : (isCefrStage ? (currentTaskText || "生成讲解中") : "等待开始")),
+    statusText: isTaskFailed && isCefrStage ? (currentTaskText || "补充内容失败") : (isTaskSucceeded ? "已完成" : (isCefrStage ? (currentTaskText || "补充内容中") : "等待开始")),
   });
   const completedStage = buildBottle2CloudStageItem({
     key: "completed",
@@ -180,8 +182,8 @@ export function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnap
   if (["build_lesson", "translate_zh"].includes(currentTaskStageKey)) {
     return currentTaskText || "生成课程";
   }
-  if (["cefr_explain", "write_lesson"].includes(currentTaskStageKey)) {
-    return currentTaskText || "生成讲解";
+  if (["cefr_annotation", "word_explanation", "write_lesson"].includes(currentTaskStageKey)) {
+    return currentTaskText || "补充内容";
   }
   return currentTaskText || "生成课程";
 }
@@ -243,7 +245,8 @@ export function getStageStatusText(taskSnapshot, stageKey, stageStatus, currentS
     if (stageKey === "asr_transcribe") return "识别字幕中";
     if (stageKey === "build_lesson") return "生成课程结构中";
     if (stageKey === "translate_zh") return "翻译中";
-    if (stageKey === "cefr_explain") return "生成讲解中";
+    if (stageKey === "cefr_annotation") return "生成生词标注中";
+    if (stageKey === "word_explanation") return "生成讲解中";
     if (stageKey === "write_lesson") return "保存中";
   }
   return "等待开始";
@@ -270,7 +273,7 @@ export function getStageDisplayMeta(taskSnapshot, stageKey, stageStatus, current
     const done = Math.max(0, Number(counters.translate_done || 0));
     const total = Math.max(done, Number(counters.translate_total || 0));
     progressMeta = buildStageCounterDisplay(done, total, fallbackRatio, Math.max(1, total));
-  } else if (stageKey === "write_lesson") {
+  } else if (stageKey === "cefr_annotation" || stageKey === "word_explanation" || stageKey === "write_lesson") {
     progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
   }
 
@@ -316,6 +319,9 @@ export function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
     const total = Math.max(done, Number(counters.translate_total || 0));
     return total > 0 ? `翻译字幕 ${done}/${total}` : sanitizeUserFacingText(taskSnapshot.current_text || "翻译字幕");
   }
+  if (stageKey === "cefr_annotation" || stageKey === "word_explanation") {
+    return sanitizeUserFacingText(taskSnapshot.current_text || "补充内容");
+  }
   if (stageKey === "convert_audio") return sanitizeUserFacingText(taskSnapshot.current_text || "抽音频");
   if (stageKey === "write_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "保存完成");
   return sanitizeUserFacingText(taskSnapshot.current_text || "等待处理");
@@ -343,7 +349,9 @@ export function getStageProgressPercent(stageKey, ratio = 1) {
   if (stageKey === "asr_transcribe") return Math.round(15 + 30 * safeRatio);
   if (stageKey === "build_lesson") return Math.round(45 + 15 * safeRatio);
   if (stageKey === "translate_zh") return Math.round(60 + 25 * safeRatio);
-  if (stageKey === "write_lesson") return Math.round(85 + 15 * safeRatio);
+  if (stageKey === "cefr_annotation") return Math.round(85 + 5 * safeRatio);
+  if (stageKey === "word_explanation") return Math.round(90 + 5 * safeRatio);
+  if (stageKey === "write_lesson") return Math.round(95 + 5 * safeRatio);
   return 0;
 }
 

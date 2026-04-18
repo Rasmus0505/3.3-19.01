@@ -151,6 +151,13 @@ import {
 import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
 import { useUploadWorkflow } from "./hooks/useUploadWorkflow";
 
+const DEFAULT_GENERATION_OPTIONS = {
+  core_subtitles: true,
+  zh_translation: true,
+  cefr_annotation: true,
+  word_explanation: true,
+};
+
 function localAsrDirectoryBindingSupported() {
   return typeof window !== "undefined" && typeof window.showDirectoryPicker === "function";
 }
@@ -1014,6 +1021,7 @@ export function UploadPanel({
   });
   const [bindingCompleted, setBindingCompleted] = useState(false);
   const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
+  const [generationOptions, setGenerationOptions] = useState(DEFAULT_GENERATION_OPTIONS);
   const [fasterWhisperRuntimeTrack, setFasterWhisperRuntimeTrack] = useState(() =>
     getDefaultFasterWhisperRuntimeTrack({ isMobileViewport: isMobileUploadViewport() }),
   );
@@ -1364,6 +1372,17 @@ export function UploadPanel({
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
   }, [configuredDefaultAsrModel, selectedUploadModel]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
+  const effectiveGenerationOptions = useMemo(() => {
+    const next = {
+      ...DEFAULT_GENERATION_OPTIONS,
+      ...(generationOptions || {}),
+    };
+    next.core_subtitles = true;
+    if (next.word_explanation) {
+      next.cefr_annotation = true;
+    }
+    return next;
+  }, [generationOptions]);
   const browserLocalRuntimeAvailable = hasBrowserLocalRuntimeBridge() && !isMobileUploadViewport();
   const browserLocalRuntimeBlockedMessage = hasBrowserLocalRuntimeBridge()
     ? "本地网站模式仅支持桌面浏览器，不支持手机和平板直接运行。"
@@ -1391,8 +1410,10 @@ export function UploadPanel({
   const mtRate = getRateByModel(billingRates, MT_PRICE_MODEL);
   const mtRateCentsPer1kTokens = Number(mtRate?.points_per_1k_tokens || 0);
   const mtRatePricePer1kTokensYuan = getRatePricePer1kTokensYuan(mtRate);
-  const estimatedMtTokens = estimateMtTokensByDuration(durationSec || 0);
-  const estimatedMtChargeCents = calculateChargeCentsByTokens(estimatedMtTokens, mtRateCentsPer1kTokens);
+  const estimatedMtTokens = effectiveGenerationOptions.zh_translation ? estimateMtTokensByDuration(durationSec || 0) : 0;
+  const estimatedMtChargeCents = effectiveGenerationOptions.zh_translation
+    ? calculateChargeCentsByTokens(estimatedMtTokens, mtRateCentsPer1kTokens)
+    : 0;
   const estimatedTotalChargeCents = (fasterWhisperDesktopLocalSelected ? 0 : estimatedAsrChargeCents) + estimatedMtChargeCents;
   const desktopClientBillingEnabled = fasterWhisperDesktopLocalSelected;
   const desktopClientEstimatedChargeCents = estimatedAsrChargeCents + estimatedMtChargeCents;
@@ -1401,6 +1422,9 @@ export function UploadPanel({
       ? Math.max(0, Number(desktopBillingState.balanceAmountCents || 0))
       : normalizedBalanceAmountCents;
   const desktopClientHasUsableEstimate = desktopClientBillingEnabled && durationSec != null && selectedRate != null;
+  const generationOptionCostHint = effectiveGenerationOptions.cefr_annotation || effectiveGenerationOptions.word_explanation
+    ? "生词标注/讲解会增加额外 AI 调用成本，当前未单独估算。"
+    : "";
   const localWorkerReady = Boolean(localWorkerReadyMap.browserLocal);
   const balancedPerformanceWarning = useMemo(
     () => (mode === "balanced" ? buildLocalAsrLongAudioWarning(durationSec, LOCAL_ASR_LONG_AUDIO_HINT_SECONDS) : ""),
@@ -3599,6 +3623,7 @@ export function UploadPanel({
             source_duration_ms: Math.max(1, Number(localResult?.source_duration_ms || 0) || Math.round(Number(durationSec || 0) * 1000) || 1),
             runtime_kind: FAST_RUNTIME_TRACK_BROWSER_LOCAL,
             asr_payload: localResult?.asr_result_json || {},
+            generation_options: effectiveGenerationOptions,
           }),
         },
         accessToken,
@@ -3771,6 +3796,7 @@ export function UploadPanel({
             source_duration_ms: Math.max(1, Number(localResult?.sourceDurationMs || 0) || Math.round(Number(sourceDurationSec || 0) * 1000) || 1),
             runtime_kind: FAST_RUNTIME_TRACK_DESKTOP_LOCAL,
             asr_payload: localResult?.asrPayload || {},
+            generation_options: effectiveGenerationOptions,
           }),
         },
         accessToken,
@@ -4238,6 +4264,7 @@ export function UploadPanel({
             source_filename: String(sourceFile?.name || "local-source"),
             source_duration_ms: Math.max(1, Math.round(Number(durationSec || 0) * 1000)),
             asr_payload: localResult?.asr_payload || {},
+            generation_options: effectiveGenerationOptions,
           }),
         },
         accessToken,
@@ -4412,6 +4439,7 @@ export function UploadPanel({
       const form = new FormData();
       form.append("asr_model", selectedAsrModel);
       form.append("semantic_split_enabled", "false");
+      form.append("generation_options_json", JSON.stringify(effectiveGenerationOptions));
       form.append("dashscope_file_id", resolvedFileId);
       form.append("source_filename", toNormalizedFilename(displaySourceFile?.name || uploadSourceFile?.name || ""));
       if (resolvedFileUrl) {
@@ -5034,6 +5062,13 @@ export function UploadPanel({
           <AlertDescription>
             <p className="text-muted-foreground">余额：{desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}</p>
             <p className="text-muted-foreground">预估消耗：{selectedRate ? durationSec != null ? formatMoneyCents(desktopClientBillingEnabled ? desktopClientEstimatedChargeCents : estimatedTotalChargeCents) : "选择文件后显示" : "该模型未配置单价"}</p>
+            <p className="text-xs text-muted-foreground">
+              本次内容：英文字幕
+              {effectiveGenerationOptions.zh_translation ? " + 中文翻译" : ""}
+              {effectiveGenerationOptions.cefr_annotation ? " + 生词标注" : ""}
+              {effectiveGenerationOptions.word_explanation ? " + 生词讲解" : ""}
+            </p>
+            {generationOptionCostHint ? <p className="text-xs text-muted-foreground">{generationOptionCostHint}</p> : null}
             {desktopClientBillingEnabled && desktopBillingState.message ? (
               <p className={cn("text-xs", desktopBillingState.status === "insufficient" || desktopBillingState.status === "offline" || desktopBillingState.status === "error" ? getUploadToneStyles("recoverable").text : "text-muted-foreground")}>
                 {desktopBillingState.message}
@@ -5578,6 +5613,81 @@ export function UploadPanel({
                 </div>
               </div>
             ) : null}
+
+            <div className="space-y-3 rounded-2xl border bg-muted/10 px-4 py-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">生成内容</p>
+                <p className="text-xs text-muted-foreground">英文字幕为必选项。关闭不需要的内容可以减少本次消耗。</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+                  <input type="checkbox" checked readOnly disabled className="mt-0.5 size-4 rounded border-input accent-primary" />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-medium">英文字幕</span>
+                    <span className="block text-xs text-muted-foreground">句子切分、时间轴、tokens</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={effectiveGenerationOptions.zh_translation}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setGenerationOptions((prev) => ({ ...prev, zh_translation: checked }));
+                    }}
+                    disabled={loading || localModeBusy}
+                    className="mt-0.5 size-4 rounded border-input accent-primary"
+                  />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-medium">中文翻译</span>
+                    <span className="block text-xs text-muted-foreground">
+                      预计增加 {durationSec != null ? formatMoneyCents(estimatedMtChargeCents) : "翻译成本"} 的显性消耗
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={effectiveGenerationOptions.cefr_annotation}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setGenerationOptions((prev) => ({
+                        ...prev,
+                        cefr_annotation: checked,
+                        word_explanation: checked ? prev.word_explanation : false,
+                      }));
+                    }}
+                    disabled={loading || localModeBusy}
+                    className="mt-0.5 size-4 rounded border-input accent-primary"
+                  />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-medium">生词标注</span>
+                    <span className="block text-xs text-muted-foreground">生成 CEFR 难度与重点词数据</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={effectiveGenerationOptions.word_explanation}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setGenerationOptions((prev) => ({
+                        ...prev,
+                        word_explanation: checked,
+                        cefr_annotation: checked ? true : prev.cefr_annotation,
+                      }));
+                    }}
+                    disabled={loading || localModeBusy}
+                    className="mt-0.5 size-4 rounded border-input accent-primary"
+                  />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-medium">生词讲解</span>
+                    <span className="block text-xs text-muted-foreground">自动依赖生词标注，生成关键词解释与听力提示</span>
+                  </span>
+                </label>
+              </div>
+              {generationOptionCostHint ? <p className="text-xs text-muted-foreground">{generationOptionCostHint}</p> : null}
+            </div>
           </div>
 
           {serviceTaskStopActionsVisible ? (

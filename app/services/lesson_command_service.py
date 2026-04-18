@@ -58,6 +58,7 @@ from app.services.lesson_task_manager import (
     signal_task_terminate,
     update_task_progress,
 )
+from app.services.lessons.content_options import build_generated_content_status, normalize_generation_options
 from app.services.media import MediaError, cleanup_dir, probe_audio_duration_ms, save_upload_file_stream, validate_suffix
 from app.services.translation_qwen_mt import TranslationCancellationRequested, TranslationError
 
@@ -251,6 +252,10 @@ def _build_task_start_kwargs(task: LessonGenerationTask) -> dict[str, object]:
         "req_dir": req_dir,
         "requested_asr_model": str(artifacts.get("requested_asr_model") or task.asr_model or ""),
         "effective_asr_model": str(artifacts.get("effective_asr_model") or task.asr_model or ""),
+        "effective_generation_options": normalize_generation_options(
+            artifacts.get("effective_generation_options"),
+            defaults=artifacts.get("requested_generation_options"),
+        ),
         "input_mode": str(artifacts.get("input_mode") or "upload").strip().lower() or "upload",
         "source_duration_ms": int(artifacts.get("source_duration_ms") or 0),
     }
@@ -400,6 +405,7 @@ def run_lesson_generation_task(
     req_dir,
     requested_asr_model: str,
     effective_asr_model: str,
+    effective_generation_options: dict[str, Any] | None = None,
 
     session_factory: sessionmaker[Session],
     input_mode: str = "upload",
@@ -485,6 +491,7 @@ def run_lesson_generation_task(
                 "req_dir": req_dir,
                 "owner_id": owner_id,
                 "asr_model": effective_asr_model,
+                "generation_options": normalize_generation_options(effective_generation_options),
                 "task_id": task_id,
                 "db": db,
                 "progress_callback": _progress,
@@ -498,6 +505,7 @@ def run_lesson_generation_task(
                 asr_payload=dict(local_payload.get("asr_payload") or {}),
                 source_filename=source_filename,
                 source_duration_ms=int(local_payload.get("source_duration_ms") or source_duration_ms or 0),
+                generation_options=normalize_generation_options(effective_generation_options),
                 runtime_kind=str(local_payload.get("runtime_kind") or artifacts.get("local_runtime_kind") or "local_browser"),
                 req_dir=req_dir,
                 owner_id=owner_id,
@@ -513,6 +521,7 @@ def run_lesson_generation_task(
                 req_dir=req_dir,
                 owner_id=owner_id,
                 asr_model=effective_asr_model,
+                generation_options=normalize_generation_options(effective_generation_options),
                 task_id=task_id,
                 db=db,
                 progress_callback=_progress,
@@ -557,6 +566,16 @@ def run_lesson_generation_task(
             "partial_failure_stage": str(task_result_meta.get("partial_failure_stage") or getattr(lesson, "task_partial_failure_stage", "") or ""),
             "partial_failure_code": str(task_result_meta.get("partial_failure_code") or getattr(lesson, "task_partial_failure_code", "") or ""),
             "partial_failure_message": str(task_result_meta.get("partial_failure_message") or getattr(lesson, "task_partial_failure_message", "") or ""),
+            "requested_generation_options": normalize_generation_options(
+                getattr(lesson, "requested_generation_options", None) or getattr(lesson, "requested_generation_options_json", None)
+            ),
+            "effective_generation_options": normalize_generation_options(
+                getattr(lesson, "effective_generation_options", None) or getattr(lesson, "effective_generation_options_json", None),
+                defaults=getattr(lesson, "requested_generation_options", None) or getattr(lesson, "requested_generation_options_json", None),
+            ),
+            "generated_content_status": dict(
+                getattr(lesson, "generated_content_status", None) or getattr(lesson, "generated_content_status_json", None) or {}
+            ),
             "admission_state": "",
             "queue_position": 0,
             "active_task_count": 0,
@@ -691,6 +710,7 @@ def create_lesson_task_from_dashscope_file(
     *,
     owner_user_id: int,
     asr_model: str,
+    generation_options: dict | None = None,
 
     dashscope_file_id: str,
     dashscope_file_url: str | None = None,
@@ -721,6 +741,11 @@ def create_lesson_task_from_dashscope_file(
 
         model_resolution = _resolve_task_asr_models(asr_model)
         effective_asr_model = str(model_resolution["effective_asr_model"])
+        normalized_requested_generation_options = normalize_generation_options(generation_options)
+        normalized_effective_generation_options = normalize_generation_options(
+            generation_options,
+            defaults=normalized_requested_generation_options,
+        )
 
         with _TASK_ADMISSION_LOCK:
             create_task(
@@ -732,12 +757,25 @@ def create_lesson_task_from_dashscope_file(
                 effective_asr_model=effective_asr_model,
                 model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
                 model_fallback_reason=str(model_resolution["model_fallback_reason"]),
+                requested_generation_options=normalized_requested_generation_options,
+                effective_generation_options=normalized_effective_generation_options,
                 work_dir=str(req_dir),
                 source_path=source_path_for_task,
                 db=db,
             )
             if artifacts_patch:
                 patch_task_artifacts(task_id, artifacts_patch=artifacts_patch, db=db)
+            patch_task_artifacts(
+                task_id,
+                artifacts_patch={
+                    "requested_generation_options": normalized_requested_generation_options,
+                    "effective_generation_options": normalized_effective_generation_options,
+                    "generated_content_status": build_generated_content_status(
+                        effective_options=normalized_effective_generation_options,
+                    ),
+                },
+                db=db,
+            )
             task = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
             if task is None:
                 raise RuntimeError(f"lesson task missing after create: {task_id}")
@@ -752,7 +790,13 @@ def create_lesson_task_from_dashscope_file(
             logger.info("[DEBUG] lessons.task.create.started task_id=%s user_id=%s", task_id, owner_user_id)
         else:
             logger.info("[DEBUG] lessons.task.create.queued task_id=%s user_id=%s", task_id, owner_user_id)
-        return {"task_id": task_id, **model_resolution, "admission": admission}
+        return {
+            "task_id": task_id,
+            **model_resolution,
+            "admission": admission,
+            "requested_generation_options": normalized_requested_generation_options,
+            "effective_generation_options": normalized_effective_generation_options,
+        }
     except Exception:
         cleanup_dir(req_dir)
         raise
@@ -766,6 +810,7 @@ def create_lesson_task_from_local_asr(
     asr_payload: dict,
     owner_user_id: int,
     asr_model: str,
+    generation_options: dict | None = None,
 
     db: Session,
 ) -> dict[str, object]:
@@ -795,6 +840,11 @@ def create_lesson_task_from_local_asr(
             ),
             encoding="utf-8",
         )
+        normalized_requested_generation_options = normalize_generation_options(generation_options)
+        normalized_effective_generation_options = normalize_generation_options(
+            generation_options,
+            defaults=normalized_requested_generation_options,
+        )
 
         with _TASK_ADMISSION_LOCK:
             create_task(
@@ -804,6 +854,8 @@ def create_lesson_task_from_local_asr(
                 asr_model=asr_model,
                 requested_asr_model=asr_model,
                 effective_asr_model=asr_model,
+                requested_generation_options=normalized_requested_generation_options,
+                effective_generation_options=normalized_effective_generation_options,
                 work_dir=str(req_dir),
                 source_path=str(payload_path),
                 db=db,
@@ -815,6 +867,11 @@ def create_lesson_task_from_local_asr(
                     "source_duration_ms": normalized_source_duration_ms,
                     "local_runtime_kind": str(runtime_kind or "").strip() or "local_browser",
                     "local_asr_payload_path": str(payload_path),
+                    "requested_generation_options": normalized_requested_generation_options,
+                    "effective_generation_options": normalized_effective_generation_options,
+                    "generated_content_status": build_generated_content_status(
+                        effective_options=normalized_effective_generation_options,
+                    ),
                 },
                 db=db,
             )
@@ -839,6 +896,8 @@ def create_lesson_task_from_local_asr(
             "model_fallback_applied": False,
             "model_fallback_reason": "",
             "admission": admission,
+            "requested_generation_options": normalized_requested_generation_options,
+            "effective_generation_options": normalized_effective_generation_options,
         }
     except Exception:
         cleanup_dir(req_dir)

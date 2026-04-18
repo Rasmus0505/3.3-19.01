@@ -70,10 +70,13 @@ from app.schemas.billing import (
 )
 from app.schemas.common import AsrModelActionItem, AsrModelListResponse, AsrModelPrepareResponse, AsrModelStatusResponse, ErrorResponse, PaginationMeta, PaginatedResponse, SuccessResponse
 from app.schemas.lesson import (
+    GeneratedContentStatusResponse,
     LessonCatalogItemResponse,
     LessonCatalogProgressSummaryResponse,
     LessonCatalogResponse,
     LessonCreateResponse,
+    LessonGenerateMissingRequest,
+    LessonGenerationOptions,
     LessonBulkDeleteRequest,
     LessonBulkDeleteResponse,
     LessonDeleteResponse,
@@ -134,6 +137,8 @@ __all__ = [
     "RefreshRequest",
     "LogoutResponse",
     "LessonSentenceResponse",
+    "LessonGenerationOptions",
+    "GeneratedContentStatusResponse",
     "SubtitleCacheSeedResponse",
     "LessonItemResponse",
     "LessonCatalogProgressSummaryResponse",
@@ -159,6 +164,7 @@ __all__ = [
     "LessonTaskControlResponse",
     "LessonTaskBatchTerminateResponse",
     "LocalAsrLessonTaskCreateRequest",
+    "LessonGenerateMissingRequest",
     "LessonTaskResumeResponse",
     "TokenCheckRequest",
     "TokenResult",

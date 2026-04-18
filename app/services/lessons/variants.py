@@ -19,6 +19,7 @@ from app.services.lesson_builder import (
     tokenize_learning_sentence,
 )
 from app.services.media import MediaError
+from app.services.lessons.content_options import normalize_generation_options
 from app.services.translation_qwen_mt import TranslationError, translate_sentences_to_zh, translation_batch_chars_scope
 
 
@@ -205,6 +206,7 @@ def build_subtitle_variant(
     asr_payload: dict[str, Any],
     db: Session,
     task_id: str | None = None,
+    generation_options: dict[str, Any] | None = None,
     allow_partial_translation: bool = False,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
     before_translate_callback: Callable[[int], None] | None = None,
@@ -215,6 +217,7 @@ def build_subtitle_variant(
     if not isinstance(asr_payload, dict):
         raise MediaError("ASR_PAYLOAD_INVALID", "字幕源数据无效", "asr_payload 必须是对象")
 
+    normalized_generation_options = normalize_generation_options(generation_options)
     subtitle_settings = get_subtitle_settings_snapshot(db)
     _emit_subtitle_variant_progress(progress_callback, stage="prepare", message="正在重切分句")
 
@@ -246,6 +249,27 @@ def build_subtitle_variant(
             len(prepared_sentences),
         )
     sentences = prepared_sentences
+
+    if not normalized_generation_options["zh_translation"]:
+        normalized_sentences = normalize_runtime_sentences_fn(sentences, [])
+        return {
+            "split_mode": split_mode,
+            "source_word_count": source_word_count,
+            "strategy_version": 2 if split_mode == "asr_sentences" else 1,
+            "sentences": normalized_sentences,
+            "translate_failed_count": 0,
+            "translation_attempt_records": [],
+            "translation_request_count": 0,
+            "translation_success_request_count": 0,
+            "translation_usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "charged_points": 0,
+            },
+            "latest_translate_error_summary": "",
+            "task_id": task_id,
+        }
 
     if before_translate_callback:
         before_translate_callback(len(sentences))
@@ -404,6 +428,7 @@ def build_local_generation_result(
     db: Session,
     task_id: str | None = None,
     progress_callback: ProgressCallback | None = None,
+    generation_options: dict[str, Any] | None = None,
     build_subtitle_variant_fn: BuildSubtitleVariantFn = build_subtitle_variant,
     build_task_result_meta_fn: BuildTaskResultMetaFn = build_task_result_meta,
     build_subtitle_cache_seed_fn: BuildSubtitleCacheSeedFn = build_subtitle_cache_seed,
@@ -413,6 +438,7 @@ def build_local_generation_result(
         asr_payload=asr_payload,
         db=db,
         task_id=task_id,
+        generation_options=generation_options,
         allow_partial_translation=True,
         progress_callback=progress_callback,
     )

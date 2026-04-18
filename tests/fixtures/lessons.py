@@ -37,8 +37,8 @@ def test_lesson_with_sentences(db_session: Session, test_lesson: Lesson) -> Less
             idx=i,
             begin_ms=i * 3000,
             end_ms=(i + 1) * 3000,
-            text=f"Hello sentence {i}.",
-            translation=f"第 {i} 句的翻译。",
+            text_en=f"Hello sentence {i}.",
+            text_zh=f"第 {i} 句的翻译。",
         )
         for i in range(5)
     ]
@@ -56,8 +56,8 @@ def test_sentence(db_session: Session, test_lesson: Lesson) -> LessonSentence:
         idx=0,
         begin_ms=0,
         end_ms=3000,
-        text="Hello world.",
-        translation="你好世界。",
+        text_en="Hello world.",
+        text_zh="你好世界。",
     )
     db_session.add(sentence)
     db_session.flush()

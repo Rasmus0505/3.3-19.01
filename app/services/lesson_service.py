@@ -65,6 +65,15 @@ from app.services.lessons.persistence import (
     build_one_lesson as _build_one_lesson_impl,
     create_lesson_from_local_generation_result as _create_lesson_from_local_generation_result_impl,
 )
+from app.services.lessons.content_options import (
+    CONTENT_STATE_GENERATED,
+    CONTENT_STATE_PENDING_REGENERATE,
+    CONTENT_STATE_SKIPPED,
+    build_generated_content_status,
+    clear_sentence_generated_content,
+    normalize_generated_content_status,
+    normalize_generation_options,
+)
 from app.services.lessons.variants import (
     build_local_generation_result as _build_local_generation_result_impl,
     build_subtitle_cache_seed as _build_subtitle_cache_seed_impl,
@@ -244,11 +253,57 @@ def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
         return int(48 + 20 * ratio)
     if stage_key == "translate_zh":
         return int(68 + 17 * ratio)
-    if stage_key == "cefr_explain":
-        return int(85 + 7 * ratio)
+    if stage_key == "cefr_annotation":
+        return int(85 + 5 * ratio)
+    if stage_key == "word_explanation":
+        return int(90 + 5 * ratio)
     if stage_key == "write_lesson":
-        return int(92 + 8 * ratio)
+        return int(95 + 5 * ratio)
     return 0
+
+
+def _apply_generation_content_selection(
+    *,
+    sentences: list[dict[str, Any]],
+    user_level: str,
+    generation_options: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], str, str]:
+    normalized_generation_options = normalize_generation_options(generation_options)
+    if not normalized_generation_options["cefr_annotation"]:
+        return [
+            clear_sentence_generated_content(
+                sentence,
+                clear_translation=False,
+                clear_cefr=True,
+                clear_explanation=True,
+            )
+            for sentence in sentences
+        ], CONTENT_STATE_SKIPPED, CONTENT_STATE_SKIPPED
+
+    cefr_state = CONTENT_STATE_GENERATED
+    explanation_state = CONTENT_STATE_GENERATED if normalized_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
+    try:
+        enriched = process_sentences_with_cefr(
+            sentences=sentences,
+            target_level=user_level,
+            user_level=user_level,
+            include_explanations=normalized_generation_options["word_explanation"],
+        )
+    except Exception:
+        logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+        fallback = [
+            clear_sentence_generated_content(
+                sentence,
+                clear_translation=False,
+                clear_cefr=True,
+                clear_explanation=True,
+            )
+            for sentence in sentences
+        ]
+        return fallback, CONTENT_STATE_PENDING_REGENERATE, (
+            CONTENT_STATE_PENDING_REGENERATE if normalized_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
+        )
+    return enriched, cefr_state, explanation_state
 
 
 def _single_asr_stage_ratio(elapsed_seconds: int) -> float:
@@ -682,6 +737,7 @@ class LessonService:
         asr_payload: dict[str, Any],
         db: Session,
         task_id: str | None = None,
+        generation_options: dict[str, Any] | None = None,
         allow_partial_translation: bool = False,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
         before_translate_callback: Callable[[int], None] | None = None,
@@ -692,6 +748,7 @@ class LessonService:
             asr_payload=asr_payload,
             db=db,
             task_id=task_id,
+            generation_options=generation_options,
             allow_partial_translation=allow_partial_translation,
             progress_callback=progress_callback,
             before_translate_callback=before_translate_callback,
@@ -714,6 +771,7 @@ class LessonService:
         db: Session,
         task_id: str | None = None,
         progress_callback: ProgressCallback | None = None,
+        generation_options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return _build_local_generation_result_impl(
             asr_payload=asr_payload,
@@ -723,6 +781,7 @@ class LessonService:
             db=db,
             task_id=task_id,
             progress_callback=progress_callback,
+            generation_options=generation_options,
             build_subtitle_variant_fn=LessonService.build_subtitle_variant,
             build_task_result_meta_fn=LessonService._build_task_result_meta,
             build_subtitle_cache_seed_fn=LessonService.build_subtitle_cache_seed,
@@ -840,6 +899,7 @@ class LessonService:
         asr_payload: dict[str, Any],
         source_filename: str,
         source_duration_ms: int,
+        generation_options: dict[str, Any] | None = None,
         runtime_kind: str = "local_browser",
         req_dir: Path,
         owner_id: int,
@@ -903,6 +963,7 @@ class LessonService:
         reserve_ledger_id: int | None = None
         translation_trace_id = uuid4().hex
         local_runtime_kind = str(runtime_kind or "local_browser").strip().lower() or "local_browser"
+        normalized_generation_options = normalize_generation_options(generation_options)
 
         try:
             rate = get_model_rate(db, asr_model)
@@ -1062,7 +1123,7 @@ class LessonService:
                     asr_payload=asr_payload,
                     db=db,
                     task_id=task_id,
-        
+                    generation_options=normalized_generation_options,
                     allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
@@ -1090,7 +1151,11 @@ class LessonService:
             }
             failed_count = int(variant.get("translate_failed_count", 0))
             partial_translation = failed_count > 0
-            partial_translation = failed_count > 0
+            translation_state = CONTENT_STATE_GENERATED
+            if not normalized_generation_options["zh_translation"]:
+                translation_state = CONTENT_STATE_SKIPPED
+            elif failed_count > 0:
+                translation_state = CONTENT_STATE_PENDING_REGENERATE
             if False and int(translation_debug["failed_sentences"] or 0) > 0:
                 raise TranslationError(
                     "翻译阶段失败，请重试",
@@ -1098,22 +1163,23 @@ class LessonService:
                     detail=str(translation_debug.get("latest_error_summary") or "翻译存在失败句子"),
                     translation_debug=translation_debug,
                 )
-            _emit_progress(
-                progress_callback,
-                stage_key="translate_zh",
-                stage_status="failed" if failed_count > 0 else "completed",
-                overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
-                current_text="翻译阶段部分失败，已保留原文字幕" if partial_translation else f"翻译字幕 {translate_total}/{translate_total}",
-                counters={
-                    "asr_done": asr_progress_counters["asr_done"],
-                    "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": max(0, translate_total - failed_count),
-                    "translate_total": translate_total,
-                    "segment_done": asr_progress_counters["segment_done"],
-                    "segment_total": asr_progress_counters["segment_total"],
-                },
-                translation_debug=translation_debug,
-            )
+            if normalized_generation_options["zh_translation"]:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="failed" if failed_count > 0 else "completed",
+                    overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
+                    current_text="翻译阶段部分失败，已保留原文字幕" if partial_translation else f"翻译字幕 {translate_total}/{translate_total}",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": max(0, translate_total - failed_count),
+                        "translate_total": translate_total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                    translation_debug=translation_debug,
+                )
 
             lesson_status = "partial_ready" if failed_count > 0 else "ready"
             duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
@@ -1166,34 +1232,41 @@ class LessonService:
             )
             resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
             lesson.user_cefr_level = resolved_user_level
+            lesson.requested_generation_options_json = normalized_generation_options
+            lesson.effective_generation_options_json = normalized_generation_options
             db.add(lesson)
             db.flush()
 
-            _emit_progress(
-                progress_callback,
-                stage_key="cefr_explain",
-                stage_status="running",
-                overall_percent=_progress_percent_by_stage("cefr_explain", 0.0),
-                current_text="生成讲解内容",
-            )
-
-            try:
-                runtime_sentences = process_sentences_with_cefr(
-                    sentences=runtime_sentences,
-                    target_level=resolved_user_level,
-                    user_level=resolved_user_level,
+            cefr_state = CONTENT_STATE_SKIPPED
+            explanation_state = CONTENT_STATE_SKIPPED
+            if normalized_generation_options["cefr_annotation"]:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="cefr_annotation",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("cefr_annotation", 0.0),
+                    current_text="生成生词标注",
                 )
-            except Exception:
-                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
-                runtime_sentences = list(variant.get("sentences") or [])
-
-            _emit_progress(
-                progress_callback,
-                stage_key="cefr_explain",
-                stage_status="completed",
-                overall_percent=_progress_percent_by_stage("cefr_explain", 1.0),
-                current_text="讲解内容生成完成",
-            )
+                runtime_sentences, cefr_state, explanation_state = _apply_generation_content_selection(
+                    sentences=runtime_sentences,
+                    user_level=resolved_user_level,
+                    generation_options=normalized_generation_options,
+                )
+                _emit_progress(
+                    progress_callback,
+                    stage_key="cefr_annotation",
+                    stage_status="completed" if cefr_state == CONTENT_STATE_GENERATED else "failed",
+                    overall_percent=_progress_percent_by_stage("cefr_annotation", 1.0),
+                    current_text="生词标注生成完成" if cefr_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
+                )
+                if normalized_generation_options["word_explanation"]:
+                    _emit_progress(
+                        progress_callback,
+                        stage_key="word_explanation",
+                        stage_status="completed" if explanation_state == CONTENT_STATE_GENERATED else "failed",
+                        overall_percent=_progress_percent_by_stage("word_explanation", 1.0),
+                        current_text="讲解内容生成完成" if explanation_state == CONTENT_STATE_GENERATED else "讲解内容待补生成",
+                    )
 
             for sentence in runtime_sentences:
                 db.add(
@@ -1279,13 +1352,25 @@ class LessonService:
             )
             db.commit()
             db.refresh(lesson)
+            lesson.generated_content_status_json = build_generated_content_status(
+                effective_options=normalized_generation_options,
+                translation_state=translation_state,
+                cefr_state=cefr_state,
+                explanation_state=explanation_state,
+            )
+            db.add(lesson)
+            db.commit()
+            db.refresh(lesson)
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(
                 asr_payload=asr_payload,
                 variant=variant,
                 runtime_kind=local_runtime_kind,
             )
+            lesson.requested_generation_options = normalized_generation_options
+            lesson.effective_generation_options = normalized_generation_options
+            lesson.generated_content_status = dict(lesson.generated_content_status_json or {})
             lesson.task_result_meta = dict(task_result_meta)
-            lesson.translation_debug = dict(translation_debug)
+            lesson.translation_debug = dict(translation_debug) if normalized_generation_options["zh_translation"] else None
             try:
                 _write_json_file(
                     lesson_result_path,
@@ -1692,6 +1777,7 @@ class LessonService:
         req_dir: Path,
         owner_id: int,
         asr_model: str,
+        generation_options: dict[str, Any] | None = None,
         db: Session,
         progress_callback: ProgressCallback | None = None,
         task_id: str | None = None,
@@ -1775,6 +1861,7 @@ class LessonService:
         reserved_duration_ms = 0
         reserve_ledger_id: int | None = None
         translation_trace_id = uuid4().hex
+        normalized_generation_options = normalize_generation_options(generation_options)
 
         try:
             reserved_duration_ms = probe_audio_duration_ms(opus_path)
@@ -1870,7 +1957,7 @@ class LessonService:
                     asr_payload=asr_payload,
                     db=db,
                     task_id=task_id,
-        
+                    generation_options=normalized_generation_options,
                     allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
@@ -1914,6 +2001,11 @@ class LessonService:
             }
             failed_count = int(variant.get("translate_failed_count", 0))
             partial_translation = failed_count > 0
+            translation_state = CONTENT_STATE_GENERATED
+            if not normalized_generation_options["zh_translation"]:
+                translation_state = CONTENT_STATE_SKIPPED
+            elif failed_count > 0:
+                translation_state = CONTENT_STATE_PENDING_REGENERATE
             if False and int(translation_debug["failed_sentences"] or 0) > 0:
                 raise TranslationError(
                     "翻译阶段失败，请重试",
@@ -1921,22 +2013,23 @@ class LessonService:
                     detail=str(translation_debug.get("latest_error_summary") or "翻译存在失败句子"),
                     translation_debug=translation_debug,
                 )
-            _emit_progress(
-                progress_callback,
-                stage_key="translate_zh",
-                stage_status="failed" if failed_count > 0 else "completed",
-                overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
-                current_text=f"翻译字幕 {translate_total}/{translate_total}",
-                counters={
-                    "asr_done": asr_progress_counters["asr_done"],
-                    "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": max(0, translate_total - failed_count),
-                    "translate_total": translate_total,
-                    "segment_done": asr_progress_counters["segment_done"],
-                    "segment_total": asr_progress_counters["segment_total"],
-                },
-                translation_debug=translation_debug,
-            )
+            if normalized_generation_options["zh_translation"]:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="failed" if failed_count > 0 else "completed",
+                    overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
+                    current_text=f"翻译字幕 {translate_total}/{translate_total}",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": max(0, translate_total - failed_count),
+                        "translate_total": translate_total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                    translation_debug=translation_debug,
+                )
 
             failed_count = int(variant.get("translate_failed_count", 0))
             partial_translation = failed_count > 0
@@ -2002,6 +2095,8 @@ class LessonService:
             )
             resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
             lesson.user_cefr_level = resolved_user_level
+            lesson.requested_generation_options_json = normalized_generation_options
+            lesson.effective_generation_options_json = normalized_generation_options
             db.add(lesson)
             db.flush()
             logger.info(
@@ -2010,31 +2105,36 @@ class LessonService:
                 reserved_duration_ms,
             )
 
-            _emit_progress(
-                progress_callback,
-                stage_key="cefr_explain",
-                stage_status="running",
-                overall_percent=_progress_percent_by_stage("cefr_explain", 0.0),
-                current_text="生成讲解内容",
-            )
-
-            try:
-                runtime_sentences = process_sentences_with_cefr(
-                    sentences=runtime_sentences,
-                    target_level=resolved_user_level,
-                    user_level=resolved_user_level,
+            cefr_state = CONTENT_STATE_SKIPPED
+            explanation_state = CONTENT_STATE_SKIPPED
+            if normalized_generation_options["cefr_annotation"]:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="cefr_annotation",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("cefr_annotation", 0.0),
+                    current_text="生成生词标注",
                 )
-            except Exception:
-                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
-                runtime_sentences = list(variant.get("sentences") or [])
-
-            _emit_progress(
-                progress_callback,
-                stage_key="cefr_explain",
-                stage_status="completed",
-                overall_percent=_progress_percent_by_stage("cefr_explain", 1.0),
-                current_text="讲解内容生成完成",
-            )
+                runtime_sentences, cefr_state, explanation_state = _apply_generation_content_selection(
+                    sentences=runtime_sentences,
+                    user_level=resolved_user_level,
+                    generation_options=normalized_generation_options,
+                )
+                _emit_progress(
+                    progress_callback,
+                    stage_key="cefr_annotation",
+                    stage_status="completed" if cefr_state == CONTENT_STATE_GENERATED else "failed",
+                    overall_percent=_progress_percent_by_stage("cefr_annotation", 1.0),
+                    current_text="生词标注生成完成" if cefr_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
+                )
+                if normalized_generation_options["word_explanation"]:
+                    _emit_progress(
+                        progress_callback,
+                        stage_key="word_explanation",
+                        stage_status="completed" if explanation_state == CONTENT_STATE_GENERATED else "failed",
+                        overall_percent=_progress_percent_by_stage("word_explanation", 1.0),
+                        current_text="讲解内容生成完成" if explanation_state == CONTENT_STATE_GENERATED else "讲解内容待补生成",
+                    )
 
             for sentence in runtime_sentences:
                 db.add(
@@ -2129,9 +2229,21 @@ class LessonService:
             )
             db.commit()
             db.refresh(lesson)
+            lesson.generated_content_status_json = build_generated_content_status(
+                effective_options=normalized_generation_options,
+                translation_state=translation_state,
+                cefr_state=cefr_state,
+                explanation_state=explanation_state,
+            )
+            db.add(lesson)
+            db.commit()
+            db.refresh(lesson)
             lesson.subtitle_cache_seed = LessonService.build_subtitle_cache_seed(asr_payload=asr_payload, variant=variant)
+            lesson.requested_generation_options = normalized_generation_options
+            lesson.effective_generation_options = normalized_generation_options
+            lesson.generated_content_status = dict(lesson.generated_content_status_json or {})
             lesson.task_result_meta = dict(task_result_meta)
-            lesson.translation_debug = dict(translation_debug)
+            lesson.translation_debug = dict(translation_debug) if normalized_generation_options["zh_translation"] else None
             try:
                 _write_json_file(
                     lesson_result_path,
@@ -2187,6 +2299,7 @@ class LessonService:
         req_dir: Path,
         owner_id: int,
         asr_model: str,
+        generation_options: dict[str, Any] | None = None,
         db: Session,
         progress_callback: ProgressCallback | None = None,
         task_id: str | None = None,
@@ -2283,6 +2396,7 @@ class LessonService:
         actual_points: int | None = None
         usage_seconds: int | None = None
         usage_hit = False
+        normalized_generation_options = normalize_generation_options(generation_options)
 
         try:
             # Browser direct-upload may provide an oss:// resource URL.
@@ -2468,7 +2582,7 @@ class LessonService:
                     asr_payload=asr_payload,
                     db=db,
                     task_id=task_id,
-        
+                    generation_options=normalized_generation_options,
                     allow_partial_translation=True,
                     before_translate_callback=_on_before_translation,
                     translation_progress_callback=_on_translation_progress,
@@ -2512,54 +2626,66 @@ class LessonService:
             }
             failed_count = int(variant.get("translate_failed_count", 0) or 0)
             partial_translation = failed_count > 0
+            translation_state = CONTENT_STATE_GENERATED
+            if not normalized_generation_options["zh_translation"]:
+                translation_state = CONTENT_STATE_SKIPPED
+            elif failed_count > 0:
+                translation_state = CONTENT_STATE_PENDING_REGENERATE
             lesson_status = "partial_ready" if partial_translation else "ready"
             duration_ms = estimate_duration_ms(asr_payload, runtime_sentences)
             task_result_meta = LessonService._build_task_result_meta(variant=variant, translation_debug=translation_debug)
-            _emit_progress(
-                progress_callback,
-                stage_key="translate_zh",
-                stage_status="completed",
-                overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
-                current_text=f"翻译字幕完成 {translate_total} 句",
-                counters={
-                    "asr_done": asr_progress_counters["asr_done"],
-                    "asr_estimated": asr_progress_counters["asr_estimated"],
-                    "translate_done": translate_total,
-                    "translate_total": translate_total,
-                    "segment_done": asr_progress_counters["segment_done"],
-                    "segment_total": asr_progress_counters["segment_total"],
-                },
-            )
+            if normalized_generation_options["zh_translation"]:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="translate_zh",
+                    stage_status="completed",
+                    overall_percent=_progress_percent_by_stage("translate_zh", 1.0),
+                    current_text=f"翻译字幕完成 {translate_total} 句",
+                    counters={
+                        "asr_done": asr_progress_counters["asr_done"],
+                        "asr_estimated": asr_progress_counters["asr_estimated"],
+                        "translate_done": translate_total,
+                        "translate_total": translate_total,
+                        "segment_done": asr_progress_counters["segment_done"],
+                        "segment_total": asr_progress_counters["segment_total"],
+                    },
+                )
             lesson: Lesson = Lesson()
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
             resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
             lesson.user_cefr_level = resolved_user_level
-            # 处理 CEFR 讲解信息（预生成讲解内容）
-            _emit_progress(
-                progress_callback,
-                stage_key="cefr_explain",
-                stage_status="running",
-                overall_percent=_progress_percent_by_stage("cefr_explain", 0.0),
-                current_text="生成讲解内容",
-            )
-
-            try:
-                variant["sentences"] = process_sentences_with_cefr(
-                    sentences=list(variant["sentences"]),
-                    target_level=resolved_user_level,
-                    user_level=resolved_user_level,
+            lesson.requested_generation_options_json = normalized_generation_options
+            lesson.effective_generation_options_json = normalized_generation_options
+            cefr_state = CONTENT_STATE_SKIPPED
+            explanation_state = CONTENT_STATE_SKIPPED
+            if normalized_generation_options["cefr_annotation"]:
+                _emit_progress(
+                    progress_callback,
+                    stage_key="cefr_annotation",
+                    stage_status="running",
+                    overall_percent=_progress_percent_by_stage("cefr_annotation", 0.0),
+                    current_text="生成生词标注",
                 )
-            except Exception:
-                logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
-                variant["sentences"] = list(variant.get("sentences") or [])
-
-            _emit_progress(
-                progress_callback,
-                stage_key="cefr_explain",
-                stage_status="completed",
-                overall_percent=_progress_percent_by_stage("cefr_explain", 1.0),
-                current_text="讲解内容生成完成",
-            )
+                variant["sentences"], cefr_state, explanation_state = _apply_generation_content_selection(
+                    sentences=list(variant["sentences"]),
+                    user_level=resolved_user_level,
+                    generation_options=normalized_generation_options,
+                )
+                _emit_progress(
+                    progress_callback,
+                    stage_key="cefr_annotation",
+                    stage_status="completed" if cefr_state == CONTENT_STATE_GENERATED else "failed",
+                    overall_percent=_progress_percent_by_stage("cefr_annotation", 1.0),
+                    current_text="生词标注生成完成" if cefr_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
+                )
+                if normalized_generation_options["word_explanation"]:
+                    _emit_progress(
+                        progress_callback,
+                        stage_key="word_explanation",
+                        stage_status="completed" if explanation_state == CONTENT_STATE_GENERATED else "failed",
+                        overall_percent=_progress_percent_by_stage("word_explanation", 1.0),
+                        current_text="讲解内容生成完成" if explanation_state == CONTENT_STATE_GENERATED else "讲解内容待补生成",
+                    )
 
             _emit_progress(
                 progress_callback,
@@ -2656,8 +2782,20 @@ class LessonService:
             )
             db.commit()
             db.refresh(lesson)
+            lesson.generated_content_status_json = build_generated_content_status(
+                effective_options=normalized_generation_options,
+                translation_state=translation_state,
+                cefr_state=cefr_state,
+                explanation_state=explanation_state,
+            )
+            db.add(lesson)
+            db.commit()
+            db.refresh(lesson)
             lesson.task_result_meta = dict(task_result_meta)
-            lesson.translation_debug = dict(translation_debug)
+            lesson.requested_generation_options = normalized_generation_options
+            lesson.effective_generation_options = normalized_generation_options
+            lesson.generated_content_status = dict(lesson.generated_content_status_json or {})
+            lesson.translation_debug = dict(translation_debug) if normalized_generation_options["zh_translation"] else None
             lesson.workspace_summary = persist_lesson_workspace_summary(
                 owner_user_id=owner_id,
                 lesson_id=int(lesson.id),
@@ -2717,6 +2855,144 @@ class LessonService:
                     db.rollback()
             raise
 
+    @staticmethod
+    def generate_missing_content(
+        *,
+        lesson: Lesson,
+        requested_options: dict[str, Any],
+        db: Session,
+    ) -> Lesson:
+        requested_generation_options = normalize_generation_options(
+            getattr(lesson, "requested_generation_options_json", None),
+        )
+        effective_generation_options = normalize_generation_options(
+            getattr(lesson, "effective_generation_options_json", None),
+            defaults=requested_generation_options,
+        )
+        normalized_request = {
+            "core_subtitles": True,
+            "zh_translation": bool(requested_options.get("zh_translation")),
+            "cefr_annotation": bool(requested_options.get("cefr_annotation")),
+            "word_explanation": bool(requested_options.get("word_explanation")),
+        }
+        if normalized_request["word_explanation"]:
+            normalized_request["cefr_annotation"] = True
+        if not any(normalized_request[key] for key in ("zh_translation", "cefr_annotation", "word_explanation")):
+            return lesson
+
+        for key in ("zh_translation", "cefr_annotation", "word_explanation"):
+            if normalized_request[key]:
+                requested_generation_options[key] = True
+                effective_generation_options[key] = True
+
+        sentences = list(
+            db.scalars(select(LessonSentence).where(LessonSentence.lesson_id == lesson.id).order_by(LessonSentence.idx.asc())).all()
+        )
+        runtime_sentences = [
+            {
+                "idx": int(item.idx),
+                "begin_ms": int(item.begin_ms),
+                "end_ms": int(item.end_ms),
+                "text_en": str(item.text_en),
+                "text_zh": str(item.text_zh or ""),
+                "tokens": [str(token) for token in list(item.tokens_json or [])],
+                "cefr_vocab_json": item.cefr_vocab_json,
+                "needs_explanation": bool(item.needs_explanation),
+                "explanation_text": item.explanation_text,
+                "simplified_sentence": item.simplified_sentence,
+                "explanation_audio_url": item.explanation_audio_url,
+                "key_explanations_json": item.key_explanations_json,
+            }
+            for item in sentences
+        ]
+        generated_content_status = normalize_generated_content_status(getattr(lesson, "generated_content_status_json", None))
+
+        if normalized_request["zh_translation"] and generated_content_status["zh_translation"] != CONTENT_STATE_GENERATED:
+            translation_result = translate_sentences_to_zh([item["text_en"] for item in runtime_sentences], api_key=DASHSCOPE_API_KEY)
+            for index, runtime_sentence in enumerate(runtime_sentences):
+                runtime_sentence["text_zh"] = str(translation_result.texts[index] or "") if index < len(translation_result.texts) else ""
+            failed_count = int(translation_result.failed_count or 0)
+            generated_content_status["zh_translation"] = (
+                CONTENT_STATE_GENERATED if failed_count <= 0 else CONTENT_STATE_PENDING_REGENERATE
+            )
+            translation_rate = get_model_rate(db, MT_MODEL)
+            translation_cost_amount_cents = calculate_token_points(
+                int(translation_result.success_total_tokens or 0),
+                int(getattr(translation_rate, "points_per_1k_tokens", 0) or 0),
+            )
+            if translation_cost_amount_cents > 0:
+                consume_points(
+                    db,
+                    user_id=int(lesson.user_id),
+                    points=int(translation_cost_amount_cents),
+                    model_name=MT_MODEL,
+                    lesson_id=int(lesson.id),
+                    event_type=EVENT_CONSUME_TRANSLATE,
+                    note=f"课程补生成翻译扣费，total_tokens={int(translation_result.success_total_tokens or 0)}",
+                )
+                log_llm_usage(
+                    db,
+                    user_id=int(lesson.user_id),
+                    model_name=MT_MODEL,
+                    category="mt",
+                    prompt_tokens=int(translation_result.success_prompt_tokens or 0),
+                    completion_tokens=int(translation_result.success_completion_tokens or 0),
+                    total_tokens=int(translation_result.success_total_tokens or 0),
+                    input_cost_cents=calculate_llm_cost_by_tokens(
+                        prompt_tokens=int(translation_result.success_prompt_tokens or 0),
+                        completion_tokens=int(translation_result.success_completion_tokens or 0),
+                        cost_per_1k_tokens_input_cents=translation_rate.cost_per_1k_tokens_input_cents,
+                        cost_per_1k_tokens_output_cents=translation_rate.cost_per_1k_tokens_output_cents,
+                    ),
+                    charge_cents=int(translation_cost_amount_cents),
+                    lesson_id=int(lesson.id),
+                    enable_thinking=False,
+                    input_text_preview="",
+                )
+
+        if normalized_request["cefr_annotation"] or normalized_request["word_explanation"]:
+            user_level = _resolve_owner_user_cefr_level(db, lesson.user_id)
+            runtime_sentences, cefr_state, explanation_state = _apply_generation_content_selection(
+                sentences=runtime_sentences,
+                user_level=user_level,
+                generation_options={
+                    **effective_generation_options,
+                    "cefr_annotation": effective_generation_options["cefr_annotation"],
+                    "word_explanation": effective_generation_options["word_explanation"],
+                },
+            )
+            generated_content_status["cefr_annotation"] = cefr_state
+            generated_content_status["word_explanation"] = explanation_state
+
+        for sentence, runtime_sentence in zip(sentences, runtime_sentences):
+            sentence.text_zh = str(runtime_sentence.get("text_zh") or "")
+            sentence.cefr_vocab_json = runtime_sentence.get("cefr_vocab_json")
+            sentence.needs_explanation = bool(runtime_sentence.get("needs_explanation"))
+            sentence.explanation_text = runtime_sentence.get("explanation_text")
+            sentence.simplified_sentence = runtime_sentence.get("simplified_sentence")
+            sentence.explanation_audio_url = runtime_sentence.get("explanation_audio_url")
+            sentence.key_explanations_json = runtime_sentence.get("key_explanations_json")
+
+        lesson.requested_generation_options_json = requested_generation_options
+        lesson.effective_generation_options_json = effective_generation_options
+        lesson.generated_content_status_json = build_generated_content_status(
+            effective_options=effective_generation_options,
+            translation_state=generated_content_status["zh_translation"],
+            cefr_state=generated_content_status["cefr_annotation"],
+            explanation_state=generated_content_status["word_explanation"],
+        )
+        if CONTENT_STATE_PENDING_REGENERATE in set(lesson.generated_content_status_json.values()):
+            lesson.status = "partial_ready"
+        else:
+            lesson.status = "ready"
+        db.add(lesson)
+        db.commit()
+        db.refresh(lesson)
+        lesson.requested_generation_options = dict(lesson.requested_generation_options_json or {})
+        lesson.effective_generation_options = dict(lesson.effective_generation_options_json or {})
+        lesson.generated_content_status = dict(lesson.generated_content_status_json or {})
+        return lesson
+
 
 def extract_cefr_from_sentences(sentences: list[str], target_level: str) -> list[dict]:
     return _extract_cefr_from_sentences_impl(sentences, target_level)
@@ -2734,5 +3010,6 @@ def process_sentences_with_cefr(
     sentences: list[dict],
     target_level: str,
     user_level: str | None = None,
+    include_explanations: bool = True,
 ) -> list[dict]:
-    return _process_sentences_with_cefr_impl(sentences, target_level, user_level)
+    return _process_sentences_with_cefr_impl(sentences, target_level, user_level, include_explanations)

@@ -24,6 +24,14 @@ from app.services.billing_service import (
 )
 from app.services.lesson_builder import estimate_duration_ms
 from app.services.lessons.cefr import process_sentences_with_cefr
+from app.services.lessons.content_options import (
+    CONTENT_STATE_GENERATED,
+    CONTENT_STATE_PENDING_REGENERATE,
+    CONTENT_STATE_SKIPPED,
+    build_generated_content_status,
+    clear_sentence_generated_content,
+    normalize_generation_options,
+)
 from app.services.lesson_task_manager import persist_lesson_workspace_summary
 from app.services.llm_usage_service import log_llm_usage
 from app.services.media import MediaError
@@ -146,16 +154,48 @@ def create_lesson_from_local_generation_result(
     runtime_sentences = [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)]
     if not runtime_sentences:
         raise MediaError("LOCAL_GENERATION_RESULT_EMPTY", "本地生成结果缺少字幕", "variant.sentences is empty")
+    requested_generation_options = normalize_generation_options(local_generation_result.get("requested_generation_options"))
+    effective_generation_options = normalize_generation_options(
+        local_generation_result.get("effective_generation_options"),
+        defaults=requested_generation_options,
+    )
     resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
-    try:
-        runtime_sentences = process_sentences_with_cefr(
-            sentences=runtime_sentences,
-            target_level=resolved_user_level,
-            user_level=resolved_user_level,
-        )
+    cefr_state = CONTENT_STATE_GENERATED
+    explanation_state = CONTENT_STATE_GENERATED
+    if effective_generation_options["cefr_annotation"]:
+        try:
+            runtime_sentences = process_sentences_with_cefr(
+                sentences=runtime_sentences,
+                target_level=resolved_user_level,
+                user_level=resolved_user_level,
+                include_explanations=effective_generation_options["word_explanation"],
+            )
+            variant["sentences"] = runtime_sentences
+        except Exception:
+            logger.exception("[DEBUG] lesson.cefr_processing_failed.local_complete owner_id=%s", owner_id)
+            cefr_state = CONTENT_STATE_PENDING_REGENERATE
+            explanation_state = CONTENT_STATE_PENDING_REGENERATE if effective_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
+            runtime_sentences = [
+                clear_sentence_generated_content(
+                    sentence,
+                    clear_translation=False,
+                    clear_cefr=True,
+                    clear_explanation=True,
+                )
+                for sentence in runtime_sentences
+            ]
+            variant["sentences"] = runtime_sentences
+    else:
+        runtime_sentences = [
+            clear_sentence_generated_content(
+                sentence,
+                clear_translation=False,
+                clear_cefr=True,
+                clear_explanation=True,
+            )
+            for sentence in runtime_sentences
+        ]
         variant["sentences"] = runtime_sentences
-    except Exception:
-        logger.exception("[DEBUG] lesson.cefr_processing_failed.local_complete owner_id=%s", owner_id)
 
     reserved_duration_ms = max(1, int(source_duration_ms or local_generation_result.get("source_duration_ms") or 0))
     normalized_runtime_kind = str(local_generation_result.get("runtime_kind") or runtime_kind or "local_browser").strip().lower() or "local_browser"
@@ -182,6 +222,20 @@ def create_lesson_from_local_generation_result(
             variant=variant,
             runtime_kind=normalized_runtime_kind,
         )
+    translation_state = CONTENT_STATE_GENERATED
+    if not effective_generation_options["zh_translation"]:
+        translation_state = CONTENT_STATE_SKIPPED
+        translation_debug = {}
+    elif failed_count > 0:
+        translation_state = CONTENT_STATE_PENDING_REGENERATE
+    if not effective_generation_options["word_explanation"]:
+        explanation_state = CONTENT_STATE_SKIPPED
+    generated_content_status = build_generated_content_status(
+        effective_options=effective_generation_options,
+        translation_state=translation_state,
+        cefr_state=cefr_state,
+        explanation_state=explanation_state,
+    )
 
     reserved_points = 0
     reserve_ledger_id: int | None = None
@@ -243,6 +297,9 @@ def create_lesson_from_local_generation_result(
             status="partial_ready" if failed_count > 0 else "ready",
         )
         lesson.user_cefr_level = resolved_user_level
+        lesson.requested_generation_options_json = requested_generation_options
+        lesson.effective_generation_options_json = effective_generation_options
+        lesson.generated_content_status_json = generated_content_status
         db.add(lesson)
         db.flush()
 
@@ -304,8 +361,11 @@ def create_lesson_from_local_generation_result(
         db.commit()
         db.refresh(lesson)
         lesson.subtitle_cache_seed = subtitle_cache_seed
+        lesson.requested_generation_options = requested_generation_options
+        lesson.effective_generation_options = effective_generation_options
+        lesson.generated_content_status = generated_content_status
         lesson.task_result_meta = dict(task_result_meta)
-        lesson.translation_debug = dict(translation_debug)
+        lesson.translation_debug = dict(translation_debug) if translation_debug else None
         lesson.workspace_summary = persist_lesson_workspace_summary(
             owner_user_id=owner_id,
             lesson_id=int(lesson.id),
@@ -317,7 +377,7 @@ def create_lesson_from_local_generation_result(
             status="succeeded",
             current_text=str(task_result_meta.get("result_message") or "课程已生成完成"),
             subtitle_cache_seed=subtitle_cache_seed,
-            translation_debug=translation_debug,
+            translation_debug=dict(translation_debug) if translation_debug else None,
         )
         return lesson
     except Exception:

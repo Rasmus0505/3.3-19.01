@@ -78,7 +78,8 @@ export const DISPLAY_STAGES = [
   { key: "asr_transcribe", label: "识别字幕" },
   { key: "build_lesson", label: "生成课程结构" },
   { key: "translate_zh", label: "翻译" },
-  { key: "cefr_explain", label: "生成讲解" },
+  { key: "cefr_annotation", label: "生词标注" },
+  { key: "word_explanation", label: "生成讲解" },
   { key: "write_lesson", label: "保存完成" },
 ];
 
@@ -87,8 +88,9 @@ export const STAGE_PROGRESS_BOUNDS = {
   asr_transcribe: { start: 15, end: 45 },
   build_lesson: { start: 45, end: 60 },
   translate_zh: { start: 60, end: 85 },
-  cefr_explain: { start: 85, end: 92 },
-  write_lesson: { start: 92, end: 100 },
+  cefr_annotation: { start: 85, end: 90 },
+  word_explanation: { start: 90, end: 95 },
+  write_lesson: { start: 95, end: 100 },
 };
 
 export const BOTTLE2_CLOUD_DISPLAY_STAGES = [
@@ -96,7 +98,7 @@ export const BOTTLE2_CLOUD_DISPLAY_STAGES = [
   { key: "submit_cloud_task", label: "提交云端任务" },
   { key: "transcribing", label: "转写中" },
   { key: "generating_lesson", label: "生成课程" },
-  { key: "cefr_explain", label: "生成讲解" },
+  { key: "content_enrichment", label: "补充内容" },
   { key: "completed", label: "已完成" },
 ];
 

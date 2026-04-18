@@ -27,6 +27,7 @@ def process_sentences_with_cefr(
     sentences: list[dict],
     target_level: str,
     user_level: str | None = None,
+    include_explanations: bool = True,
 ) -> list[dict]:
     service = _create_service(target_level=target_level)
     if user_level is None:
@@ -102,7 +103,7 @@ def process_sentences_with_cefr(
         }
         sentence_meta.append(meta)
 
-        if explanation_words:
+        if include_explanations and explanation_words:
             needs_explanation_queue.append(idx)
 
     # ── Phase 2: 批量生成讲解（多句合并为一次 LLM 调用） ──
@@ -144,7 +145,7 @@ def process_sentences_with_cefr(
             "word_levels": meta["word_levels"],
         }
 
-        explanation = meta["explanation"]
+        explanation = meta["explanation"] if include_explanations else None
         if explanation:
             sentence["needs_explanation"] = True
             sentence["explanation_text"] = explanation.get("listen_tips", "") or None

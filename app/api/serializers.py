@@ -8,9 +8,11 @@ from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yua
 from app.schemas import (
     AdminSubtitleSettingsItem,
     BillingRateItem,
+    GeneratedContentStatusResponse,
     LessonCatalogItemResponse,
     LessonCatalogProgressSummaryResponse,
     LessonDetailResponse,
+    LessonGenerationOptions,
     LessonItemResponse,
     LessonSentenceResponse,
     PublicSubtitleSettings,
@@ -19,6 +21,10 @@ from app.schemas import (
 )
 from app.services.asr_model_registry import get_asr_display_meta
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
+from app.services.lessons.content_options import (
+    infer_generated_content_status_from_lesson,
+    infer_generation_options_from_lesson,
+)
 
 
 def _quantize_rate_yuan(value: object, *, fallback_cents: int = 0) -> Decimal:
@@ -97,6 +103,14 @@ def to_runtime_sentence_response(sentence: dict, *, audio_url: str | None = None
 
 
 def to_lesson_item_response(lesson: Lesson) -> LessonItemResponse:
+    requested_generation_options, effective_generation_options = infer_generation_options_from_lesson(
+        requested=getattr(lesson, "requested_generation_options", None) or getattr(lesson, "requested_generation_options_json", None),
+        effective=getattr(lesson, "effective_generation_options", None) or getattr(lesson, "effective_generation_options_json", None),
+    )
+    generated_content_status = infer_generated_content_status_from_lesson(
+        stored_status=getattr(lesson, "generated_content_status", None) or getattr(lesson, "generated_content_status_json", None),
+        effective_options=effective_generation_options,
+    )
     return LessonItemResponse(
         id=lesson.id,
         title=lesson.title,
@@ -106,6 +120,9 @@ def to_lesson_item_response(lesson: Lesson) -> LessonItemResponse:
         media_storage=lesson.media_storage,
         source_duration_ms=lesson.source_duration_ms,
         status=lesson.status,
+        requested_generation_options=LessonGenerationOptions.model_validate(requested_generation_options),
+        effective_generation_options=LessonGenerationOptions.model_validate(effective_generation_options),
+        generated_content_status=GeneratedContentStatusResponse.model_validate(generated_content_status),
         created_at=to_shanghai_aware(lesson.created_at),
         updated_at=to_shanghai_aware(getattr(lesson, "updated_at", None)),
     )
@@ -143,6 +160,11 @@ def to_lesson_catalog_item_response(
 
 def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -> LessonDetailResponse:
     base = to_lesson_item_response(lesson)
+    generated_content_status = infer_generated_content_status_from_lesson(
+        stored_status=getattr(lesson, "generated_content_status", None) or getattr(lesson, "generated_content_status_json", None),
+        effective_options=getattr(base, "effective_generation_options", None).model_dump() if getattr(base, "effective_generation_options", None) else None,
+        sentences=sentences,
+    )
     subtitle_cache_seed_payload = getattr(lesson, "subtitle_cache_seed", None)
     subtitle_cache_seed = None
     if isinstance(subtitle_cache_seed_payload, dict):
@@ -166,6 +188,9 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
         media_storage=base.media_storage,
         source_duration_ms=base.source_duration_ms,
         status=base.status,
+        requested_generation_options=base.requested_generation_options,
+        effective_generation_options=base.effective_generation_options,
+        generated_content_status=GeneratedContentStatusResponse.model_validate(generated_content_status),
         created_at=base.created_at,
         sentences=[to_sentence_response(lesson, item) for item in sentences],
         subtitle_cache_seed=subtitle_cache_seed,

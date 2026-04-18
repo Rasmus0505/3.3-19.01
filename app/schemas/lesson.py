@@ -6,6 +6,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class LessonGenerationOptions(BaseModel):
+    core_subtitles: bool = True
+    zh_translation: bool = True
+    cefr_annotation: bool = True
+    word_explanation: bool = True
+
+
+class GeneratedContentStatusResponse(BaseModel):
+    core_subtitles: str = "generated"
+    zh_translation: str = "generated"
+    cefr_annotation: str = "generated"
+    word_explanation: str = "generated"
+
+
 class LessonSentenceResponse(BaseModel):
     idx: int
     begin_ms: int
@@ -39,6 +53,9 @@ class LessonItemResponse(BaseModel):
     media_storage: Literal["server", "client_indexeddb"]
     source_duration_ms: int
     status: str
+    requested_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
+    effective_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
+    generated_content_status: GeneratedContentStatusResponse = Field(default_factory=GeneratedContentStatusResponse)
     created_at: datetime
     updated_at: datetime | None = None
 
@@ -167,6 +184,9 @@ class LessonTaskResponse(BaseModel):
     current_text: str
     stages: list[LessonTaskStageResponse]
     counters: LessonTaskCountersResponse
+    requested_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
+    effective_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
+    generated_content_status: GeneratedContentStatusResponse | None = None
     lesson: LessonDetailResponse | None = None
     subtitle_cache_seed: SubtitleCacheSeedResponse | None = None
     translation_debug: LessonTaskTranslationDebugResponse | None = None
@@ -197,6 +217,8 @@ class LessonTaskCreateResponse(BaseModel):
     effective_asr_model: str = ""
     model_fallback_applied: bool = False
     model_fallback_reason: str = ""
+    requested_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
+    effective_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
 
 
 class LocalAsrLessonTaskCreateRequest(BaseModel):
@@ -205,6 +227,13 @@ class LocalAsrLessonTaskCreateRequest(BaseModel):
     source_duration_ms: int = Field(gt=0)
     runtime_kind: str = Field(default="local_browser", min_length=1, max_length=64)
     asr_payload: dict[str, Any]
+    generation_options: LessonGenerationOptions | None = None
+
+
+class LessonGenerateMissingRequest(BaseModel):
+    zh_translation: bool = False
+    cefr_annotation: bool = False
+    word_explanation: bool = False
 
 
 class LessonTaskResumeResponse(BaseModel):

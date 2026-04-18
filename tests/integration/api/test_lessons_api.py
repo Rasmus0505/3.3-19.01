@@ -15,17 +15,17 @@ from tests.fixtures.lessons import test_lesson, test_lesson_with_sentences
 
 def test_lessons_list_returns_200(authenticated_client, test_user, test_lesson):
     """GET /api/lessons/ 应返回 200。"""
-    response = authenticated_client.get("/api/lessons/")
+    response = authenticated_client.get("/api/lessons")
     assert response.status_code == 200
 
 
 def test_lessons_list_returns_items(authenticated_client, test_user, test_lesson):
     """GET /api/lessons/ 返回的 items 应包含测试课程。"""
-    response = authenticated_client.get("/api/lessons/")
+    response = authenticated_client.get("/api/lessons")
     assert response.status_code == 200
     data = response.json()
-    assert "items" in data
-    lesson_ids = [item["id"] for item in data["items"]]
+    assert isinstance(data, list)
+    lesson_ids = [item["id"] for item in data]
     assert test_lesson.id in lesson_ids
 
 
@@ -35,6 +35,22 @@ def test_lessons_detail_returns_correct_sentence_count(authenticated_client, tes
     assert response.status_code == 200
     data = response.json()
     assert len(data.get("sentences", [])) == 5
+
+
+def test_lessons_detail_includes_generation_status_defaults(authenticated_client, test_user, test_lesson_with_sentences):
+    response = authenticated_client.get(f"/api/lessons/{test_lesson_with_sentences.id}")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["requested_generation_options"]["core_subtitles"] is True
+    assert data["effective_generation_options"]["core_subtitles"] is True
+    assert "generated_content_status" in data
+    assert set(data["generated_content_status"].keys()) == {
+        "core_subtitles",
+        "zh_translation",
+        "cefr_annotation",
+        "word_explanation",
+    }
 
 
 def test_lessons_detail_404_for_nonexistent(authenticated_client, test_user):

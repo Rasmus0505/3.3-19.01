@@ -2,7 +2,6 @@ import { History } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { saveLessonSubtitleCacheSeed, saveLessonSubtitleVariant } from "../../shared/media/localSubtitleStore.js";
 import { hasLessonMedia } from "../../shared/media/localMediaStore";
 import { Button, Card, CardContent, CardHeader, CardTitle, Skeleton } from "../../shared/ui";
 import {
@@ -300,57 +299,30 @@ export function LessonList({
     }
   }
 
-  async function handleRecoverTranslation(lesson) {
+  async function handleGenerateMissingContent(lesson, requestOptions = {}, successMessage = "补生成完成") {
     if (!lesson?.id) return;
     setActionLessonId(String(lesson.id));
     setMenuLessonId(null);
     setStatus("");
     try {
-      const { accessToken, detail } = await buildRemoteLessonDetailPayload(lesson.id);
-      const sourceSeed = detail?.subtitle_cache_seed;
-      const asrPayload = sourceSeed?.asr_payload;
-      if (!asrPayload || typeof asrPayload !== "object") {
-        throw new Error("当前课程缺少可补翻译的字幕源数据。");
-      }
-      const hasMissingTranslation = Array.isArray(detail?.sentences)
-        ? detail.sentences.some((sentence) => !String(sentence?.text_zh || "").trim())
-        : true;
-      if (!hasMissingTranslation && lesson.status !== "partial_ready") {
-        setStatus("当前课程已有翻译，无需补翻译");
-        return;
-      }
-      await saveLessonSubtitleCacheSeed(lesson.id, sourceSeed, {
-        metadata: {
-          source_filename: detail?.source_filename || lesson?.source_filename || "",
-          runtime_kind: sourceSeed?.runtime_kind || "",
-        },
-      });
-      const variantResp = await api(
-        `/api/lessons/${lesson.id}/subtitle-variants`,
+      const { accessToken } = await buildRemoteLessonDetailPayload(lesson.id);
+      const generateResp = await api(
+        `/api/lessons/${lesson.id}/generate-missing`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            asr_payload: asrPayload,
-            semantic_split_enabled: false,
-          }),
+          body: JSON.stringify(requestOptions),
         },
         accessToken,
       );
-      const variantData = await parseResponse(variantResp);
-      if (!variantResp.ok) {
-        throw new Error(toErrorText(variantData, "补翻译失败"));
+      const nextData = await parseResponse(generateResp);
+      if (!generateResp.ok) {
+        throw new Error(toErrorText(nextData, "补生成失败"));
       }
-      await saveLessonSubtitleVariant(lesson.id, variantData, {
-        makeActive: true,
-        metadata: {
-          source_filename: detail?.source_filename || lesson?.source_filename || "",
-          runtime_kind: sourceSeed?.runtime_kind || "",
-        },
-      });
-      setStatus("已补充翻译，进入课程即可使用");
+      setStatus(successMessage);
+      await onRefreshHistory?.();
     } catch (error) {
-      setStatus(error instanceof Error && error.message ? error.message : "补翻译失败");
+      setStatus(error instanceof Error && error.message ? error.message : "补生成失败");
     } finally {
       setActionLessonId("");
     }
@@ -698,7 +670,9 @@ export function LessonList({
                     openRenameDialog(nextLesson);
                     setMenuLessonId(null);
                   }}
-                  onRecoverTranslation={(nextLesson) => void handleRecoverTranslation(nextLesson)}
+                  onGenerateMissingContent={(nextLesson, requestOptions, successMessage) =>
+                    void handleGenerateMissingContent(nextLesson, requestOptions, successMessage)
+                  }
                   onSetCompletion={(nextLesson, completed) => void handleSetLessonCompletion(nextLesson, completed)}
                   onRestoreMedia={(nextLesson) => openRestorePicker(nextLesson)}
                   onDelete={(nextLesson) => {

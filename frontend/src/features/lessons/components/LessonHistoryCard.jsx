@@ -21,7 +21,7 @@ export function LessonHistoryCard({
   onExport,
   onMenuOpenChange,
   onRename,
-  onRecoverTranslation,
+  onGenerateMissingContent,
   onSetCompletion,
   onRestoreMedia,
   onDelete,
@@ -37,6 +37,10 @@ export function LessonHistoryCard({
     cefrLoading,
     cefrDistribution,
   } = card;
+  const contentStatus = lesson?.generated_content_status || {};
+  const canRecoverTranslation = contentStatus.zh_translation && contentStatus.zh_translation !== "generated";
+  const canRecoverCefr = contentStatus.cefr_annotation && contentStatus.cefr_annotation !== "generated";
+  const canRecoverExplanation = contentStatus.word_explanation && contentStatus.word_explanation !== "generated";
 
   return (
     <div
@@ -237,17 +241,43 @@ export function LessonHistoryCard({
                     <Pencil className="size-4" />
                     修改标题
                   </Button>
-                  {lesson.status === "partial_ready" ? (
+                  {canRecoverTranslation ? (
                     <Button
                       type="button"
                       size="sm"
                       variant="ghost"
                       className="w-full justify-start"
-                      onClick={() => onRecoverTranslation(lesson)}
+                      onClick={() => onGenerateMissingContent(lesson, { zh_translation: true }, "已补充翻译，进入课程即可使用")}
                       disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
                     >
                       <RotateCcw className="size-4" />
                       {actionLessonId === String(lesson.id) ? "补翻译中..." : "补翻译"}
+                    </Button>
+                  ) : null}
+                  {canRecoverCefr ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="w-full justify-start"
+                      onClick={() => onGenerateMissingContent(lesson, { cefr_annotation: true }, "已补充生词标注")}
+                      disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
+                    >
+                      <RotateCcw className="size-4" />
+                      {actionLessonId === String(lesson.id) ? "补标注中..." : "补生词标注"}
+                    </Button>
+                  ) : null}
+                  {canRecoverExplanation ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="w-full justify-start"
+                      onClick={() => onGenerateMissingContent(lesson, { word_explanation: true }, "已补充生词讲解")}
+                      disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
+                    >
+                      <RotateCcw className="size-4" />
+                      {actionLessonId === String(lesson.id) ? "补讲解中..." : "补生词讲解"}
                     </Button>
                   ) : null}
                   <Button

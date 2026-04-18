@@ -14,6 +14,11 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.timezone import now_shanghai_naive
 from app.db import APP_SCHEMA, SessionLocal
 from app.models import LessonGenerationTask, TranslationRequestLog
+from app.services.lessons.content_options import (
+    build_generated_content_status,
+    normalize_generated_content_status,
+    normalize_generation_options,
+)
 from app.services.media import cleanup_dir
 from app.services.lessons.task_recovery import (
     _build_result_label,
@@ -77,7 +82,8 @@ _STAGE_LABELS = (
     ("asr_transcribe", "ASR转写字幕"),
     ("build_lesson", "生成课程结构"),
     ("translate_zh", "翻译中文字幕"),
-    ("cefr_explain", "生成讲解"),
+    ("cefr_annotation", "生成生词标注"),
+    ("word_explanation", "生成讲解"),
     ("write_lesson", "写入课程"),
 )
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
@@ -172,6 +178,9 @@ def _default_artifacts(
         "partial_failure_stage": "",
         "partial_failure_code": "",
         "partial_failure_message": "",
+        "requested_generation_options": normalize_generation_options(None),
+        "effective_generation_options": normalize_generation_options(None),
+        "generated_content_status": build_generated_content_status(effective_options=normalize_generation_options(None)),
         "admission_state": "",
         "queue_position": 0,
         "active_task_count": 0,
@@ -330,6 +339,12 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         failure_debug["failed_at"] = task.failed_at
     asr_raw = _copy_dict(task.asr_raw_json) if isinstance(task.asr_raw_json, dict) else None
     artifacts = _copy_dict(task.artifacts_json)
+    requested_generation_options = normalize_generation_options(artifacts.get("requested_generation_options"))
+    effective_generation_options = normalize_generation_options(
+        artifacts.get("effective_generation_options"),
+        defaults=requested_generation_options,
+    )
+    generated_content_status = normalize_generated_content_status(artifacts.get("generated_content_status"))
     status = str(task.status or "")
     control_action = _get_control_action(artifacts)
     if status == TASK_STATUS_SUCCEEDED:
@@ -355,6 +370,9 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "current_text": str(task.current_text or ""),
         "stages": _copy_list(task.stages_json),
         "counters": _copy_dict(task.counters_json),
+        "requested_generation_options": requested_generation_options,
+        "effective_generation_options": effective_generation_options,
+        "generated_content_status": generated_content_status,
         "translation_debug": _copy_dict(task.translation_debug_json) if isinstance(task.translation_debug_json, dict) else None,
         "failure_debug": failure_debug,
         "asr_raw": asr_raw,
@@ -472,6 +490,8 @@ def create_task(
     effective_asr_model: str | None = None,
     model_fallback_applied: bool = False,
     model_fallback_reason: str = "",
+    requested_generation_options: dict | None = None,
+    effective_generation_options: dict | None = None,
     work_dir: str,
     source_path: str,
     db: Session | None = None,
@@ -482,6 +502,11 @@ def create_task(
     session, owns_session = _session_scope(db=db, session_factory=session_factory)
     try:
         ensure_lesson_task_storage_ready(session)
+        normalized_requested_generation_options = normalize_generation_options(requested_generation_options)
+        normalized_effective_generation_options = normalize_generation_options(
+            effective_generation_options,
+            defaults=normalized_requested_generation_options,
+        )
         task = LessonGenerationTask(
             task_id=task_id,
             owner_user_id=int(owner_user_id),
@@ -510,6 +535,11 @@ def create_task(
             raw_debug_purged_at=None,
         )
         session.add(task)
+        task.artifacts_json["requested_generation_options"] = normalized_requested_generation_options
+        task.artifacts_json["effective_generation_options"] = normalized_effective_generation_options
+        task.artifacts_json["generated_content_status"] = build_generated_content_status(
+            effective_options=normalized_effective_generation_options,
+        )
         session.commit()
         session.refresh(task)
         _sync_task_workspace_summary(task)
