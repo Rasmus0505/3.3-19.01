@@ -9,11 +9,13 @@ export default function ImmersiveLessonShell({
   typingPanelProps,
   explanationProps,
   chatProps,
+  fullscreenStudyMode = false,
 }) {
   const { ref: typingPanelRef, ...restTypingPanelProps } = typingPanelProps;
 
   return (
     <ImmersiveLayout
+      fullscreenStudyMode={fullscreenStudyMode}
       leftTopContent={
         <VideoPanel
           {...videoPanelProps}
@@ -24,18 +26,18 @@ export default function ImmersiveLessonShell({
         />
       }
       leftBottomContent={<TypingPanel ref={typingPanelRef} {...restTypingPanelProps} />}
-      rightTopContent={
+      rightTopContent={fullscreenStudyMode ? null : (
         <div className="immersive-explanation-shell">
           <ExplanationSidebarContent
             {...explanationProps}
           />
         </div>
-      }
-      rightBottomContent={
+      )}
+      rightBottomContent={fullscreenStudyMode ? null : (
         <div className="immersive-chat-shell">
           <ChatPanel {...chatProps} />
         </div>
-      }
+      )}
     />
   );
 }

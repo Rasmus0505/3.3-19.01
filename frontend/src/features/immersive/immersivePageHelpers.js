@@ -2,7 +2,6 @@ import {
   SHORTCUT_ACTIONS,
   TRANSLATION_MASK_LAYOUT_VERSION,
   getShortcutLabel,
-  resolveReplayAssistance,
 } from "./learningSettings";
 import { normalizePlaybackRate } from "./immersiveSessionMachine";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
@@ -567,6 +566,38 @@ function resolveInteractiveWordbookContext({
   return null;
 }
 
+function shouldAutoAdvanceSentence({
+  immersiveActive = false,
+  sentenceTypingDone = false,
+  postAnswerReplayState = "idle",
+  sentenceAdvanceLocked = false,
+  autoReplayAnsweredSentence = false,
+  singleSentenceLoopEnabled = false,
+  sentencePlaybackRequired = true,
+  sentencePlaybackDone = false,
+} = {}) {
+  if (!immersiveActive || !sentenceTypingDone || sentenceAdvanceLocked) {
+    return false;
+  }
+
+  if (autoReplayAnsweredSentence) {
+    if (singleSentenceLoopEnabled) {
+      return false;
+    }
+    return postAnswerReplayState === "completed";
+  }
+
+  if (postAnswerReplayState !== "idle") {
+    return false;
+  }
+
+  if (sentencePlaybackRequired && !sentencePlaybackDone) {
+    return false;
+  }
+
+  return true;
+}
+
 function toggleWordbookTokenIndex(selectedIndexes, tokenIndex) {
   if (!Number.isInteger(tokenIndex)) {
     return Array.isArray(selectedIndexes) ? selectedIndexes : [];
@@ -951,6 +982,7 @@ export {
   createWordState,
   buildSelectableSentenceTokens,
   resolveInteractiveWordbookContext,
+  shouldAutoAdvanceSentence,
   toggleWordbookTokenIndex,
   buildWordbookTokenRange,
   cloneWordSnapshot,

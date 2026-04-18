@@ -406,12 +406,9 @@ export function writeLearningSettings(settings) {
 }
 
 export function resolveReplayAssistance(_learningSettings, stage = 0) {
-  // Progressive assistance: each replay stage reveals more
-  // stage 1 → reveal 1 letter, stage 2 → reveal 2 letters, stage 3+ → reveal whole word
+  // Replay must stay pure playback in listening mode; no automatic reveals.
   if (stage <= 0) return { revealLetterCount: 0, revealWordCount: 0 };
-  if (stage === 1) return { revealLetterCount: 1, revealWordCount: 0 };
-  if (stage === 2) return { revealLetterCount: 2, revealWordCount: 0 };
-  return { revealLetterCount: 0, revealWordCount: 1 };
+  return { revealLetterCount: 0, revealWordCount: 0 };
 }
 
 export function isShortcutPressed(event, shortcutValue) {

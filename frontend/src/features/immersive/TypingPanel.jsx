@@ -159,6 +159,10 @@ const TypingPanel = forwardRef(function TypingPanel(
     currentSentence,
     nextSentence,
     sentenceTypingDone,
+    fullscreenStudyMode,
+    fullscreenSentenceHeading,
+    fullscreenSentenceEn,
+    fullscreenSentenceZh,
     typingInputRef,
     currentWordInput,
     typingEnabled,
@@ -193,6 +197,21 @@ const TypingPanel = forwardRef(function TypingPanel(
           sentenceTypingDone,
         })}
       </div>
+
+      {fullscreenStudyMode ? (
+        <section className="immersive-typing__fullscreen-context" aria-label="全屏学习字幕参考">
+          <div className="immersive-typing__fullscreen-context-head">
+            <span className="immersive-typing__fullscreen-context-kicker">Subtitle reference</span>
+            <span className="immersive-typing__fullscreen-context-badge">{fullscreenSentenceHeading || "上一句"}</span>
+          </div>
+          <p className="immersive-typing__fullscreen-context-en">
+            {fullscreenSentenceEn || "(暂无英文字幕)"}
+          </p>
+          <p className="immersive-typing__fullscreen-context-zh">
+            {fullscreenSentenceZh || "(暂无中文翻译)"}
+          </p>
+        </section>
+      ) : null}
 
       {phase === "lesson_completed" ? (
         <div className="flex flex-col items-center gap-2 py-2">

@@ -4,6 +4,8 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 
 import {
@@ -48,6 +50,8 @@ const VideoPanel = forwardRef(function VideoPanel(
     requestNavigateSentence,
     requestReplayCurrentSentence,
     requestTogglePausePlayback,
+    fullscreenStudyMode,
+    onToggleFullscreenStudyMode,
     singleSentenceLoopEnabled,
     handleToggleSingleSentenceLoop,
     playbackRateInputValue,
@@ -236,6 +240,16 @@ const VideoPanel = forwardRef(function VideoPanel(
                       title="重复播放当前句子，加强听力训练"
                     >
                       精听
+                    </button>
+                    <button
+                      type="button"
+                      className={`immersive-session-toggle ${fullscreenStudyMode ? "immersive-session-toggle--active" : ""}`}
+                      aria-pressed={fullscreenStudyMode}
+                      onClick={onToggleFullscreenStudyMode}
+                      title={fullscreenStudyMode ? "退出全屏学习模式" : "进入全屏学习模式"}
+                    >
+                      {fullscreenStudyMode ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                      {fullscreenStudyMode ? "退出全屏" : "全屏学习"}
                     </button>
                     <label className="immersive-session-rate-field">
                       <span className="immersive-session-rate-label">倍速</span>
