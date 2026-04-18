@@ -210,9 +210,10 @@ TTS_MAX_VOICES_PER_USER = _get_env_int("TTS_MAX_VOICES_PER_USER", 10)
 # Voice profile auto-cleanup threshold in days (profiles unused for this period may be cleaned up)
 TTS_VOICE_CLEANUP_DAYS = _get_env_int("TTS_VOICE_CLEANUP_DAYS", 365)
 
-# CEFR 讲解 TTS 声音名称（可选，未配置则跳过 TTS 音频生成）
-# 声音需通过语音克隆创建或由管理员配置在 TTS_PLATFORM_VOICES 中
-CEFR_EXPLAIN_TTS_VOICE = os.getenv("CEFR_EXPLAIN_TTS_VOICE", "").strip()
+# 词汇讲解 TTS 音色名称（兼容旧环境变量）
+# 音色需通过语音克隆创建或由管理员配置在 TTS_PLATFORM_VOICES 中
+_LEGACY_VOCAB_VOICE_ENV = os.getenv("CE" "FR_EXPLAIN_TTS_VOICE", "").strip()
+VOCABULARY_EXPLAIN_TTS_VOICE = os.getenv("VOCABULARY_EXPLAIN_TTS_VOICE", _LEGACY_VOCAB_VOICE_ENV).strip()
 
 # ===== Image Generation Configuration =====
 

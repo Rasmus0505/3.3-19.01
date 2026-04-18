@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
 import { createWordContextBatches } from "./useReadingRewrite";
 
@@ -35,3 +35,5 @@ describe("createWordContextBatches", () => {
     expect(batch.context.toLowerCase()).toContain("pseudointellectualism");
   });
 });
+
+

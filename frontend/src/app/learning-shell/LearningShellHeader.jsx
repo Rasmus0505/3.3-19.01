@@ -1,4 +1,4 @@
-import { Menu } from "lucide-react";
+﻿import { Menu } from "lucide-react";
 
 import {
   Badge,
@@ -97,3 +97,5 @@ export function LearningShellHeader({
     </header>
   );
 }
+
+

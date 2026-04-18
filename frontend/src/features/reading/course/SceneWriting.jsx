@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SceneWriting — Scene 5: AI-guided writing exercise.
  *
  * Phases: prompting → writing → evaluating → feedback
@@ -296,3 +296,5 @@ export function SceneWriting({ pack, apiCall, courseData, onSetWriting, onComple
     </div>
   );
 }
+
+

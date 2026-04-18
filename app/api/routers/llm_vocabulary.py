@@ -1,8 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import re
 import uuid
+import sqlite3
 from functools import lru_cache
 from pathlib import Path
 
@@ -12,17 +13,19 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.routers.llm_shared import (
-    CEFR_LEVELS,
     LLM_MODEL_DEEPSEEK_FAST,
     LLM_MODEL_DEEPSEEK_THINKING,
     build_semantic_meaning_entries,
+    collins_level_label,
     logger,
     recover_json_payload,
+    require_collins_level,
     strip_json_fences,
 )
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
+from app.services.dictionary_service import VOCABULARY_SQLITE_PATH
 
 router = APIRouter()
 
@@ -107,12 +110,11 @@ def _llm_module():
 
 @lru_cache(maxsize=1)
 def _load_vocab_words() -> set[str]:
-    vocab_path = Path(__file__).resolve().parents[2] / "data" / "vocab" / "cefr_vocab_fixed.json"
-    if not vocab_path.exists():
+    if not VOCABULARY_SQLITE_PATH.exists():
         return set()
-    with open(vocab_path, "r", encoding="utf-8") as file:
-        payload = json.load(file)
-    return set(payload.get("words", {}).keys())
+    with sqlite3.connect(VOCABULARY_SQLITE_PATH) as conn:
+        rows = conn.execute("SELECT lookup_key FROM lookup_keys").fetchall()
+    return {str(row[0] or "").strip().lower() for row in rows if row and str(row[0] or "").strip()}
 
 
 def _strip_contraction(word: str) -> str | None:
@@ -315,7 +317,7 @@ SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "Given a sentence and a list of words/phrases to simplify from that sentence,\n"
     "return a JSON object with two fields:\n"
     "1. 'simplified_words': array of simplified replacements, IN THE SAME ORDER as the input list\n"
-    "2. 'word_levels': object mapping each input word to its CEFR level you judged (e.g. {{'word': 'C1'}})\n"
+    "2. 'word_levels': object mapping each input word to its Collins level you judged (e.g. {{'word': 'C1'}})\n"
     "\n"
     "## CRITICAL: EXACT i+1 Simplification Rule\n"
     "- Simplify words ONLY to {target_level} level — NOT simpler, NOT harder\n"
@@ -323,8 +325,8 @@ SIMPLIFY_WORDS_SYSTEM_PROMPT = (
     "- For target B1: 'ambulate' (C1) → 'walk' (B1), NOT 'move' (A1)\n"
     "- Oversimplification is WRONG: use a word at exactly {target_level}, not lower\n"
     "\n"
-    "## CEFR Level Verification (MUST do first)\n"
-    "Your FIRST task is to verify each word's CEFR level:\n"
+    "## Collins Level Verification (MUST do first)\n"
+    "Your FIRST task is to verify each word's Collins level:\n"
     "- Look up the BASE FORM of each word (e.g. 'fixing' → base: 'fix')\n"
     "- If base form is at or below {target_level} → level = '{target_level}' (no simplification needed)\n"
     "- If base form exceeds {target_level} → assign actual level (B1, B2, C1, C2, etc.)\n"
@@ -425,7 +427,7 @@ FILTER_AND_SIMPLIFY_SYSTEM_PROMPT = (
     '  "valid_above_i1_words": ["word3"],          // Words above {target_level} that need simplification\n'
     '  "removed_words": [{{"word": "word4", "reason": "过于简单/词典误标"}}],  // Words to exclude from learning\n'
     '  "simplified_words": ["simple1"],            // Simplified replacements, one per valid_above_i1_words entry\n'
-    '  "word_levels": {{"word1": "B2", "word3": "C1", "word4": "A2"}}  // Your judgment of each word\'s CEFR level\n'
+    '  "word_levels": {{"word1": "B2", "word3": "C1", "word4": "A2"}}  // Your judgment of each word\'s Collins level\n'
     "}}\n"
     "\n"
     "## Important\n"
@@ -538,9 +540,9 @@ class FilterAndSimplifyRequest(BaseModel):
 
     sentence: str = Field(..., min_length=1)
     words: list[str] = Field(..., min_length=1, description="词典筛选出的候选词列表")
-    word_levels: dict[str, str] | None = Field(default=None, description="词典标注的等级 {word: level}")
-    target_level: str = Field(default="B1", max_length=8, description="目标等级（i+1）")
-    user_level: str = Field(default="A2", max_length=8, description="用户当前等级（i）")
+    word_levels: dict[str, int | str] | None = Field(default=None, description="词典标注的 Collins 等级 {word: level}")
+    target_level: int = Field(default=2, ge=1, le=5, description="目标等级（i+1）")
+    user_level: int = Field(default=3, ge=1, le=5, description="用户当前等级（i）")
     enable_thinking: bool = False
 
     @field_validator("sentence")
@@ -550,22 +552,15 @@ class FilterAndSimplifyRequest(BaseModel):
             raise ValueError("Sentence too long (max 3000 chars)")
         return value
 
-    @field_validator("target_level", "user_level")
-    @classmethod
-    def validate_levels(cls, value: str) -> str:
-        if value.upper() not in CEFR_LEVELS:
-            raise ValueError(f"Invalid CEFR level '{value}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}")
-        return value.upper()
-
 
 class SimplifyWordsRequest(BaseModel):
     """JSON body for POST /api/llm/simplify-words."""
 
     sentence: str = Field(..., min_length=1)
     words: list[str] = Field(..., min_length=1)
-    target_level: str = Field(default="B1", max_length=8)
+    target_level: int = Field(default=2, ge=1, le=5)
     enable_thinking: bool = False
-    word_levels: dict[str, str] | None = Field(default=None, description="每个词的 CEFR 等级，格式 {word: level}")
+    word_levels: dict[str, int | str] | None = Field(default=None, description="每个词的 Collins 等级，格式 {word: level}")
 
     @field_validator("sentence")
     @classmethod
@@ -576,15 +571,11 @@ class SimplifyWordsRequest(BaseModel):
 
     @field_validator("word_levels")
     @classmethod
-    def word_levels_validate(cls, value: dict[str, str] | None) -> dict[str, str] | None:
+    def word_levels_validate(cls, value: dict[str, int | str] | None) -> dict[str, int | str] | None:
         if value is None:
             return value
-        valid_levels = {"A1", "A2", "B1", "B2", "C1", "C2", "SUPER"}
         for word, level in value.items():
-            if level not in valid_levels:
-                raise ValueError(
-                    f"Invalid CEFR level '{level}' for word '{word}'. Must be one of: {', '.join(sorted(valid_levels))}"
-                )
+            require_collins_level(level, field_name=f"word_levels[{word}]")
         return value
 
 
@@ -720,8 +711,7 @@ def simplify_words_endpoint(
     from app.services.llm_usage_service import log_llm_usage
 
     llm_root.ensure_default_billing_rates(db)
-    if body.target_level.upper() not in CEFR_LEVELS:
-        raise HTTPException(status_code=422, detail=f"Invalid target_level '{body.target_level}'")
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=2)
     if not body.words:
         raise HTTPException(status_code=422, detail="words must be non-empty list")
     if len(body.sentence) > 2000:
@@ -737,7 +727,7 @@ def simplify_words_endpoint(
     api_key = llm_root._require_api_key()
     trace_id = str(uuid.uuid4())
 
-    user_message_lines = [f"原文：{body.sentence}", f"目标等级：{body.target_level.upper()}"]
+    user_message_lines = [f"原文：{body.sentence}", f"目标等级：{collins_level_label(target_level)}"]
     if body.word_levels:
         user_message_lines.append("\n每个词的词典标注等级（供参考，你来判断是否真的需要简化）：")
         for word in body.words:
@@ -753,7 +743,7 @@ def simplify_words_endpoint(
         'simplified_words 与输入词顺序一致，"" 表示不简化；word_levels 的键为输入词（小写亦可）。'
     )
     user_message = "\n".join(user_message_lines)
-    system_prompt = SIMPLIFY_WORDS_SYSTEM_PROMPT.format(target_level=body.target_level.upper()) + "\n\n" + SIMPLIFY_WORDS_EXAMPLE
+    system_prompt = SIMPLIFY_WORDS_SYSTEM_PROMPT.format(target_level=target_level) + "\n\n" + SIMPLIFY_WORDS_EXAMPLE
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message},
@@ -923,7 +913,7 @@ def filter_and_simplify_words_endpoint(
     - valid_above_i1_words: 有效的 >i+1 词汇（需要且可以简化）
     - removed_words: 被过滤的词汇（过于简单或词典误标）
     - simplified_words: >i+1 词的重写版本（与 above_i1_words 一一对应）
-    - word_levels: DeepSeek 重新判断的 CEFR 等级
+    - word_levels: DeepSeek 重新判断的 Collins 等级
     """
     try:
         return _do_filter_and_simplify(body, current_user, db)
@@ -942,10 +932,8 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
     logger.info("[filter-simplify] Starting request for user_id=%s, words_count=%d", current_user.id, len(body.words))
     llm_root.ensure_default_billing_rates(db)
 
-    if body.target_level.upper() not in CEFR_LEVELS:
-        raise HTTPException(status_code=422, detail=f"Invalid target_level '{body.target_level}'")
-    if body.user_level.upper() not in CEFR_LEVELS:
-        raise HTTPException(status_code=422, detail=f"Invalid user_level '{body.user_level}'")
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=2)
+    user_level = require_collins_level(body.user_level, field_name="user_level", default=3)
     if not body.words:
         raise HTTPException(status_code=422, detail="words must be non-empty list")
     if len(body.sentence) > 3000:
@@ -966,8 +954,8 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
 
     user_message_lines = [
         f"原文：{body.sentence}",
-        f"用户等级：{body.user_level.upper()}",
-        f"目标等级：{body.target_level.upper()}（即 i+1）",
+        f"用户等级：{collins_level_label(user_level)}",
+        f"目标等级：{collins_level_label(target_level)}（即 i+1）",
     ]
 
     if body.word_levels:
@@ -986,8 +974,8 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
     user_message = "\n".join(user_message_lines)
 
     system_prompt = FILTER_AND_SIMPLIFY_SYSTEM_PROMPT.format(
-        user_level=body.user_level.upper(),
-        target_level=body.target_level.upper(),
+        user_level=user_level,
+        target_level=target_level,
     ) + "\n\n" + FILTER_AND_SIMPLIFY_EXAMPLE
     messages = [
         {"role": "system", "content": system_prompt},
@@ -1120,3 +1108,4 @@ def _do_filter_and_simplify(body: FilterAndSimplifyRequest, current_user: User, 
         "charge_cents": charge_cents,
         "trace_id": trace_id,
     }
+

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 import { Badge, Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../shared/ui";
 
@@ -80,3 +80,5 @@ export function AnnouncementModal({ announcements = [] }) {
     </Dialog>
   );
 }
+
+

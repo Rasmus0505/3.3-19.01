@@ -1,8 +1,8 @@
-/**
+﻿/**
  * ReadingSection — Phase 1 of each section.
  * Displays the rewritten article text with:
  * - Yellow highlight on rewritten (i+1) words
- * - Hover tooltip showing original word + CEFR level
+ * - Hover tooltip showing original word + Collins level
  * - Click on any word → WordCard popup
  * - Text selection → SelectionToolbar (mark confused / add to wordbook)
  */
@@ -12,7 +12,7 @@ import { cn } from "../../../../lib/utils";
 import { WordCard } from "../../classroom/WordCard";
 import { SelectionToolbar } from "../../classroom/SelectionToolbar";
 
-// Build a lookup map: lowercased replacement word → { original, cefr }
+// Build a lookup map: lowercased replacement word → { original, levelTag }
 // Pipeline format: { original: replacementWord, rewritten: hardOriginalWord, finalLevel }
 // Legacy format:   { replacement: replacementWord, original: hardOriginalWord, originalCefr }
 function buildMappingLookup(rewriteMappings) {
@@ -22,13 +22,13 @@ function buildMappingLookup(rewriteMappings) {
     if (m.original && m.rewritten && m.original !== m.rewritten) {
       map.set(String(m.original).toLowerCase(), {
         original: m.rewritten,
-        cefr: m.finalLevel || m.cefr || "?",
+        levelTag: m.finalLevel || m.levelTag || "?",
       });
     // Legacy format: m.replacement = new word, m.original = hard word
     } else if (m.replacement && m.original) {
       map.set(String(m.replacement).toLowerCase(), {
         original: m.original,
-        cefr: m.originalCefr || m.cefr || "?",
+        levelTag: m.originalCefr || m.levelTag || "?",
       });
     }
   }
@@ -97,8 +97,8 @@ function RewriteTooltip({ data }) {
       }}
     >
       <span className="rc-rewrite-tooltip__orig">原词：{originalInfo.original}</span>
-      {originalInfo.cefr && originalInfo.cefr !== "?" && (
-        <span className="rc-rewrite-tooltip__cefr">{originalInfo.cefr}</span>
+      {originalInfo.levelTag && originalInfo.levelTag !== "?" && (
+        <span className="rc-rewrite-tooltip__level">{originalInfo.levelTag}</span>
       )}
     </div>
   );
@@ -280,3 +280,6 @@ export function ReadingSection({
     </div>
   );
 }
+
+
+

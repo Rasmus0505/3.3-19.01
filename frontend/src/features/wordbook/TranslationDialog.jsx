@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 import { parseResponse, toErrorText } from "../../shared/api/client";
 import {
   Dialog,
@@ -127,3 +127,5 @@ export function TranslationDialog({
     </Dialog>
   );
 }
+
+

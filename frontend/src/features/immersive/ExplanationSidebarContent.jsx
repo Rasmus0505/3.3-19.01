@@ -1,8 +1,8 @@
-import { BookOpenText, Lightbulb, BookOpen, Volume2 } from "lucide-react";
+﻿import { BookOpenText, Lightbulb, BookOpen, Volume2 } from "lucide-react";
 
 import { Button } from "../../shared/ui";
 import { cn } from "../../lib/utils";
-import { computeCefrClassName } from "./CefrBadge";
+import { computeDifficultyClassName } from "./DifficultyBadge";
 
 /**
  * Mask a word for hint display: show first letter + underscores.
@@ -37,10 +37,10 @@ export default function ExplanationSidebarContent({
   wordbookSentenceTokens,
   wordbookSelectedTokenIndexes,
   wordbookSuccessAnimationIndexes,
-  wordbookSentenceCefrMap,
-  cefrAnalyzerRef,
-  cefrLevel,
-  lookupCefrLevelFromMap,
+  wordbookSentenceBandMap,
+  difficultyAnalyzerRef,
+  collinsLevel,
+  lookupBandFromMap,
   handleWordbookTokenClick,
   requestInteractiveWordbookSentencePlayback,
   wordbookSentencePlaybackLabel,
@@ -68,9 +68,9 @@ export default function ExplanationSidebarContent({
         const trimmedToken = String(token || "").trim();
         const selected = Array.isArray(wordbookSelectedTokenIndexes) && wordbookSelectedTokenIndexes.includes(tokenIndex);
         const success = Array.isArray(wordbookSuccessAnimationIndexes) && wordbookSuccessAnimationIndexes.includes(tokenIndex);
-        const cefrClass = computeCefrClassName(
-          lookupCefrLevelFromMap(wordbookSentenceCefrMap, token, cefrAnalyzerRef.current),
-          cefrLevel,
+        const difficultyClass = computeDifficultyClassName(
+          lookupBandFromMap(wordbookSentenceBandMap, token, difficultyAnalyzerRef.current),
+          collinsLevel,
         );
 
         return (
@@ -80,7 +80,7 @@ export default function ExplanationSidebarContent({
             data-wordbook-token-index={tokenIndex}
             className={cn(
               "immersive-wordbook-token",
-              cefrClass,
+              difficultyClass,
               selected ? "immersive-wordbook-token--selected" : "",
               success ? "wordbook-token--success" : "",
             )}
@@ -254,3 +254,5 @@ export default function ExplanationSidebarContent({
     </div>
   );
 }
+
+

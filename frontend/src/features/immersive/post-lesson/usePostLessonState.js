@@ -1,4 +1,4 @@
-/**
+﻿/**
  * usePostLessonState — Manages post-lesson progress via localStorage.
  *
  * Mirrors useCourseState.js pattern but uses localStorage for simplicity.
@@ -158,3 +158,5 @@ export function usePostLessonState(lessonId) {
     resetPostLesson,
   };
 }
+
+

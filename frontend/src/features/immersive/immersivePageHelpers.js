@@ -1,4 +1,4 @@
-import {
+﻿import {
   SHORTCUT_ACTIONS,
   TRANSLATION_MASK_LAYOUT_VERSION,
   getShortcutLabel,
@@ -87,8 +87,8 @@ const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
 const IMMERSIVE_PLAYBACK_RATE_STEP = 0.25;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const ENTRY_HINT_ACTION_IDS = ["reveal_word", "replay_sentence", "next_sentence"];
-const CEFR_CACHE_KEY_PREFIX = "cefr_analysis_v1:";
-const CEFR_ANALYSIS_CHUNK_SIZE = 50;
+const Collins_CACHE_KEY_PREFIX = "levelTag_analysis_v1:";
+const Collins_ANALYSIS_CHUNK_SIZE = 50;
 const MEDIA_TYPE_BY_EXTENSION = {
   ".mp4": "video/mp4",
   ".mov": "video/quicktime",
@@ -167,12 +167,12 @@ function _addNormalizedKeysToMap(map, rawLower, level) {
 }
 
 /**
- * @param {Map} map - CEFR level map
+ * @param {Map} map - Collins level map
  * @param {string} token - raw token
  * @param {VocabAnalyzer|null} [fallbackAnalyzer] - if provided, missing map entries are resolved via VocabAnalyzer
- * @returns {string|undefined} CEFR level or undefined
+ * @returns {string|undefined} Collins level or undefined
  */
-function lookupCefrLevelFromMap(map, token, fallbackAnalyzer) {
+function lookupBandFromMap(map, token, fallbackAnalyzer) {
   if (!(map instanceof Map)) return undefined;
   const key = normalizeToken(token);
   if (map.has(key)) return map.get(key);
@@ -951,8 +951,8 @@ export {
   IMMERSIVE_PLAYBACK_RATE_STEP,
   TRANSLATION_MASK_EMPTY_RECT,
   ENTRY_HINT_ACTION_IDS,
-  CEFR_CACHE_KEY_PREFIX,
-  CEFR_ANALYSIS_CHUNK_SIZE,
+  Collins_CACHE_KEY_PREFIX,
+  Collins_ANALYSIS_CHUNK_SIZE,
   MEDIA_TYPE_BY_EXTENSION,
   TRANSLATION_MASK_RESIZE_HANDLES,
   normalizeComparableToken,
@@ -960,7 +960,7 @@ export {
   formatSoeAssessErrorMessage,
   addSentenceCefrTokensToMap,
   addTokenLevelToMap,
-  lookupCefrLevelFromMap,
+  lookupBandFromMap,
   clampNumber,
   normalizeTranslationMaskRect,
   convertTranslationMaskRectToStored,
@@ -1008,3 +1008,6 @@ export {
   formatMediaLoadError,
   readErrorPayload,
 };
+
+
+

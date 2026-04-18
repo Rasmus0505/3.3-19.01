@@ -1,4 +1,4 @@
-import { NavLink } from "react-router-dom";
+﻿import { NavLink } from "react-router-dom";
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton } from "../../shared/ui";
 
@@ -70,3 +70,5 @@ export function AdminNoPermission({ onLogout }) {
     </div>
   );
 }
+
+

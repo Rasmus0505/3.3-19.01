@@ -69,6 +69,7 @@ from app.schemas.billing import (
     WalletRedeemCodeResponse,
 )
 from app.schemas.common import AsrModelActionItem, AsrModelListResponse, AsrModelPrepareResponse, AsrModelStatusResponse, ErrorResponse, PaginationMeta, PaginatedResponse, SuccessResponse
+from app.schemas.dictionary import DictionaryCollinsClassifyItem, DictionaryCollinsClassifyRequest, DictionaryCollinsClassifyResponse
 from app.schemas.lesson import (
     GeneratedContentStatusResponse,
     LessonCatalogItemResponse,
@@ -123,6 +124,9 @@ from app.schemas.tts import (
 __all__ = [
     "SuccessResponse",
     "ErrorResponse",
+    "DictionaryCollinsClassifyRequest",
+    "DictionaryCollinsClassifyItem",
+    "DictionaryCollinsClassifyResponse",
     "PaginationMeta",
     "PaginatedResponse",
     "AsrModelActionItem",

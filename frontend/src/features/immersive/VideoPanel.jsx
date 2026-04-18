@@ -1,4 +1,4 @@
-import React, { forwardRef } from "react";
+﻿import React, { forwardRef } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -324,3 +324,5 @@ const VideoPanel = forwardRef(function VideoPanel(
 });
 
 export default VideoPanel;
+
+

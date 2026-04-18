@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 
 import { getReadingDerivedState } from "./readingDerivedState";
 
@@ -58,3 +58,5 @@ describe("getReadingDerivedState", () => {
     });
   });
 });
+
+

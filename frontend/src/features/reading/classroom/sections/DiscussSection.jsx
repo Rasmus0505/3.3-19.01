@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DiscussSection — Phase 4: discuss.
  *
  * 1. Auto-fetches a discussion script (teacher + student dialogue).
@@ -275,3 +275,5 @@ export const DiscussSection = forwardRef(function DiscussSection(
     </div>
   );
 });
+
+

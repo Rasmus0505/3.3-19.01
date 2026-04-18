@@ -1,4 +1,4 @@
-export const RATE_INTEGER_CENTS_MESSAGE = "1k Tokens 费率必须填写为非负整数。";
+﻿export const RATE_INTEGER_CENTS_MESSAGE = "1k Tokens 费率必须填写为非负整数。";
 export const RATE_DECIMAL_YUAN_MESSAGE = "元/分钟费率必须填写为非负数字，且最多保留 4 位小数。";
 export const TOKEN_COST_DECIMAL_MESSAGE = "1k Tokens 成本必须填写为非负数字，且最多保留 4 位小数。";
 
@@ -66,3 +66,5 @@ export function getRateDraftValidationMessage(draft) {
   }
   return `${invalidLabels.join("、")} ${RATE_DECIMAL_YUAN_MESSAGE}`;
 }
+
+

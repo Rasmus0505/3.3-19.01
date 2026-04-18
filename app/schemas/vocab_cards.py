@@ -7,19 +7,19 @@ from pydantic import BaseModel
 
 class VocabCardWordInput(BaseModel):
     word: str
-    cefr_level: str | None = None
+    collins_level: int | None = None
     context_sentence: str | None = None
 
 
 class VocabCardGenerateRequest(BaseModel):
     words: list[VocabCardWordInput]
-    target_level: str
+    target_level: int
     context_text: str
 
 
 class VocabCardResult(BaseModel):
     word: str
-    cefr_level: str | None = None
+    collins_level: int | None = None
     definition: str = ""
     example_sentence: str = ""
     image_url: str | None = None

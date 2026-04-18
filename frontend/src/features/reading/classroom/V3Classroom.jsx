@@ -1,4 +1,4 @@
-/**
+﻿/**
  * V3Classroom — main controller for schema_version: 3 courses.
  *
  * Each section walks through four phases:
@@ -536,3 +536,5 @@ export function V3Classroom({ articleId, course, apiCall, onExit }) {
     </div>
   );
 }
+
+

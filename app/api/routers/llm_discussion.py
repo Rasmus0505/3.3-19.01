@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, strip_json_fences
+from app.api.routers.llm_shared import _require_api_key, recover_json_payload, require_collins_level, strip_json_fences
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
@@ -24,7 +24,7 @@ router = APIRouter()
 
 class DiscussionGenerateRequest(BaseModel):
     article_text: str = Field(..., min_length=20)
-    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    target_level: int = Field(3, ge=1, le=5)
     key_vocabulary: list[str] = Field(default_factory=list)
     explanation_language: str = Field("zh", pattern="^(zh|en)$")
 
@@ -47,7 +47,7 @@ Write a natural dialogue between a Teacher and a Student about the provided arti
 
 ## Roles
 - **Teacher**: An experienced, encouraging English teacher. Explains key points using a MIX of Chinese and English (use Chinese for explanations, keep English terms/examples in English). Uses simple language appropriate for the student's level.
-- **Student**: A curious learner at CEFR {target_level} level. Asks questions a real student would ask — about vocabulary, grammar, or meaning. Speaks mostly in English with occasional Chinese when confused.
+- **Student**: A curious learner around Collins {target_level}. Asks questions a real student would ask — about vocabulary, grammar, or meaning. Speaks mostly in English with occasional Chinese when confused.
 
 ## Rules
 - Generate 8-12 messages, alternating Teacher and Student
@@ -79,7 +79,7 @@ Write a natural dialogue between a Teacher and a Student about the provided arti
 
 ## Roles
 - **Teacher**: An experienced, encouraging English teacher. Explains everything in clear, simple English appropriate for the student's level. Uses examples and analogies.
-- **Student**: A curious learner at CEFR {target_level} level. Asks questions a real student would ask — about vocabulary, grammar, or meaning.
+- **Student**: A curious learner around Collins {target_level}. Asks questions a real student would ask — about vocabulary, grammar, or meaning.
 
 ## Rules
 - Generate 8-12 messages, alternating Teacher and Student
@@ -118,7 +118,7 @@ def _build_messages(
     system = template.format(target_level=target_level, vocabulary_list=vocab_str)
 
     user_content = (
-        f"CEFR target level: {target_level}\n\n"
+        f"Collins target level: {target_level}\n\n"
         f"Article:\n{article_text[:5000]}"
     )
     return [
@@ -169,10 +169,11 @@ def generate_discussion_endpoint(
 
     api_key = _require_api_key()
     llm_root.ensure_default_billing_rates(db)
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=3)
 
     messages = _build_messages(
         article_text=body.article_text,
-        target_level=body.target_level,
+        target_level=str(target_level),
         key_vocabulary=body.key_vocabulary,
         explanation_language=body.explanation_language,
     )

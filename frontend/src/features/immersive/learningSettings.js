@@ -1,4 +1,4 @@
-import { DEFAULT_IMMERSIVE_PLAYBACK_RATE, normalizePlaybackRate } from "./immersiveSessionMachine";
+﻿import { DEFAULT_IMMERSIVE_PLAYBACK_RATE, normalizePlaybackRate } from "./immersiveSessionMachine";
 
 const LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v2";
 const LEGACY_LEARNING_SETTINGS_STORAGE_KEY = "immersive_learning_settings_v1";
@@ -540,3 +540,5 @@ export function getLessonPlaybackRateOverride(learningSettings, lessonId) {
     rate: DEFAULT_IMMERSIVE_PLAYBACK_RATE,
   };
 }
+
+

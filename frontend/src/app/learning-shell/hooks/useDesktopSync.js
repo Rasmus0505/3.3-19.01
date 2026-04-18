@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+﻿import { useEffect, useRef, useState } from "react";
 
 function formatLastSyncTime(isoString) {
   if (!isoString) return null;
@@ -122,3 +122,5 @@ export function useDesktopSync({ accessToken, isDesktop = false }) {
     formatLastSyncTime,
   };
 }
+
+

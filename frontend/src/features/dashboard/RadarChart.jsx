@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { Badge, Card, CardContent } from "../../shared/ui";
 
 const BAND_COLORS = {
@@ -73,7 +73,7 @@ export function RadarChart({ report }) {
 
             <div className="rounded-[20px] border border-border bg-muted/50 p-4">
               <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                <span>CEFR 输入层级分布</span>
+                <span>词汇难度分布</span>
                 <span>挑战区 {metric?.stretchRatio}%</span>
               </div>
               <div className="mt-3 flex h-4 overflow-hidden rounded-full bg-slate-200">
@@ -112,3 +112,5 @@ export function RadarChart({ report }) {
     </Card>
   );
 }
+
+

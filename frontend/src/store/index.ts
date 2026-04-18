@@ -1,4 +1,4 @@
-import { create } from "zustand";
+﻿import { create } from "zustand";
 
 import { createAuthSlice } from "./slices/authSlice";
 
@@ -13,3 +13,5 @@ export const useAppStore = create((set, get, api) => ({
   ...createMediaSlice(set, get, api),
   ...createUiSlice(set, get, api),
 }));
+
+

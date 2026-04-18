@@ -1,4 +1,4 @@
-function trimSentence(text) {
+﻿function trimSentence(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
 }
 
@@ -99,3 +99,5 @@ export function buildReadingPack({
     }),
   };
 }
+
+

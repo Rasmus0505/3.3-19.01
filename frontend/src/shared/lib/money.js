@@ -1,4 +1,4 @@
-export function formatMoneyCents(amountCents) {
+﻿export function formatMoneyCents(amountCents) {
   const normalized = Number(amountCents || 0) / 100;
   return new Intl.NumberFormat("zh-CN", {
     style: "currency",
@@ -59,3 +59,5 @@ export function formatStoredMoneyMeta(value, unit = "cents") {
   }
   return `${normalized} 分`;
 }
+
+

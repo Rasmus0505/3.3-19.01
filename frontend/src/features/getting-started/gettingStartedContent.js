@@ -54,3 +54,5 @@ export const GETTING_STARTED_STEPS = [
     imageAlt: "学习页真实截图，标出媒体区、当前句子和返回按钮。",
   },
 ];
+
+

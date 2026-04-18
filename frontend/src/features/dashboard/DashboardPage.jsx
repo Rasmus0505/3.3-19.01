@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+﻿import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Database, FlaskConical, Sparkles } from "lucide-react";
 import { Badge, Button, Skeleton } from "../../shared/ui";
@@ -62,10 +62,10 @@ export function DashboardPage({ apiCall, currentUser }) {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <Badge className="rounded-full border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-sky-700 dark:text-sky-300">
-                i+1 EVIDENCE BOARD
+                INPUT EVIDENCE BOARD
               </Badge>
               <Badge className="rounded-full border border-border bg-muted px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-muted-foreground">
-                单屏理论版
+                词汇难度版
               </Badge>
             </div>
             <div className="mt-3 flex items-start gap-3">
@@ -131,3 +131,5 @@ export function DashboardPage({ apiCall, currentUser }) {
     </div>
   );
 }
+
+

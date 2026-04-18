@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
@@ -26,11 +26,11 @@ def test_generate_vocab_cards_accepts_wrapped_cards_payload(authenticated_client
                             "words": [
                                 {
                                     "word": "ubiquitous",
-                                    "cefr_level": "C1",
+                                    "collins_level": "1",
                                     "context_sentence": "Smartphones are ubiquitous in daily life.",
                                 }
                             ],
-                            "target_level": "B1",
+                            "target_level": "3",
                             "context_text": "Smartphones are ubiquitous in daily life.",
                         },
                     )
@@ -41,7 +41,7 @@ def test_generate_vocab_cards_accepts_wrapped_cards_payload(authenticated_client
     assert data["cards"] == [
         {
             "word": "ubiquitous",
-            "cefr_level": "C1",
+            "collins_level": "1",
             "definition": "present everywhere\n无处不在",
             "example_sentence": "Smartphones are ubiquitous in daily life.",
             "image_url": None,
@@ -59,11 +59,12 @@ def test_generate_vocab_cards_returns_502_for_invalid_llm_payload(authenticated_
                     response = authenticated_client.post(
                         "/api/vocab-cards/generate",
                         json={
-                            "words": [{"word": "ubiquitous", "cefr_level": "C1"}],
-                            "target_level": "B1",
+                            "words": [{"word": "ubiquitous", "collins_level": "1"}],
+                            "target_level": "3",
                             "context_text": "Smartphones are ubiquitous in daily life.",
                         },
                     )
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Card generation returned invalid JSON"
+

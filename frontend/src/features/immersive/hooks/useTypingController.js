@@ -1,4 +1,4 @@
-// 沉浸式学习输入控制 Hook
+﻿// 沉浸式学习输入控制 Hook
 // 管理打字状态、单词输入和字符状态
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -183,3 +183,5 @@ export function useTypingController({
     countTokenInputErrors,
   };
 }
+
+

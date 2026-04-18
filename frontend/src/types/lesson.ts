@@ -1,4 +1,4 @@
-export interface LessonSentence {
+﻿export interface LessonSentence {
   id?: number;
   order_index?: number;
   text?: string;
@@ -28,4 +28,6 @@ export type {
   Lesson,
   LessonListResponse,
 } from "../shared/api/types";
+
+
 

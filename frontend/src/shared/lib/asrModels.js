@@ -1,4 +1,4 @@
-export const ASR_MODEL_KEYS = {
+﻿export const ASR_MODEL_KEYS = {
   qwen: "qwen3-asr-flash-filetrans",
 };
 
@@ -67,3 +67,5 @@ export function getAsrModelStatusLabel(modelState, options = {}) {
   if (isAsrModelReady(modelState)) return readyLabel;
   return missingLabel;
 }
+
+

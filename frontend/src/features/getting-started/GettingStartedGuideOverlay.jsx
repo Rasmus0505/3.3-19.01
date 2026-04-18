@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "../../shared/ui";
@@ -191,3 +191,5 @@ export function GettingStartedGuideOverlay({
     document.body,
   );
 }
+
+

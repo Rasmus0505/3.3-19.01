@@ -1,4 +1,4 @@
-import { Slot } from "@radix-ui/react-slot";
+﻿import { Slot } from "@radix-ui/react-slot";
 import { cva } from "class-variance-authority";
 import { PanelLeft } from "lucide-react";
 import { createContext, forwardRef, useContext, useEffect, useMemo, useState } from "react";
@@ -178,3 +178,5 @@ export const SidebarTrigger = forwardRef(function SidebarTrigger({ className, ..
     </Button>
   );
 });
+
+

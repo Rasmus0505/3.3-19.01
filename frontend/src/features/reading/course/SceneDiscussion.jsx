@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SceneDiscussion — Scene 2: AI Teacher+Student discussion with TTS.
  */
 import { useState, useCallback, useEffect } from "react";
@@ -150,3 +150,5 @@ export function SceneDiscussion({
     </div>
   );
 }
+
+

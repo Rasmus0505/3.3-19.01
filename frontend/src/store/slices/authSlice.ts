@@ -1,5 +1,5 @@
-import { api, parseResponse, toErrorText } from "../../shared/api/client";
-import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY, writeCefrLevel, readCefrLevel } from "../../app/authStorage";
+﻿import { api, parseResponse, toErrorText } from "../../shared/api/client";
+import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY, writeCollinsLevel, readCollinsLevel } from "../../app/authStorage";
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
@@ -19,10 +19,11 @@ function normalizeStoredUser(user: any) {
   const id = Number(user?.id || 0);
   const email = String(user?.email || "").trim();
   const username = String(user?.username || "").trim();
+  const collins_level = Math.max(1, Math.min(5, Number(user?.collins_level || 0) || 3));
   if (!Number.isFinite(id) || id <= 0 || !email) {
     return null;
   }
-  return { id, email, username, is_admin: normalizeAdminFlag(user?.is_admin) };
+  return { id, email, username, is_admin: normalizeAdminFlag(user?.is_admin), collins_level };
 }
 
 function readStoredCurrentUser() {
@@ -32,6 +33,7 @@ function readStoredCurrentUser() {
     email: localStorage.getItem(USER_EMAIL_KEY),
     username: localStorage.getItem(USER_USERNAME_KEY),
     is_admin: localStorage.getItem(USER_IS_ADMIN_KEY),
+    collins_level: readCollinsLevel(),
   });
 }
 
@@ -39,7 +41,7 @@ function buildAuthInitialState() {
   const storedAccessToken = readStoredAccessToken();
   const currentUser = readStoredCurrentUser();
   const hasStoredToken = Boolean(storedAccessToken);
-  const cefrLevel = readCefrLevel() || "B1";
+  const collinsLevel = readCollinsLevel() || 3;
   return {
     accessToken: "",
     currentUser,
@@ -49,7 +51,7 @@ function buildAuthInitialState() {
     isAdminUser: false,
     adminAuthState: "idle",
     authBootstrapPending: hasStoredToken,
-    cefrLevel,
+    collinsLevel,
   };
 }
 
@@ -59,10 +61,10 @@ export function createAuthSlice(set: Setter, get: Getter) {
   return {
     ...buildAuthInitialState(),
     resetAuthState: () => set({ ...buildAuthInitialState() }),
-    setCefrLevel: (cefrLevel: string) => {
-      if (!cefrLevel) return;
-      set({ cefrLevel });
-      writeCefrLevel(cefrLevel);
+    setCollinsLevel: (collinsLevel: number) => {
+      const normalized = Math.max(1, Math.min(5, Number(collinsLevel) || 3));
+      set({ collinsLevel: normalized });
+      writeCollinsLevel(normalized);
     },
     hydrateAccessToken: () => {
       const accessToken = readStoredAccessToken();
@@ -128,6 +130,7 @@ export function createAuthSlice(set: Setter, get: Getter) {
       const normalizedUser = normalizeStoredUser(currentUser);
       set({
         currentUser: normalizedUser,
+        collinsLevel: Number((currentUser as any)?.collins_level || readCollinsLevel() || get().collinsLevel || 3),
         isAdminUser: Boolean(get().accessToken && normalizedUser?.is_admin),
       });
     },
@@ -207,3 +210,5 @@ export function createAuthSlice(set: Setter, get: Getter) {
     },
   };
 }
+
+

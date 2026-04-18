@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ExplainSection — Phase 2: explain.
  *
  * Supports:
@@ -336,3 +336,5 @@ export const ExplainSection = forwardRef(function ExplainSection(
     </div>
   );
 });
+
+

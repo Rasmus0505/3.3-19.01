@@ -1,4 +1,4 @@
-function normalizeText(value) {
+﻿function normalizeText(value) {
   return String(value || "").replace(/\r/g, "\n").trim();
 }
 
@@ -898,3 +898,5 @@ export function normalizeReadingCourse(value, fallback = null) {
     runtime: normalizeRuntime(course.runtime, scenes),
   };
 }
+
+

@@ -1,4 +1,4 @@
-import { Search, SlidersHorizontal, X } from "lucide-react";
+﻿import { Search, SlidersHorizontal, X } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import { Button } from "./button";
@@ -53,3 +53,5 @@ export function FilterPanel({
     </Card>
   );
 }
+
+

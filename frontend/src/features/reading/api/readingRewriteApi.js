@@ -1,4 +1,4 @@
-/**
+﻿/**
  * readingRewriteApi.js — Phase 34: 新 Schema API 调用
  *
  * 新流程 v3 (词形还原版):
@@ -162,7 +162,7 @@ export async function filterAndSimplifyWords(sentence, words, wordLevels, target
  * 调用简化词汇接口（Phase 34 旧 Schema，保留向后兼容）
  * @param {string} sentence — 原文句子
  * @param {string[]} words — 需要简化的高难度词列表（按顺序）
- * @param {string} targetLevel — 目标 CEFR 等级
+ * @param {string} targetLevel — 目标 Collins 等级
  * @param {string} accessToken
  * @param {boolean} [enableThinking=false]
  * @param {object|null} [wordLevels=null]
@@ -202,7 +202,7 @@ export async function simplifyWords(sentence, words, targetLevel, accessToken, e
   const data = await resp.json();
   return {
     simplifiedWords: data.simplified_words,
-    wordLevels: data.word_levels || {},  // DeepSeek 判断的 CEFR 等级
+    wordLevels: data.word_levels || {},  // DeepSeek 判断的 Collins 等级
     chargeCents: data.charge_cents,
     traceId: data.trace_id,
   };
@@ -243,3 +243,5 @@ export async function syncReadingPackToServer(record, apiCall) {
     // Silent failure — backend sync is best-effort
   }
 }
+
+

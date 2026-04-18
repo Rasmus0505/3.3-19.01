@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 import { NavLink } from "react-router-dom";
 
 import { AdminApp } from "../AdminApp";
@@ -98,3 +98,5 @@ export function AdminShellStandalone() {
 
   return <AdminApp apiCall={(path, options = {}) => adminApi(path, options, accessToken)} onLogout={logout} />;
 }
+
+

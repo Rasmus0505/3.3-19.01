@@ -1,4 +1,4 @@
-// 上传进度显示组件。
+﻿// 上传进度显示组件。
 import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Progress } from '../../../shared/ui';
 
@@ -64,3 +64,5 @@ export function UploadProgress({ progress, stage, isUploading, error }: UploadPr
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+﻿import React, { useEffect, useRef } from 'react';
 import { Play, RotateCcw, BookOpen } from 'lucide-react';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -115,3 +115,5 @@ const ExplanationPanel = ({
 };
 
 export default ExplanationPanel;
+
+

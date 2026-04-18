@@ -1,4 +1,4 @@
-// 沉浸式学习播放控制栏组件。
+﻿// 沉浸式学习播放控制栏组件。
 import { memo } from 'react';
 import {
   Play,
@@ -173,3 +173,5 @@ export const PlaybackControls = memo(function PlaybackControls({
     </div>
   );
 });
+
+

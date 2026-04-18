@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+﻿import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import ExplanationSidebarContent from "./ExplanationSidebarContent";
@@ -56,3 +56,5 @@ describe("ExplanationSidebarContent", () => {
     expect(screen.getByText("(暂无上一句翻译)")).toBeTruthy();
   });
 });
+
+

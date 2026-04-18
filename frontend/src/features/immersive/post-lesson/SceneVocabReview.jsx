@@ -1,18 +1,18 @@
-/**
- * SceneVocabReview — Scene 1: Vocabulary review from lesson CEFR vocab.
+﻿/**
+ * SceneVocabReview — Scene 1: Vocabulary review from lesson Collins vocab.
  */
 import { useState, useMemo } from "react";
 import { Button, Card, Badge } from "../../../shared/ui";
 import { ArrowRight, Puzzle, Check, X } from "lucide-react";
 
-const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const Collins_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
 function extractVocabFromLesson(lesson) {
   const seen = new Set();
   const words = [];
 
   for (const sentence of lesson?.sentences || []) {
-    const wordLevels = sentence?.cefr_vocab_json?.word_levels;
+    const wordLevels = sentence?.vocabulary_analysis_json?.word_levels;
     if (!wordLevels || typeof wordLevels !== "object") continue;
 
     for (const [word, info] of Object.entries(wordLevels)) {
@@ -28,10 +28,10 @@ function extractVocabFromLesson(lesson) {
     }
   }
 
-  // Sort by CEFR difficulty
+  // Sort by Collins difficulty
   words.sort((a, b) => {
-    const ia = CEFR_ORDER.indexOf(a.level);
-    const ib = CEFR_ORDER.indexOf(b.level);
+    const ia = Collins_ORDER.indexOf(a.level);
+    const ib = Collins_ORDER.indexOf(b.level);
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
 
@@ -158,3 +158,5 @@ export function SceneVocabReview({ lesson, onComplete, onSaveResults }) {
     </div>
   );
 }
+
+

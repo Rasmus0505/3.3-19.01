@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 
 /**
  * RewriteEstimateBanner — 重写前显示预估费用
@@ -18,3 +18,5 @@ export function RewriteEstimateBanner({ estimatedChargeYuan, estimatedTokens }) 
     </div>
   );
 }
+
+

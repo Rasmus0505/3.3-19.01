@@ -1,4 +1,4 @@
-"""Learning Dashboard — stats aggregation and AI coach endpoints."""
+﻿"""Learning Dashboard — stats aggregation and AI coach endpoints."""
 
 from __future__ import annotations
 
@@ -31,28 +31,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 # ---------------------------------------------------------------------------
-# CEFR vocabulary lookup (loaded once)
+# Collins vocabulary lookup (loaded once)
 # ---------------------------------------------------------------------------
 
-_CEFR_WORD_LEVEL: dict[str, str] = {}
+_Collins_WORD_LEVEL: dict[str, str] = {}
 
 
-def _load_cefr_vocab() -> dict[str, str]:
-    global _CEFR_WORD_LEVEL
-    if _CEFR_WORD_LEVEL:
-        return _CEFR_WORD_LEVEL
-    csv_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "cefrj-vocabulary-profile-1.5.csv")
+def _load_collins_vocab() -> dict[str, str]:
+    global _Collins_WORD_LEVEL
+    if _Collins_WORD_LEVEL:
+        return _Collins_WORD_LEVEL
+    csv_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "collinsj-vocabulary-profile-1.5.csv")
     csv_path = os.path.normpath(csv_path)
     if not os.path.exists(csv_path):
-        return _CEFR_WORD_LEVEL
+        return _Collins_WORD_LEVEL
     with open(csv_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             word = (row.get("headword") or "").strip().lower()
-            level = (row.get("CEFR") or "").strip().upper()
+            level = (row.get("Collins") or "").strip().upper()
             if word and level:
-                _CEFR_WORD_LEVEL[word] = level
-    return _CEFR_WORD_LEVEL
+                _Collins_WORD_LEVEL[word] = level
+    return _Collins_WORD_LEVEL
 
 
 # ---------------------------------------------------------------------------
@@ -177,17 +177,17 @@ def _build_dashboard_stats(db: Session, user_id: int) -> dict:
         )
         reading_completion_rate = round(completed_readings / total_reading_packs, 2)
 
-    # Vocabulary by CEFR level
+    # Vocabulary by Collins level
     vocab_by_level: dict[str, int] = {"A1": 0, "A2": 0, "B1": 0, "B2": 0, "C1": 0}
-    cefr_vocab = _load_cefr_vocab()
-    if cefr_vocab:
+    collins_vocab = _load_collins_vocab()
+    if collins_vocab:
         words = (
             db.query(WordbookEntry.normalized_text)
             .filter(WordbookEntry.user_id == uid, WordbookEntry.status == "active")
             .all()
         )
         for (word_text,) in words:
-            level = cefr_vocab.get((word_text or "").lower().strip())
+            level = collins_vocab.get((word_text or "").lower().strip())
             if level and level in vocab_by_level:
                 vocab_by_level[level] += 1
 
@@ -307,7 +307,7 @@ _COACH_SYSTEM_ZH = (
     "1. 分析学习习惯（连续性、频率、时长）\n"
     "2. 判断能力强项和弱项\n"
     "3. 给出具体的、可执行的下一步建议（如\"建议用B1难度的新闻材料做听写\"）\n"
-    "4. 预测当前大致CEFR等级\n"
+    "4. 预测当前大致Collins等级\n"
     "语气像真人教练，亲切但专业。用\"我注意到...\"\"建议你...\"这样的语气。"
 )
 
@@ -318,7 +318,7 @@ _COACH_SYSTEM_EN = (
     "1. Analyze learning habits (consistency, frequency, duration)\n"
     "2. Identify strengths and weaknesses\n"
     "3. Give specific, actionable next-step suggestions (e.g. 'Try dictation with B1-level news articles')\n"
-    "4. Predict approximate CEFR level\n"
+    "4. Predict approximate Collins level\n"
     "Speak like a real coach — warm but professional. Use phrases like 'I've noticed...', 'I'd suggest...'"
 )
 
@@ -331,7 +331,7 @@ def _build_coach_messages(stats: dict, language: str) -> list[dict]:
         f"Study minutes: {stats.get('total_study_minutes', 0)}",
         f"Streak days: {stats.get('streak_days', 0)}",
         f"Vocabulary count: {stats.get('vocabulary_count', 0)}",
-        f"Vocabulary by CEFR level: {stats.get('vocabulary_by_level', {})}",
+        f"Vocabulary by Collins level: {stats.get('vocabulary_by_level', {})}",
         f"Lesson completion rate: {stats.get('lesson_completion_rate', 0)}",
         f"Reading completion rate: {stats.get('reading_completion_rate', 0)}",
         f"Average speaking score: {stats.get('avg_soe_score', 0)}",
@@ -396,3 +396,4 @@ def ai_coach_endpoint(
         logger.warning("AI coach billing failed silently for user %s", current_user.id)
 
     return AICoachResponse(ok=True, coach_text=raw_response.strip())
+

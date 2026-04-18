@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronDown, GitMerge, X } from "lucide-react";
+﻿import { AlertTriangle, Check, ChevronDown, GitMerge, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../shared/ui";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../shared/ui";
@@ -147,3 +147,5 @@ export function ConflictDialog({ open, onOpenChange, conflicts, onResolve }) {
     </Dialog>
   );
 }
+
+

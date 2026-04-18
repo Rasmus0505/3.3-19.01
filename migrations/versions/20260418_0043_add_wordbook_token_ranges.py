@@ -32,6 +32,7 @@ def _has_column(table_name: str, column_name: str, schema: str | None) -> bool:
 
 def upgrade() -> None:
     schema = _schema_name()
+    is_sqlite = schema is None
 
     if not _has_column("wordbook_entries", "start_token_index", schema):
         op.add_column(
@@ -46,8 +47,9 @@ def upgrade() -> None:
             schema=schema,
         )
 
-    op.alter_column("wordbook_entries", "start_token_index", server_default=None, schema=schema)
-    op.alter_column("wordbook_entries", "end_token_index", server_default=None, schema=schema)
+    if not is_sqlite:
+        op.alter_column("wordbook_entries", "start_token_index", server_default=None, schema=schema)
+        op.alter_column("wordbook_entries", "end_token_index", server_default=None, schema=schema)
 
 
 def downgrade() -> None:

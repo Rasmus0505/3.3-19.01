@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, strip_json_fences
+from app.api.routers.llm_shared import _require_api_key, recover_json_payload, require_collins_level, strip_json_fences
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
@@ -25,7 +25,7 @@ router = APIRouter()
 class QuizGenerateRequest(BaseModel):
     pack_text: str
     original_text: str
-    target_level: str
+    target_level: int
 
 
 class QuizGenerateResponse(BaseModel):
@@ -48,7 +48,7 @@ _SYSTEM_PROMPT = (
     "   - Use 3-4 sentences per ordering question\n"
     "\n"
     "Rules:\n"
-    "- Target CEFR level: {target_level}\n"
+    "- Target Collins level: {target_level}\n"
     "- Questions must test comprehension, not surface recall\n"
     "- Aim for: ~3 MCQ, ~2 fill, ~1-2 order questions\n"
     "- Output ONLY a valid JSON array. No markdown fences, no explanation.\n"
@@ -116,10 +116,11 @@ def generate_quiz_endpoint(
         raise HTTPException(status_code=422, detail="Text too short to generate quiz")
 
     api_key = _require_api_key()
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=3)
 
     llm_root.ensure_default_billing_rates(db)
 
-    messages = _build_messages(body.pack_text, body.original_text, body.target_level)
+    messages = _build_messages(body.pack_text, body.original_text, str(target_level))
 
     try:
         raw_response, usage = llm_root.call_deepseek(

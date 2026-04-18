@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useCourseState — Manages reading course progress via IndexedDB.
  *
  * Reads/writes courseData on the article's rewrite record.
@@ -134,3 +134,5 @@ export function useCourseState(articleId) {
     resetCourse,
   };
 }
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Bottle 2.0 Cloud Upload Panel (Browser / Web)
  *
  * Implements the Bottle 2.0 flow:
@@ -195,3 +195,5 @@ export function CloudUploadPanel({ onTaskCreated, onError }: CloudUploadPanelPro
     </div>
   );
 }
+
+

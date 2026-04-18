@@ -1,10 +1,11 @@
-export const TOKEN_KEY = "english_asr_access_token";
+﻿export const TOKEN_KEY = "english_asr_access_token";
 export const REFRESH_KEY = "english_asr_refresh_token";
 export const USER_ID_KEY = "english_asr_user_id";
 export const USER_EMAIL_KEY = "english_asr_user_email";
 export const USER_USERNAME_KEY = "english_asr_user_username";
 export const USER_IS_ADMIN_KEY = "english_asr_user_is_admin";
-export const USER_CEFR_LEVEL_KEY = "BOTTLE_CEFR_LEVEL";
+export const USER_COLLINS_LEVEL_KEY = "BOTTLE_COLLINS_LEVEL";
+const LEGACY_USER_LEVEL_KEY = "BOTTLE_Collins_LEVEL";
 
 function getStorage() {
   if (typeof window === "undefined" || !window.localStorage) {
@@ -32,6 +33,7 @@ export function writeStoredUser(user) {
   const userId = Number(user?.id || 0);
   const email = trimText(user?.email);
   const username = trimText(user?.username);
+  const collinsLevel = Number(user?.collins_level || 0);
   if (Number.isFinite(userId) && userId > 0) {
     storage.setItem(USER_ID_KEY, String(userId));
   } else {
@@ -48,6 +50,9 @@ export function writeStoredUser(user) {
     storage.removeItem(USER_USERNAME_KEY);
   }
   storage.setItem(USER_IS_ADMIN_KEY, user?.is_admin ? "true" : "false");
+  if (VALID_COLLINS_LEVELS.has(collinsLevel)) {
+    storage.setItem(USER_COLLINS_LEVEL_KEY, String(collinsLevel));
+  }
 }
 
 export function writeStoredTokens(accessToken, refreshToken, tokenKey = TOKEN_KEY, refreshKey = REFRESH_KEY) {
@@ -74,6 +79,7 @@ export function applyAuthSession(authPayload, options = {}) {
   const refreshKey = options.refreshKey || REFRESH_KEY;
   writeStoredTokens(authPayload?.access_token, authPayload?.refresh_token, tokenKey, refreshKey);
   writeStoredUser(authPayload?.user || null);
+  writeCollinsLevel(authPayload?.user?.collins_level);
   return {
     accessToken: trimText(authPayload?.access_token),
     refreshToken: trimText(authPayload?.refresh_token),
@@ -159,7 +165,8 @@ export async function clearAuthStorage() {
     storage.removeItem(USER_EMAIL_KEY);
     storage.removeItem(USER_USERNAME_KEY);
     storage.removeItem(USER_IS_ADMIN_KEY);
-    storage.removeItem(USER_CEFR_LEVEL_KEY);
+    storage.removeItem(LEGACY_USER_LEVEL_KEY);
+    storage.removeItem(USER_COLLINS_LEVEL_KEY);
   }
   const desktopAuth = getDesktopAuthRuntime();
   if (desktopAuth?.clearSession) {
@@ -171,24 +178,41 @@ export async function clearAuthStorage() {
   }
 }
 
-const VALID_CEFR_LEVELS = new Set(["A1", "A2", "B1", "B2", "C1", "C2"]);
+const VALID_LEGACY_LEVELS = new Set(["A1", "A2", "B1", "B2", "C1", "C2"]);
+const VALID_COLLINS_LEVELS = new Set([1, 2, 3, 4, 5]);
+const LEGACY_LEVEL_TO_COLLINS = {
+  A1: 5,
+  A2: 4,
+  B1: 3,
+  B2: 2,
+  C1: 1,
+  C2: 1,
+};
 
-export function writeCefrLevel(cefrLevel) {
+export function writeCollinsLevel(collinsLevel) {
   const storage = getStorage();
   if (!storage) return;
-  if (cefrLevel && VALID_CEFR_LEVELS.has(String(cefrLevel))) {
-    storage.setItem(USER_CEFR_LEVEL_KEY, String(cefrLevel));
+  const normalized = Number(collinsLevel);
+  if (VALID_COLLINS_LEVELS.has(normalized)) {
+    storage.setItem(USER_COLLINS_LEVEL_KEY, String(normalized));
   } else {
-    storage.removeItem(USER_CEFR_LEVEL_KEY);
+    storage.removeItem(USER_COLLINS_LEVEL_KEY);
   }
 }
 
-export function readCefrLevel() {
+export function readCollinsLevel() {
   const storage = getStorage();
   if (!storage) return null;
-  const value = storage.getItem(USER_CEFR_LEVEL_KEY);
-  if (value && VALID_CEFR_LEVELS.has(value)) {
-    return value;
+  const rawValue = storage.getItem(USER_COLLINS_LEVEL_KEY);
+  const normalized = Number(rawValue);
+  if (VALID_COLLINS_LEVELS.has(normalized)) {
+    return normalized;
+  }
+  const legacyValue = storage.getItem(LEGACY_USER_LEVEL_KEY);
+  if (legacyValue && VALID_LEGACY_LEVELS.has(legacyValue)) {
+    return LEGACY_LEVEL_TO_COLLINS[legacyValue] || 3;
   }
   return null;
 }
+
+

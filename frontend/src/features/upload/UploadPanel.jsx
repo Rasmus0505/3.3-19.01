@@ -1,4 +1,4 @@
-import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
+﻿import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -154,7 +154,7 @@ import { useUploadWorkflow } from "./hooks/useUploadWorkflow";
 const DEFAULT_GENERATION_OPTIONS = {
   core_subtitles: true,
   zh_translation: true,
-  cefr_annotation: true,
+  vocabulary_annotation: true,
   word_explanation: true,
 };
 
@@ -1379,7 +1379,7 @@ export function UploadPanel({
     };
     next.core_subtitles = true;
     if (next.word_explanation) {
-      next.cefr_annotation = true;
+      next.vocabulary_annotation = true;
     }
     return next;
   }, [generationOptions]);
@@ -1422,7 +1422,7 @@ export function UploadPanel({
       ? Math.max(0, Number(desktopBillingState.balanceAmountCents || 0))
       : normalizedBalanceAmountCents;
   const desktopClientHasUsableEstimate = desktopClientBillingEnabled && durationSec != null && selectedRate != null;
-  const generationOptionCostHint = effectiveGenerationOptions.cefr_annotation || effectiveGenerationOptions.word_explanation
+  const generationOptionCostHint = effectiveGenerationOptions.vocabulary_annotation || effectiveGenerationOptions.word_explanation
     ? "生词标注/讲解会增加额外 AI 调用成本，当前未单独估算。"
     : "";
   const localWorkerReady = Boolean(localWorkerReadyMap.browserLocal);
@@ -5065,7 +5065,7 @@ export function UploadPanel({
             <p className="text-xs text-muted-foreground">
               本次内容：英文字幕
               {effectiveGenerationOptions.zh_translation ? " + 中文翻译" : ""}
-              {effectiveGenerationOptions.cefr_annotation ? " + 生词标注" : ""}
+              {effectiveGenerationOptions.vocabulary_annotation ? " + 生词标注" : ""}
               {effectiveGenerationOptions.word_explanation ? " + 生词讲解" : ""}
             </p>
             {generationOptionCostHint ? <p className="text-xs text-muted-foreground">{generationOptionCostHint}</p> : null}
@@ -5648,12 +5648,12 @@ export function UploadPanel({
                 <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
                   <input
                     type="checkbox"
-                    checked={effectiveGenerationOptions.cefr_annotation}
+                    checked={effectiveGenerationOptions.vocabulary_annotation}
                     onChange={(event) => {
                       const checked = event.target.checked;
                       setGenerationOptions((prev) => ({
                         ...prev,
-                        cefr_annotation: checked,
+                        vocabulary_annotation: checked,
                         word_explanation: checked ? prev.word_explanation : false,
                       }));
                     }}
@@ -5662,7 +5662,7 @@ export function UploadPanel({
                   />
                   <span className="space-y-1">
                     <span className="block text-sm font-medium">生词标注</span>
-                    <span className="block text-xs text-muted-foreground">生成 CEFR 难度与重点词数据</span>
+                    <span className="block text-xs text-muted-foreground">生成 Collins 难度与重点词数据</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
@@ -5674,7 +5674,7 @@ export function UploadPanel({
                       setGenerationOptions((prev) => ({
                         ...prev,
                         word_explanation: checked,
-                        cefr_annotation: checked ? true : prev.cefr_annotation,
+                        vocabulary_annotation: checked ? true : prev.vocabulary_annotation,
                       }));
                     }}
                     disabled={loading || localModeBusy}
@@ -6302,3 +6302,6 @@ export function UploadPanel({
     </Card>
   );
 }
+
+
+

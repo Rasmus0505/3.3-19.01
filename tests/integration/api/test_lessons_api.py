@@ -1,4 +1,4 @@
-"""API 集成测试: lessons 模块。"""
+﻿"""API 集成测试: lessons 模块。"""
 from __future__ import annotations
 
 import pytest
@@ -48,7 +48,7 @@ def test_lessons_detail_includes_generation_status_defaults(authenticated_client
     assert set(data["generated_content_status"].keys()) == {
         "core_subtitles",
         "zh_translation",
-        "cefr_annotation",
+        "vocabulary_annotation",
         "word_explanation",
     }
 
@@ -59,20 +59,22 @@ def test_lessons_detail_404_for_nonexistent(authenticated_client, test_user):
     assert response.status_code == 404
 
 
-def test_cefr_extract_from_sentences():
-    """测试从句子中提取 CEFR 词汇信息"""
-    from app.services.lesson_service import extract_cefr_from_sentences
+def test_vocabulary_extract_from_sentences():
+    """测试从句子中提取 Collins 词汇信息"""
+    from app.services.lesson_service import extract_vocabulary_analysis_from_sentences
 
     sentences = [
         "The subsequent transformation of urban landscapes continues.",
         "The cat is on the table."
     ]
 
-    results = extract_cefr_from_sentences(sentences, "B1")
+    results = extract_vocabulary_analysis_from_sentences(sentences, "3")
 
-    # 第一个句子应该有 subsequent (C2 > B1) 和 transformation (B1 not > B1)
+    # 第一个句子应该有 subsequent (C2 > 3) 和 transformation (3 not > 3)
     assert results[0]["needs_explanation"] is True
     assert any(w["word"] == "subsequent" for w in results[0]["words_above"])
 
-    # 第二个句子没有高于 B1 的词
+    # 第二个句子没有高于 3 的词
     assert results[1]["needs_explanation"] is False
+
+

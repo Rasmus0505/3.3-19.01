@@ -1,4 +1,4 @@
-// 沉浸式学习播放器 Hook。
+﻿// 沉浸式学习播放器 Hook。
 // 管理播放器的核心状态逻辑。
 
 import { useState, useCallback, useRef, useMemo } from 'react';
@@ -192,3 +192,5 @@ export function useImmersivePlayer(lesson: ImmersiveLesson | null) {
     },
   };
 }
+
+

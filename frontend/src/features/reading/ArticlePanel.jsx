@@ -1,7 +1,7 @@
-/**
+﻿/**
  * ArticlePanel.jsx — 文章主体渲染面板
  * ====================================
- * 结合 useRichLayout + VocabAnalyzer，CEFR 着色逐词渲染。
+ * 结合 useRichLayout + VocabAnalyzer，Collins 着色逐词渲染。
  *
  * 新流程 v2 (Phase 35):
  * - 原文视图：i+1 绿色下划线、>i+1 红色下划线、重写词黄色块+悬浮原文
@@ -25,7 +25,7 @@
 import { BookOpenText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../../lib/utils";
-import { readCefrLevel } from "../../app/authStorage";
+import { readCollinsLevel } from "../../app/authStorage";
 import { useRichLayout } from "../../hooks/useRichLayout";
 import "./reading.css";
 
@@ -45,11 +45,12 @@ export function ArticlePanel({
   validAboveI1Words = [],
   removedWords = [],
   wordLevels = {},
+  collinsBandMap = {},
   viewMode = "original",
 }) {
   const containerRef = useRef(null);
   const [measuredWidth, setMeasuredWidth] = useState(contentWidth);
-  const userLevel = readCefrLevel() || "B1";
+  const userLevel = readCollinsLevel() || 3;
 
   // #region agent log
   const _scanNonStrings = (arr, label) =>
@@ -188,6 +189,7 @@ export function ArticlePanel({
                     validAboveI1Set={validAboveI1Set.current}
                     removedWordsSet={removedWordsSet.current}
                     wordLevels={wordLevels}
+                    collinsBandMap={collinsBandMap}
                     viewMode={viewMode}
                   />
                 );
@@ -211,11 +213,12 @@ function ArticleWord({
   validAboveI1Set,
   removedWordsSet,
   wordLevels,
+  collinsBandMap,
   viewMode,
 }) {
   const segText = (segment.text || "").trim();
   const segLower = segText.toLowerCase();
-  const resolvedLevel = wordLevels?.[segLower] || segment.cefrLevel || null;
+  const resolvedLevel = wordLevels?.[segLower] || segment.levelBand || null;
 
   // 重写版：按 original 匹配（applySimplifiedWords 已替换为简化词）
   // 原文视图：按 originalLower 匹配（原始词形）
@@ -228,32 +231,39 @@ function ArticleWord({
   });
 
   // 原文视图：根据 validI1Set 和 validAboveI1Set 判断渲染样式
-  let cefrClass = "";
+  let difficultyClass = "";
   let isI1Word = false;
   let isAboveI1Word = false;
 
   if (viewMode === "original") {
+    const collinsBand = collinsBandMap?.[segLower] || collinsBandMap?.[segment.word?.toLowerCase?.() || ""];
+    if (collinsBand) {
+      difficultyClass = computeDifficultyClassName(collinsBand, userLevel);
+      isI1Word = collinsBand === "i_plus_one";
+      isAboveI1Word = collinsBand === "above_i_plus_one";
+    } else {
     // 优先判断是否是 i+1 或 >i+1 词（DeepSeek 验证通过的）
     isI1Word = validI1Set.has(segLower);
     isAboveI1Word = validAboveI1Set.has(segLower);
     const isRemovedWord = removedWordsSet?.has(segLower);
 
     if (isI1Word) {
-      cefrClass =
+      difficultyClass =
         activeLevels && activeLevels.length > 0
-          ? activeLevels.includes(resolvedLevel) ? "cefr-i-plus-one" : "cefr-mastered"
-          : "cefr-i-plus-one";
+          ? activeLevels.includes(resolvedLevel) ? "difficulty-i-plus-one" : "difficulty-default"
+          : "difficulty-i-plus-one";
     } else if (isAboveI1Word) {
-      cefrClass =
+      difficultyClass =
         activeLevels && activeLevels.length > 0
-          ? activeLevels.includes(resolvedLevel) ? "cefr-above-i-plus-one" : "cefr-mastered"
-          : "cefr-above-i-plus-one";
+          ? activeLevels.includes(resolvedLevel) ? "difficulty-above-i-plus-one" : "difficulty-default"
+          : "difficulty-above-i-plus-one";
     } else if (isRemovedWord) {
       // DeepSeek 过滤掉的词 → 过于简单，不标下划线
-      cefrClass = "cefr-mastered";
+      difficultyClass = "difficulty-default";
+    }
     }
     // 注意：不在 DeepSeek 有效词列表中的词，不标下划线
-    // 下划线只基于 DeepSeek 二次筛选结果，不再依赖词典初筛的 segment.cefrLevel
+    // 下划线只基于二次筛选结果，不再依赖旧词典初筛等级
   }
 
   // 重写版渲染逻辑
@@ -274,7 +284,7 @@ function ArticleWord({
   const handleClick = () => {
     const text = segment.text.trim();
     if (!text || /^[.!?,;:—–\-"''''""（）()[\]【】《》]+$/.test(text)) return;
-    onWordClick?.(segment.text, { ...segment, cefrLevel: resolvedLevel });
+    onWordClick?.(segment.text, { ...segment, difficultyLevel: resolvedLevel });
   };
 
   // 构建 className
@@ -283,8 +293,8 @@ function ArticleWord({
     // 重写版样式
     isSimplifiedWord && "article-word--simplified",
     !isSimplifiedWord && viewMode === "rewritten" && "article-word--rewritten-normal",
-    // 原文视图 CEFR 样式
-    viewMode === "original" && cefrClass,
+    // 原文视图 Collins 样式
+    viewMode === "original" && difficultyClass,
     // 选中态
     isSelected && "article-word--selected",
     animating && "article-word--success"
@@ -344,31 +354,46 @@ function ArticlePanelSkeleton() {
 }
 
 /**
- * computeCefrClassName — 复刻 CefrBadge.jsx 逻辑
+ * computeDifficultyClassName — 复刻 DifficultyBadge.jsx 逻辑
  * Logic:
- *   null/""      → cefr-mastered  (词不在表里 → gray)
- *   "SUPER"      → cefr-above-i-plus-one (red)
- *   wordLevel <= userLevel → cefr-mastered (gray)
- *   wordLevel == userLevel+1 → cefr-i-plus-one (teal)
- *   wordLevel >= userLevel+2 → cefr-above-i-plus-one (red)
+ *   null/""      → difficulty-default  (词不在表里 → gray)
+ *   "SUPER"      → difficulty-above-i-plus-one (red)
+ *   wordLevel <= userLevel → difficulty-default (gray)
+ *   wordLevel == userLevel+1 → difficulty-i-plus-one (teal)
+ *   wordLevel >= userLevel+2 → difficulty-above-i-plus-one (red)
  */
-const CEFR_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
+const LEGACY_LEVEL_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
+const COLLINS_BANDS = new Set(["default", "i_plus_one", "above_i_plus_one", "unrated"]);
 
 function getLevelIndex(level) {
-  const idx = CEFR_LEVEL_ORDER.indexOf(level);
+  const idx = LEGACY_LEVEL_ORDER.indexOf(level);
   return idx === -1 ? 6 : idx;
 }
 
-export function computeCefrClassName(wordLevel, userLevel) {
+export function computeDifficultyClassName(wordLevel, userLevel) {
+  if (COLLINS_BANDS.has(String(wordLevel || ""))) {
+    if (wordLevel === "i_plus_one") return "difficulty-i-plus-one";
+    if (wordLevel === "above_i_plus_one") return "difficulty-above-i-plus-one";
+    return "difficulty-default";
+  }
+  if (typeof wordLevel === "number" && Number.isFinite(Number(userLevel))) {
+    const wordValue = Number(wordLevel);
+    const userValue = Number(userLevel);
+    if (wordValue >= userValue) return "difficulty-default";
+    if (wordValue === userValue - 1) return "difficulty-i-plus-one";
+    return "difficulty-above-i-plus-one";
+  }
   if (wordLevel === null || wordLevel === undefined || wordLevel === "") {
-    return "cefr-mastered";
+    return "difficulty-default";
   }
   if (wordLevel === "SUPER") {
-    return "cefr-above-i-plus-one";
+    return "difficulty-above-i-plus-one";
   }
   const wordIdx = getLevelIndex(wordLevel);
   const userIdx = getLevelIndex(userLevel);
-  if (wordIdx <= userIdx) return "cefr-mastered";
-  if (wordIdx === userIdx + 1) return "cefr-i-plus-one";
-  return "cefr-above-i-plus-one";
+  if (wordIdx <= userIdx) return "difficulty-default";
+  if (wordIdx === userIdx + 1) return "difficulty-i-plus-one";
+  return "difficulty-above-i-plus-one";
 }
+
+

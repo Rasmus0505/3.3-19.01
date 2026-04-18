@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ReadingPipelinePanel — OpenMAIC-style minimal generation progress screen.
  * Full-screen centered, progress dots + animated stage icon + stage name.
  */
@@ -191,3 +191,5 @@ export function ReadingPipelinePanel({
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-// 沉浸式学习滚动字幕展示组件
+﻿// 沉浸式学习滚动字幕展示组件
 import { memo, useRef, useEffect } from 'react';
 import { cn } from '../../../lib/utils';
 
@@ -137,3 +137,5 @@ export const SubtitleDisplay = memo(function SubtitleDisplay({
     </div>
   );
 });
+
+

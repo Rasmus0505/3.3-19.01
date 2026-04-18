@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+﻿import { useCallback, useRef, useState } from "react";
 import { Mic, Square, Loader2 } from "lucide-react";
 import { assessSentence } from "../../shared/api/soeApi";
 
@@ -135,3 +135,5 @@ export function VoiceRecorder({ refText, lessonId, sentenceIdx, accessToken, api
     </button>
   );
 }
+
+

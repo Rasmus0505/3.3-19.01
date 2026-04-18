@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { Play, RotateCcw, BookOpen, X, ChevronRight } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -121,3 +121,5 @@ export default function ExplanationFloatingPanel({
     </div>
   );
 }
+
+

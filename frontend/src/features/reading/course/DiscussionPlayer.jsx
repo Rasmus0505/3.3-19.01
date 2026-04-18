@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DiscussionPlayer — Displays all discussion messages as text + user response area.
  *
  * No TTS/audio — pure reading experience with optional written response.
@@ -78,3 +78,5 @@ export function DiscussionPlayer({ messages, onComplete }) {
     </div>
   );
 }
+
+

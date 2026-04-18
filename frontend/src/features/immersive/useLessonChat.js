@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { parseResponse } from "../../shared/api/client";
 
 const CHAT_STORAGE_KEY_PREFIX = "immersive-lesson-chat-v1";
@@ -214,3 +214,5 @@ export function useLessonChat({ lessonId, accessToken, apiClient }) {
     clearHistory,
   };
 }
+
+

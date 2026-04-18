@@ -3,17 +3,31 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Any
 
 from fastapi import HTTPException
 
 from app.core.config import DASHSCOPE_API_KEY
+from app.services.collins_levels import VALID_COLLINS_LEVELS, normalize_collins_level
 
 logger = logging.getLogger(__name__)
 
 LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3.2"
 LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2"
 LLM_VALID_MODELS = {"deepseek-v3.2"}
-CEFR_LEVELS = {"A1", "A2", "B1", "B2", "C1", "C2"}
+
+
+def require_collins_level(value: Any, *, field_name: str = "target_level", default: int | None = None) -> int:
+    normalized = normalize_collins_level(value, default=default)
+    if normalized is None:
+        valid = ", ".join(str(item) for item in VALID_COLLINS_LEVELS)
+        raise HTTPException(status_code=422, detail=f"Invalid {field_name} '{value}'. Must be one of: {valid}")
+    return normalized
+
+
+def collins_level_label(value: Any) -> str:
+    normalized = require_collins_level(value)
+    return f"Collins {normalized}"
 
 COMMON_SIMPLIFY_WORD_MEANINGS: dict[str, str] = {
     "peruse": 'to read carefully or in detail (NOT just "read")',

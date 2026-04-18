@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CoursePlayer — Main reading course player.
  *
  * Orchestrates 4 scenes + summary screen in a linear flow.
@@ -107,3 +107,5 @@ export function CoursePlayer({ pack, articleId, apiCall, accessToken, onExit }) 
     </div>
   );
 }
+
+

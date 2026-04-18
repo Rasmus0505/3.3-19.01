@@ -1,4 +1,4 @@
-import { cn } from "../../lib/utils";
+﻿import { cn } from "../../lib/utils";
 
 export function Table({ className, ...props }) {
   return (
@@ -47,3 +47,5 @@ export function TableCell({ className, ...props }) {
 export function TableCaption({ className, ...props }) {
   return <caption data-slot="table-caption" className={cn("cn-table-caption text-muted-foreground mt-4 text-sm", className)} {...props} />;
 }
+
+

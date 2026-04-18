@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PostLessonPlayer — Main post-lesson orchestrator.
  *
  * Orchestrates 3 scenes + summary in a linear flow after immersive dictation.
@@ -88,3 +88,5 @@ export function PostLessonPlayer({ lesson, accessToken, apiClient, onExit }) {
     </div>
   );
 }
+
+

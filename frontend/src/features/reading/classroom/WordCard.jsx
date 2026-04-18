@@ -1,6 +1,6 @@
-/**
+﻿/**
  * WordCard — floating card shown when user clicks a word.
- * Shows: word, CEFR level, phonetic, LLM-generated definition.
+ * Shows: word, Collins level, phonetic, LLM-generated definition.
  * Actions: Add to wordbook (real API), Open dictionary.
  */
 import { useEffect, useRef, useState } from "react";
@@ -8,13 +8,12 @@ import { motion } from "framer-motion";
 import { BookMarked, Check, ExternalLink, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
-const CEFR_COLORS = {
-  A1: "oklch(0.65 0.18 150)",
-  A2: "oklch(0.65 0.18 170)",
-  B1: "oklch(0.65 0.18 220)",
-  B2: "oklch(0.6 0.18 260)",
-  C1: "oklch(0.6 0.2 290)",
-  C2: "oklch(0.55 0.22 310)",
+const COLLINS_COLORS = {
+  5: "oklch(0.65 0.18 150)",
+  4: "oklch(0.65 0.18 170)",
+  3: "oklch(0.65 0.18 220)",
+  2: "oklch(0.6 0.18 260)",
+  1: "oklch(0.6 0.2 290)",
 };
 
 async function fetchDefinition(word, apiCall, targetLevel) {
@@ -44,10 +43,10 @@ async function addToWordbookApi(word, apiCall) {
   return res.json();
 }
 
-export function WordCard({ word, apiCall, targetLevel = "B1", onClose, onAddToWordbook }) {
+export function WordCard({ word, apiCall, targetLevel = 3, onClose, onAddToWordbook }) {
   const [loading, setLoading] = useState(true);
   const [definition, setDefinition] = useState("");
-  const [cefr, setCefr] = useState("?");
+  const [collins, setCollins] = useState(3);
   const [phonetic, setPhonetic] = useState("");
   const [wordbookState, setWordbookState] = useState("idle"); // idle | saving | saved
   const cardRef = useRef(null);
@@ -57,14 +56,14 @@ export function WordCard({ word, apiCall, targetLevel = "B1", onClose, onAddToWo
     if (!word || !apiCall) { setLoading(false); return; }
     setLoading(true);
     setDefinition("");
-    setCefr("?");
+    setCollins(3);
     setPhonetic("");
     setWordbookState("idle");
 
     fetchDefinition(word, apiCall, targetLevel)
       .then((data) => {
         setDefinition(data.definition || "");
-        setCefr(data.cefr || "?");
+        setCollins(Number(data.collins || 3) || 3);
         setPhonetic(data.phonetic || "");
       })
       .catch(() => setDefinition("释义加载失败"))
@@ -94,7 +93,7 @@ export function WordCard({ word, apiCall, targetLevel = "B1", onClose, onAddToWo
     }
   };
 
-  const cefrColor = CEFR_COLORS[cefr] || "var(--muted-foreground)";
+  const collinsColor = COLLINS_COLORS[collins] || "var(--muted-foreground)";
 
   return (
     <motion.div
@@ -111,8 +110,8 @@ export function WordCard({ word, apiCall, targetLevel = "B1", onClose, onAddToWo
           {phonetic && <span className="wc-phonetic">{phonetic}</span>}
         </div>
         <div className="wc-header__right">
-          <span className="wc-cefr" style={{ background: `${cefrColor}22`, color: cefrColor }}>
-            {cefr}
+          <span className="wc-collins" style={{ background: `${collinsColor}22`, color: collinsColor }}>
+            {collins} 星
           </span>
           <button className="wc-close" onClick={onClose} aria-label="关闭">
             <X className="size-3.5" />
@@ -159,3 +158,6 @@ export function WordCard({ word, apiCall, targetLevel = "B1", onClose, onAddToWo
     </motion.div>
   );
 }
+
+
+

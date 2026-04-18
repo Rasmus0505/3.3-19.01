@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import { BookOpenCheck, RefreshCw } from "lucide-react";
 import { Badge, Button, Card, CardContent } from "../../shared/ui";
@@ -112,7 +112,7 @@ export function AICoachCard({ apiCall, stats, report, userId, useMock = false })
               THEORY VERDICT
             </Badge>
             <Badge className="rounded-full border border-white/15 bg-background/10 px-3 py-1 text-[10px] font-semibold tracking-[0.2em] text-slate-200">
-              {report?.predictedLevel || "B1 Input"}
+              {report?.predictedLevel || "可用输入"}
             </Badge>
           </div>
           <div className="mt-3 flex items-start gap-3">
@@ -142,3 +142,5 @@ export function AICoachCard({ apiCall, stats, report, userId, useMock = false })
     </Card>
   );
 }
+
+

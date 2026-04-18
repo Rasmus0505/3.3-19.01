@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 // 子组件导出（用于模块化重构）
 // 新代码建议使用这些子组件代替直接使用 ImmersiveLessonPage
@@ -8,7 +8,7 @@ import ImmersiveLessonShell from "./components/ImmersiveLessonShell";
 
 // Hooks 导出
 export { useImmersivePlayer } from "./hooks";
-import { useExplanation, useCEFR } from "./hooks";
+import { useExplanation, useDifficultyHighlight } from "./hooks";
 import { useImmersiveKeyboard } from "./hooks/useImmersiveKeyboard";
 import { useImmersivePreferences } from "./hooks/useImmersivePreferences";
 import { useWordbookSelection } from "./hooks/useWordbookSelection";
@@ -17,6 +17,7 @@ import { useWordbookSelection } from "./hooks/useWordbookSelection";
 export * from "./immersiveTypes";
 
 import { parseResponse } from "../../shared/api/client";
+import { classifyTokensByCollins } from "../../shared/api/dictionaryApi";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
   Card,
@@ -88,7 +89,7 @@ import {
   isIpadSafariBrowser,
   isLocalMediaRequiredPayload,
   isTouchPrimaryInputDevice,
-  lookupCefrLevelFromMap,
+  lookupBandFromMap,
   mergeSortedComparableIndices,
   normalizeComparableToken,
   pruneRevealComparableIndicesForInputs,
@@ -149,6 +150,7 @@ export function ImmersiveLessonPage({
   const [soeResult, setSoeResult] = useState(null);
   const [soeLoading, setSoeLoading] = useState(false);
   const [sentenceReplayCount, setSentenceReplayCount] = useState(0);
+  const [wordbookSentenceBandMapState, setWordbookSentenceBandMap] = useState(new Map());
   const audioRecorderRef = useRef(null);
 
   // 先从 sessionState 解构出 currentSentenceIndex（hook 依赖它）
@@ -190,8 +192,17 @@ export function ImmersiveLessonPage({
     markExplanationViewed,
   } = useExplanation({ currentSentence });
 
-  // CEFR Hook
-  const { cefrVocabEngineTick, cefrLevel, currentSentenceCefrMap, cefrAnalyzerRef } = useCEFR({ lesson, currentSentenceIndex });
+  const {
+    vocabEngineTick: difficultyVocabEngineTick,
+    collinsLevel,
+    bandMap: currentSentenceBandMap,
+    analyzerRef: difficultyAnalyzerRef,
+  } = useDifficultyHighlight({
+    lesson,
+    currentSentenceIndex,
+    accessToken,
+    apiClient,
+  });
 
   const immersiveContainerRef = useRef(null);
   const immersiveMediaRef = useRef(null);
@@ -467,15 +478,10 @@ export function ImmersiveLessonPage({
   );
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
   const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
-  const wordbookSentenceCefrMap = useMemo(() => {
-    if (!Array.isArray(wordbookSentenceTokens) || !cefrAnalyzerRef.current?.isLoaded) return new Map();
-    const map = new Map();
-    for (const token of wordbookSentenceTokens) {
-      const level = cefrAnalyzerRef.current.lookupCefrLevelForSurfaceForm(token);
-      if (level) addTokenLevelToMap(map, token, level);
-    }
-    return map;
-  }, [wordbookSentenceTokens, cefrVocabEngineTick]);
+  const wordbookSentenceBandMap = useMemo(
+    () => new Map(wordbookSentenceBandMapState),
+    [wordbookSentenceBandMapState],
+  );
   const canRenderInteractiveWordbook = Boolean(interactiveWordbookContext);
   const wordbookSentenceZh = interactiveWordbookContext?.zhText || "";
   const wordbookSentenceMode = interactiveWordbookContext?.mode || "previous";
@@ -483,6 +489,33 @@ export function ImmersiveLessonPage({
   const wordbookSentenceSourceKey = `${lesson?.id ?? "lesson"}:${wordbookSentenceMode}:${
     wordbookSentence?.idx ?? "none"
   }`;
+
+  useEffect(() => {
+    let canceled = false;
+    async function loadWordbookBands() {
+      if (!accessToken || !apiClient || !Array.isArray(wordbookSentenceTokens) || wordbookSentenceTokens.length === 0) {
+        setWordbookSentenceBandMap(new Map());
+        return;
+      }
+      try {
+        const payload = await classifyTokensByCollins(apiClient, accessToken, wordbookSentenceTokens);
+        if (canceled) return;
+        const nextMap = new Map();
+        for (const item of Array.isArray(payload?.items) ? payload.items : []) {
+          addTokenLevelToMap(nextMap, item.token, item.band);
+          if (item.lemma) addTokenLevelToMap(nextMap, item.lemma, item.band);
+        }
+        setWordbookSentenceBandMap(nextMap);
+      } catch (_) {
+        if (canceled) return;
+        setWordbookSentenceBandMap(new Map());
+      }
+    }
+    void loadWordbookBands();
+    return () => {
+      canceled = true;
+    };
+  }, [accessToken, apiClient, wordbookSentenceSourceKey, wordbookSentenceTokens]);
   const {
     wordbookBusy,
     wordbookSelectedTokenIndexes,
@@ -2006,9 +2039,9 @@ export function ImmersiveLessonPage({
         wordInputs,
         wordRowLines,
         wordRowFrameRef,
-        currentSentenceCefrMap,
-        cefrAnalyzerRef,
-        cefrLevel,
+        currentSentenceBandMap,
+        difficultyAnalyzerRef,
+        collinsLevel,
         buildLetterSlots,
         wordRevealComparableIndices,
         showPreviousSentenceBlock,
@@ -2046,9 +2079,9 @@ export function ImmersiveLessonPage({
         typingPanelRef,
         audioRecorderRef,
         parseResponse,
-        wordbookSentenceCefrMap,
+        wordbookSentenceBandMap,
         translationZh,
-        lookupCefrLevelFromMap,
+        lookupBandFromMap,
         currentSentence,
         nextSentence,
         sentenceTypingDone,
@@ -2075,10 +2108,10 @@ export function ImmersiveLessonPage({
         wordbookSentenceTokens,
         wordbookSelectedTokenIndexes,
         wordbookSuccessAnimationIndexes,
-        wordbookSentenceCefrMap,
-        cefrAnalyzerRef,
-        cefrLevel,
-        lookupCefrLevelFromMap,
+        wordbookSentenceBandMap,
+        difficultyAnalyzerRef,
+        collinsLevel,
+        lookupBandFromMap,
         handleWordbookTokenClick,
         requestInteractiveWordbookSentencePlayback,
         wordbookSentencePlaybackLabel,
@@ -2113,3 +2146,5 @@ export function ImmersiveLessonPage({
     />
   );
 }
+
+

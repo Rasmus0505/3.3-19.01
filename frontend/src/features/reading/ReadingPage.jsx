@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ReadingPage.jsx — 阅读板块根组件
  * =================================
  * Phase 35: 材料诊断台 + 继续生成前置确认
@@ -6,9 +6,9 @@
  */
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { readCefrLevel } from "../../app/authStorage";
-import { computeCefrClassName } from "./ArticlePanel";
-import { getOrCreateAnalyzer } from "../../hooks/useRichLayout";
+import { readCollinsLevel } from "../../app/authStorage";
+import { computeDifficultyClassName } from "./ArticlePanel";
+import { classifyTokensByCollins } from "../../shared/api/dictionaryApi";
 import { TranslationDialog } from "../wordbook/TranslationDialog";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
 import { HistoryPanel, saveHistoryRecord } from "./HistoryPanel";
@@ -41,24 +41,27 @@ function PageFallback() {
   );
 }
 
-async function collectSimplifyCandidatesFromRaw(text, targetLevel) {
-  const analyzer = await getOrCreateAnalyzer();
-  const result = analyzer.extractSurfaceWordsAtOrAboveLevel(text, targetLevel);
-  const seen = new Set();
-  const candidates = [];
-  for (const token of result) {
-    if (!token.word || typeof token.word !== "string") continue;
-    const lower = token.word.toLowerCase();
-    if (!seen.has(lower)) {
-      seen.add(lower);
-      candidates.push({ word: token.word, level: token.level || "SUPER" });
-    }
-  }
-  return candidates;
+async function collectSimplifyCandidatesFromRaw(apiCall, accessToken, text) {
+  const tokenMatches = String(text || "").match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
+  const tokens = Array.from(new Set(tokenMatches.map((item) => String(item || "").trim()).filter(Boolean)));
+  const payload = await classifyTokensByCollins(apiCall, accessToken, tokens);
+  return (Array.isArray(payload?.items) ? payload.items : [])
+    .filter((item) => item?.band === "i_plus_one" || item?.band === "above_i_plus_one")
+    .map((item) => ({
+      word: String(item.token || ""),
+      level: item.collins == null ? "" : String(item.collins),
+      band: String(item.band || ""),
+    }));
+}
+
+function extractUniqueWordTokens(text) {
+  const matches = String(text || "").match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [];
+  return Array.from(new Set(matches.map((item) => String(item || "").trim()).filter(Boolean)));
 }
 
 export function ReadingPage({ accessToken, apiCall }) {
-  const userLevel = useMemo(() => readCefrLevel() || "B1", []);
+  const userCollinsLevel = useMemo(() => readCollinsLevel() || 3, []);
+  const userLevel = useMemo(() => readCollinsLevel() || 3, []);
   const defaultActiveLevels = useMemo(() => getDefaultActiveLevels(userLevel), [userLevel]);
 
   const [contentWidth, setContentWidth] = useState(640);
@@ -74,6 +77,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState(null);
   const [showPipelineOriginal, setShowPipelineOriginal] = useState(false);
+  const [collinsBandMap, setCollinsBandMap] = useState({});
 
   const {
     rewrittenText,
@@ -122,14 +126,47 @@ export function ReadingPage({ accessToken, apiCall }) {
     }
   }, [mode]);
 
+  useEffect(() => {
+    let canceled = false;
+    async function loadCollinsBands() {
+      if (!accessToken || !apiCall || !activeArticleText) {
+        setCollinsBandMap({});
+        return;
+      }
+      try {
+        const tokens = extractUniqueWordTokens(activeArticleText);
+        if (!tokens.length) {
+          setCollinsBandMap({});
+          return;
+        }
+        const payload = await classifyTokensByCollins(apiCall, accessToken, tokens);
+        if (canceled) return;
+        const nextMap = {};
+        for (const item of Array.isArray(payload?.items) ? payload.items : []) {
+          const key = String(item?.normalized || item?.token || "").toLowerCase();
+          if (!key) continue;
+          nextMap[key] = item.band || "unrated";
+        }
+        setCollinsBandMap(nextMap);
+      } catch (_) {
+        if (canceled) return;
+        setCollinsBandMap({});
+      }
+    }
+    void loadCollinsBands();
+    return () => {
+      canceled = true;
+    };
+  }, [accessToken, activeArticleText, apiCall]);
+
   const handleWordClick = useCallback((word, segment) => {
-    const cefrClass = computeCefrClassName(segment.cefrLevel, userLevel);
+    const difficultyClass = computeDifficultyClassName(segment.difficultyLevel || segment.levelBand, userCollinsLevel);
     setSelectedWords((prev) => {
       const exists = prev.some((item) => item.word === word);
       if (exists) return prev.filter((item) => item.word !== word);
-      return [...prev, { word, cefrLevel: segment.cefrLevel, cefrClass }];
+      return [...prev, { word, difficultyLevel: segment.difficultyLevel || segment.levelBand, difficultyClass }];
     });
-  }, [userLevel]);
+  }, [userCollinsLevel]);
 
   const runDiagnosis = useCallback(async (
     text,
@@ -141,9 +178,22 @@ export function ReadingPage({ accessToken, apiCall }) {
     setIsDiagnosing(true);
     setDiagnosticError(null);
     try {
-      const analyzer = await getOrCreateAnalyzer();
       const segments = splitDiagnosticText(normalized);
-      const report = analyzer.analyzeVideo(segments.length > 0 ? segments : [normalized], userLevel);
+      const allTokens = (segments.length > 0 ? segments : [normalized])
+        .flatMap((segment) => String(segment || "").match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || []);
+      const diagnosticPayload = await classifyTokensByCollins(apiCall, accessToken, allTokens);
+      const levelCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0, unrated: 0 };
+      let iPlusOneCount = 0;
+      let aboveIPlusOneCount = 0;
+      for (const item of Array.isArray(diagnosticPayload?.items) ? diagnosticPayload.items : []) {
+        if (item.collins == null) {
+          levelCounts.unrated += 1;
+        } else {
+          levelCounts[String(item.collins)] = (levelCounts[String(item.collins)] || 0) + 1;
+        }
+        if (item.band === "i_plus_one") iPlusOneCount += 1;
+        if (item.band === "above_i_plus_one") aboveIPlusOneCount += 1;
+      }
       let estimate = { estimatedTokens: null, estimatedChargeYuan: null };
       if (accessToken) {
         try {
@@ -155,8 +205,16 @@ export function ReadingPage({ accessToken, apiCall }) {
       const snapshot = buildDiagnosticSnapshot({
         text: normalized,
         userLevel,
-        report,
-        selectedTargetLevel: selectedTargetLevel || diagnosticSnapshot?.selectedTargetLevel || null,
+        report: {
+          totalWords: allTokens.length,
+          levelCounts,
+          fitMessage:
+            aboveIPlusOneCount > iPlusOneCount
+              ? "当前材料中高难词偏多，建议先把目标锁在更稳的 Collins 星级。"
+              : "当前材料里存在一批可作为 i+1 输入的词，适合继续生成。",
+          fitScore: allTokens.length > 0 ? Math.round((iPlusOneCount / allTokens.length) * 100) : 0,
+        },
+        selectedTargetLevel: selectedTargetLevel || diagnosticSnapshot?.selectedTargetLevel || userLevel,
         estimatedTokens: estimate.estimatedTokens,
         estimatedChargeYuan: estimate.estimatedChargeYuan,
       });
@@ -176,6 +234,7 @@ export function ReadingPage({ accessToken, apiCall }) {
   }, [
     accessToken,
     activeHistoryId,
+    apiCall,
     diagnosticSnapshot?.selectedTargetLevel,
     saveDiagnosticSnapshot,
     userLevel,
@@ -268,13 +327,10 @@ export function ReadingPage({ accessToken, apiCall }) {
     setMode("pipeline");
     setShowPipelineOriginal(false);
     try {
-      const candidates = await collectSimplifyCandidatesFromRaw(
-        activeArticleText,
-        diagnosticSnapshot.selectedTargetLevel
-      );
-      await handleRewrite(activeArticleText, {
-        words: candidates,
-        targetLevel: diagnosticSnapshot.selectedTargetLevel,
+        const candidates = await collectSimplifyCandidatesFromRaw(apiCall, accessToken, activeArticleText);
+        await handleRewrite(activeArticleText, {
+          words: candidates,
+          targetLevel: diagnosticSnapshot.selectedTargetLevel,
         showEstimateToast: false,
       });
     } catch (error) {
@@ -282,7 +338,7 @@ export function ReadingPage({ accessToken, apiCall }) {
       toast.error(message);
       setMode("diagnostic");
     }
-  }, [accessToken, activeArticleText, diagnosticSnapshot, handleRewrite]);
+  }, [accessToken, activeArticleText, apiCall, diagnosticSnapshot, handleRewrite]);
 
   const handleEditAgain = useCallback(() => {
     setMode("input");
@@ -328,6 +384,7 @@ export function ReadingPage({ accessToken, apiCall }) {
                 validAboveI1Words={[]}
                 removedWords={[]}
                 wordLevels={{}}
+                collinsBandMap={collinsBandMap}
                 viewMode="original"
                 isRewriting={false}
                 rewriteError={null}
@@ -377,6 +434,7 @@ export function ReadingPage({ accessToken, apiCall }) {
                   validAboveI1Words={[]}
                   removedWords={[]}
                   wordLevels={{}}
+                  collinsBandMap={collinsBandMap}
                   viewMode="original"
                   isRewriting={false}
                   rewriteError={null}
@@ -425,6 +483,7 @@ export function ReadingPage({ accessToken, apiCall }) {
               validAboveI1Words={validAboveI1Words}
               removedWords={removedWords}
               wordLevels={wordLevels}
+              collinsBandMap={collinsBandMap}
               viewMode={viewMode}
               isRewriting={isRewriting}
               rewriteError={rewriteError}
@@ -442,3 +501,5 @@ export function ReadingPage({ accessToken, apiCall }) {
     </Suspense>
   );
 }
+
+

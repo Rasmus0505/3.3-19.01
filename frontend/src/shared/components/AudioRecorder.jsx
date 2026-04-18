@@ -1,4 +1,4 @@
-import { Mic } from "lucide-react";
+﻿import { Mic } from "lucide-react";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 const STATUS_IDLE = "idle";
@@ -225,3 +225,4 @@ export default function AudioRecorder({ onRecordingComplete, maxDuration = 30, c
     </>
   );
 }
+

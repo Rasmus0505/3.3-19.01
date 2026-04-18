@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { Send, Trash2 } from "lucide-react";
 import { useLessonChat } from "./useLessonChat";
 import { VoiceRecorder } from "./VoiceRecorder";
@@ -132,3 +132,5 @@ export default function ChatPanel({ lessonId, currentSentence, accessToken, apiC
     </div>
   );
 }
+
+

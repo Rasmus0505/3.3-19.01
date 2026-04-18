@@ -1,4 +1,4 @@
-// 沉浸式学习类型定义。
+﻿// 沉浸式学习类型定义。
 
 export interface ImmersiveLesson {
   id: number;
@@ -19,7 +19,7 @@ export interface Sentence {
   text: string;
   translation?: string;
   words?: Word[];
-  cefrLevel?: string;
+  difficultyLevel?: string;
   difficulty?: number;
 }
 
@@ -60,3 +60,5 @@ export interface SoeAssessment {
 }
 
 export type TranslationDisplayMode = 'hover' | 'always' | 'never';
+
+

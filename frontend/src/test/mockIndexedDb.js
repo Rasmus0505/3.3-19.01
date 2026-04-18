@@ -1,4 +1,4 @@
-function createRequest(executor) {
+﻿function createRequest(executor) {
   const request = {
     result: undefined,
     error: null,
@@ -162,3 +162,5 @@ export function installMockIndexedDb() {
     },
   };
 }
+
+

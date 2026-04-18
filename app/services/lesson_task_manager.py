@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
@@ -82,7 +82,7 @@ _STAGE_LABELS = (
     ("asr_transcribe", "ASR转写字幕"),
     ("build_lesson", "生成课程结构"),
     ("translate_zh", "翻译中文字幕"),
-    ("cefr_annotation", "生成生词标注"),
+    ("vocabulary_annotation", "生成生词标注"),
     ("word_explanation", "生成讲解"),
     ("write_lesson", "写入课程"),
 )
@@ -1192,3 +1192,4 @@ def mark_task_terminated(
     finally:
         if owns_session:
             session.close()
+

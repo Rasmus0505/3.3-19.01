@@ -1,4 +1,4 @@
-/**
+﻿/**
  * AnalysisPanel.jsx — 阅读板块右侧分析面板
  * ========================================
  * 替代原 WordSidebar，包含：
@@ -9,9 +9,9 @@
  * 5. 底部操作栏
  *
  * Props:
- *   selectedWords   {{ word: string, cefrLevel: string|null, cefrClass: string }[]}
- *   wordStats       {{ total: number, cefrCounts: Record<string,number> }|null}
- *   userLevel       {string} — 用户当前 CEFR 级别
+ *   selectedWords   {{ word: string, difficultyLevel: string|null, difficultyClass: string }[]}
+ *   wordStats       {{ total: number, difficultyCounts: Record<string,number> }|null}
+ *   userLevel       {string} — 用户当前 Collins 级别
  *   activeLevels    {string[]} — 当前激活的级别（用户勾选）
  *   onLevelToggle   {(level: string) => void}
  *   onRemove        {(item: WordItem) => void}
@@ -56,7 +56,7 @@ function levelLabel(level) {
 /* ─── 难度分布条 ───────────────────────────────── */
 
 function DifficultyBar({ stats, activeLevels, onLevelToggle }) {
-  const counts = stats?.cefrCounts || {};
+  const counts = stats?.difficultyCounts || {};
   const total = stats?.total || 1;
 
   return (
@@ -148,8 +148,8 @@ function WordList({ selectedWords, onRemove, onTranslate, onAddAllToWordbook, is
 
   // 按级别从高到低排序
   const sorted = [...selectedWords].sort((a, b) => {
-    const idxA = ALL_LEVELS.indexOf(a.cefrLevel || "SUPER");
-    const idxB = ALL_LEVELS.indexOf(b.cefrLevel || "SUPER");
+    const idxA = ALL_LEVELS.indexOf(a.difficultyLevel || "SUPER");
+    const idxB = ALL_LEVELS.indexOf(b.difficultyLevel || "SUPER");
     return idxB - idxA;
   });
 
@@ -203,14 +203,14 @@ function WordList({ selectedWords, onRemove, onTranslate, onAddAllToWordbook, is
 }
 
 function AnalysisWordItem({ item, onRemove, onTranslate }) {
-  const cfg = LEVEL_CONFIG[item.cefrLevel] || LEVEL_CONFIG.SUPER;
+  const cfg = LEVEL_CONFIG[item.difficultyLevel] || LEVEL_CONFIG.SUPER;
 
   return (
-    <div className={cn("analysis-word-item", `analysis-word-item--${item.cefrClass}`)}>
+    <div className={cn("analysis-word-item", `analysis-word-item--${item.difficultyClass}`)}>
       <div className="analysis-word-item__main">
         <span className="analysis-word-item__word">{item.word}</span>
         <span className={cn("analysis-word-item__level", cfg.textColor)}>
-          {levelLabel(item.cefrLevel)}
+          {levelLabel(item.difficultyLevel)}
         </span>
       </div>
       <div className="analysis-word-item__actions">
@@ -318,3 +318,6 @@ export function AnalysisPanel({
     </aside>
   );
 }
+
+
+

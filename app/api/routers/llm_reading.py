@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.routers.llm_shared import (
-    CEFR_LEVELS,
     LLM_MODEL_DEEPSEEK_FAST,
     LLM_MODEL_DEEPSEEK_THINKING,
     logger,
+    require_collins_level,
 )
 from app.db import get_db
 from app.models import User
@@ -26,7 +26,7 @@ router = APIRouter()
 )
 def generate_reading_material_endpoint(
     words: list[dict[str, Any]],
-    target_level: str = Query(default="A2", max_length=4),
+    target_level: int = Query(default=3, ge=1, le=5),
     enable_thinking: bool = Query(default=False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -40,11 +40,7 @@ def generate_reading_material_endpoint(
 
     llm_root.ensure_default_billing_rates(db)
 
-    if target_level.upper() not in CEFR_LEVELS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Invalid target_level '{target_level}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}",
-        )
+    target_level = require_collins_level(target_level, field_name="target_level", default=3)
 
     effective_model = LLM_MODEL_DEEPSEEK_THINKING if enable_thinking else LLM_MODEL_DEEPSEEK_FAST
 
@@ -63,7 +59,7 @@ def generate_reading_material_endpoint(
         results = list(
             llm_root.generate_reading_material(
                 user_words=words,
-                target_level=target_level.upper(),
+                target_level=target_level,
                 enable_thinking=enable_thinking,
                 api_key=api_key,
             )

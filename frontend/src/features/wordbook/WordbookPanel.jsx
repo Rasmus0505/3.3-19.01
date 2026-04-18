@@ -1,4 +1,4 @@
-import { BookOpenText, Languages, Play, Trash2, Loader2, Volume2, AlertCircle } from "lucide-react";
+﻿import { BookOpenText, Languages, Play, Trash2, Loader2, Volume2, AlertCircle } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -914,3 +914,5 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     </Card>
   );
 }
+
+

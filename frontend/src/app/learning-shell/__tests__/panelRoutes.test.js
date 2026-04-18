@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+﻿import assert from "node:assert/strict";
 import test from "node:test";
 
 import { getPanelItemByPathname, getPanelPath, LEARNING_PAGE_PATHS } from "../panelRoutes.js";
@@ -17,3 +17,5 @@ test("learning page routes include account alias", () => {
   assert.ok(LEARNING_PAGE_PATHS.includes("/account"));
   assert.ok(LEARNING_PAGE_PATHS.includes("/redeem"));
 });
+
+

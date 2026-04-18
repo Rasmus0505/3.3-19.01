@@ -1,4 +1,4 @@
-export interface ApiErrorResponse {
+﻿export interface ApiErrorResponse {
   ok?: boolean;
   error_code?: string;
   message?: string;
@@ -45,4 +45,6 @@ export type {
   WalletBalance,
   WalletResponse,
 } from "../shared/api/types";
+
+
 

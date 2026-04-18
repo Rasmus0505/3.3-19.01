@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+﻿import { beforeEach, describe, expect, it } from "vitest";
 import {
   clearAllRewriteRecords,
   getAllRewriteRecords,
@@ -79,3 +79,5 @@ describe("readingRewriteDB pack contract", () => {
     expect(all[0].articleId).toBe("pack-1");
   });
 });
+
+

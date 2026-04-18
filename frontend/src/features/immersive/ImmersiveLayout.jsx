@@ -1,4 +1,4 @@
-export default function ImmersiveLayout({
+﻿export default function ImmersiveLayout({
   leftTopContent,
   leftBottomContent,
   rightTopContent,
@@ -40,3 +40,5 @@ export default function ImmersiveLayout({
     </div>
   );
 }
+
+

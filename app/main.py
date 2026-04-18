@@ -25,6 +25,7 @@ from app.api.routers.auth.router import router as auth_router
 from app.api.routers.billing.router import router as billing_router
 from app.api.routers.billing.wallet import router as wallet_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
+from app.api.routers.dictionary import router as dictionary_router
 
 from app.api.routers.learning_dashboard import router as dashboard_router
 from app.api.routers.lesson_chat import router as lesson_chat_router
@@ -72,8 +73,6 @@ logger = logging.getLogger(__name__)
 
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)
 
-
-CEFR_VOCAB_FILE = APP_DIR / "data" / "vocab" / "cefr_vocab_fixed.json"
 
 READINESS_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     "users": ("is_admin", "last_login_at", "username", "username_normalized"),
@@ -633,17 +632,6 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=SERVICE_NAME, version="0.3.0", lifespan=app_lifespan if enable_lifespan else None)
     app.state.runtime_status = RuntimeStatus()
 
-    @app.get("/data/vocab/cefr_vocab_fixed.json", include_in_schema=False)
-    def serve_cefr_vocab() -> FileResponse:
-        """CEFR 词表：前端 VocabAnalyzer 默认从此 URL 拉取；此前未挂载导致全站词级分析失败（全部视为 SUPER / 橙色）。"""
-        if not CEFR_VOCAB_FILE.is_file():
-            raise HTTPException(status_code=404, detail="CEFR vocabulary file not found")
-        return FileResponse(
-            str(CEFR_VOCAB_FILE),
-            media_type="application/json",
-            filename="cefr_vocab_fixed.json",
-        )
-
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     @app.middleware("http")
@@ -753,6 +741,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(lessons_router)
     app.include_router(cloud_transcribe_router)
     app.include_router(dashscope_upload_router)
+    app.include_router(dictionary_router)
     app.include_router(asr_models_router)
     # app.include_router(local_asr_assets_router)  # TODO: 创建缺失模块
     app.include_router(practice_router)

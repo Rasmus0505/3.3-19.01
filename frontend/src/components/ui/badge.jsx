@@ -1,4 +1,4 @@
-import { cva } from "class-variance-authority";
+﻿import { cva } from "class-variance-authority";
 
 import { cn } from "../../lib/utils";
 
@@ -24,3 +24,5 @@ const badgeVariants = cva(
 export function Badge({ className, variant, ...props }) {
   return <span data-slot="badge" data-variant={variant} className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
+
+

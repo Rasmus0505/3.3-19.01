@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 
 import { AdminApp } from "../AdminApp";
 import { AdminAuthChecking, AdminNoPermission, AdminNotLoggedIn } from "./AdminShell";
@@ -35,3 +35,5 @@ export function AdminShell() {
 
   return <AdminApp apiCall={(path, options = {}) => api(path, options, accessToken)} onLogout={logout} />;
 }
+
+

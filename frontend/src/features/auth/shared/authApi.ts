@@ -1,4 +1,4 @@
-import { api } from "../../../shared/api/client";
+﻿import { api } from "../../../shared/api/client";
 
 export interface AuthPayload {
   email?: string;
@@ -80,3 +80,5 @@ export async function postAuthJson<T = any>(
     };
   }
 }
+
+

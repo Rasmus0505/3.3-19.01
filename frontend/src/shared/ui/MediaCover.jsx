@@ -1,4 +1,4 @@
-import { ImageIcon } from "lucide-react";
+﻿import { ImageIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 
@@ -34,3 +34,5 @@ export function MediaCover({ coverDataUrl = "", alt = "素材封面", aspectRati
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-import { normalizeToken } from "./tokenNormalize";
+﻿import { normalizeToken } from "./tokenNormalize";
 
 const APOSTROPHE_RE = /[‘’]/g;
 
@@ -62,3 +62,5 @@ export function buildLetterSlots(expectedToken, inputValue, revealedComparableIn
   }
   return slots;
 }
+
+

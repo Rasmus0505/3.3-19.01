@@ -1,4 +1,4 @@
-import { Bug, Settings2, Sparkles } from "lucide-react";
+﻿import { Bug, Settings2, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -110,3 +110,5 @@ export function AdminPipelineWorkspace({ apiCall, showTabsNavigation = true }) {
     </div>
   );
 }
+
+

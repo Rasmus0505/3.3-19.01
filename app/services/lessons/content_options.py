@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -6,7 +6,7 @@ from typing import Any
 GENERATION_OPTION_KEYS: tuple[str, ...] = (
     "core_subtitles",
     "zh_translation",
-    "cefr_annotation",
+    "vocabulary_annotation",
     "word_explanation",
 )
 CONTENT_STATUS_KEYS: tuple[str, ...] = GENERATION_OPTION_KEYS
@@ -27,7 +27,7 @@ def default_generation_options() -> dict[str, bool]:
     return {
         "core_subtitles": True,
         "zh_translation": True,
-        "cefr_annotation": True,
+        "vocabulary_annotation": True,
         "word_explanation": True,
     }
 
@@ -54,7 +54,7 @@ def normalize_generation_options(
 
     base["core_subtitles"] = True
     if base["word_explanation"]:
-        base["cefr_annotation"] = True
+        base["vocabulary_annotation"] = True
     return base
 
 
@@ -62,7 +62,7 @@ def normalize_generated_content_status(value: dict[str, Any] | None) -> dict[str
     normalized = {
         "core_subtitles": CONTENT_STATE_GENERATED,
         "zh_translation": CONTENT_STATE_GENERATED,
-        "cefr_annotation": CONTENT_STATE_GENERATED,
+        "vocabulary_annotation": CONTENT_STATE_GENERATED,
         "word_explanation": CONTENT_STATE_GENERATED,
     }
     if not isinstance(value, dict):
@@ -78,17 +78,17 @@ def build_generated_content_status(
     *,
     effective_options: dict[str, Any] | None,
     translation_state: str = CONTENT_STATE_GENERATED,
-    cefr_state: str = CONTENT_STATE_GENERATED,
+    vocabulary_state: str = CONTENT_STATE_GENERATED,
     explanation_state: str = CONTENT_STATE_GENERATED,
 ) -> dict[str, str]:
     options = normalize_generation_options(effective_options)
     status = {
         "core_subtitles": CONTENT_STATE_GENERATED,
         "zh_translation": translation_state if options["zh_translation"] else CONTENT_STATE_SKIPPED,
-        "cefr_annotation": cefr_state if options["cefr_annotation"] else CONTENT_STATE_SKIPPED,
+        "vocabulary_annotation": vocabulary_state if options["vocabulary_annotation"] else CONTENT_STATE_SKIPPED,
         "word_explanation": explanation_state if options["word_explanation"] else CONTENT_STATE_SKIPPED,
     }
-    if options["word_explanation"] and not options["cefr_annotation"]:
+    if options["word_explanation"] and not options["vocabulary_annotation"]:
         status["word_explanation"] = CONTENT_STATE_BLOCKED_DEPENDENCY
     return normalize_generated_content_status(status)
 
@@ -108,8 +108,8 @@ def infer_generation_options_from_lesson(
     inferred_effective = default_generation_options()
     if sentence_list:
         inferred_effective["zh_translation"] = any(bool(getattr(item, "text_zh", None) or (item.get("text_zh") if isinstance(item, dict) else "")) for item in sentence_list)
-        inferred_effective["cefr_annotation"] = any(
-            bool(getattr(item, "cefr_vocab_json", None) if not isinstance(item, dict) else item.get("cefr_vocab_json"))
+        inferred_effective["vocabulary_annotation"] = any(
+            bool(getattr(item, "vocabulary_analysis_json", None) if not isinstance(item, dict) else item.get("vocabulary_analysis_json"))
             for item in sentence_list
         )
         inferred_effective["word_explanation"] = any(
@@ -120,7 +120,7 @@ def infer_generation_options_from_lesson(
             for item in sentence_list
         )
         if inferred_effective["word_explanation"]:
-            inferred_effective["cefr_annotation"] = True
+            inferred_effective["vocabulary_annotation"] = True
     return normalize_generation_options(inferred_effective), normalize_generation_options(inferred_effective)
 
 
@@ -136,8 +136,8 @@ def infer_generated_content_status_from_lesson(
     options = normalize_generation_options(effective_options)
     sentence_list = list(sentences or [])
     has_translation = any(bool(getattr(item, "text_zh", None) or (item.get("text_zh") if isinstance(item, dict) else "")) for item in sentence_list)
-    has_cefr = any(
-        bool(getattr(item, "cefr_vocab_json", None) if not isinstance(item, dict) else item.get("cefr_vocab_json"))
+    has_vocabulary = any(
+        bool(getattr(item, "vocabulary_analysis_json", None) if not isinstance(item, dict) else item.get("vocabulary_analysis_json"))
         for item in sentence_list
     )
     has_explanation = any(
@@ -150,17 +150,17 @@ def infer_generated_content_status_from_lesson(
     return build_generated_content_status(
         effective_options=options,
         translation_state=CONTENT_STATE_GENERATED if has_translation else CONTENT_STATE_SKIPPED,
-        cefr_state=CONTENT_STATE_GENERATED if has_cefr else CONTENT_STATE_SKIPPED,
+        vocabulary_state=CONTENT_STATE_GENERATED if has_vocabulary else CONTENT_STATE_SKIPPED,
         explanation_state=CONTENT_STATE_GENERATED if has_explanation else CONTENT_STATE_SKIPPED,
     )
 
 
-def clear_sentence_generated_content(sentence: dict[str, Any], *, clear_translation: bool, clear_cefr: bool, clear_explanation: bool) -> dict[str, Any]:
+def clear_sentence_generated_content(sentence: dict[str, Any], *, clear_translation: bool, clear_vocabulary: bool, clear_explanation: bool) -> dict[str, Any]:
     payload = dict(sentence or {})
     if clear_translation:
         payload["text_zh"] = ""
-    if clear_cefr:
-        payload["cefr_vocab_json"] = None
+    if clear_vocabulary:
+        payload["vocabulary_analysis_json"] = None
     if clear_explanation:
         payload["needs_explanation"] = False
         payload["explanation_text"] = None
@@ -168,4 +168,6 @@ def clear_sentence_generated_content(sentence: dict[str, Any], *, clear_translat
         payload["explanation_audio_url"] = None
         payload["key_explanations_json"] = None
     return payload
+
+
 

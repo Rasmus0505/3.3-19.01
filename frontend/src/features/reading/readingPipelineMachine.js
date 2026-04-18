@@ -1,4 +1,4 @@
-export const READING_PIPELINE_STAGES = [
+﻿export const READING_PIPELINE_STAGES = [
   { key: "parsing", label: "读取材料" },
   { key: "difficulty_judgment", label: "确认目标难度" },
   { key: "simplification_planning", label: "规划简化策略" },
@@ -216,3 +216,5 @@ export function readingPipelineReducer(state, action) {
       return currentState;
   }
 }
+
+

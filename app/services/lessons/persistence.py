@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 from pathlib import Path
@@ -23,7 +23,8 @@ from app.services.billing_service import (
     settle_reserved_points,
 )
 from app.services.lesson_builder import estimate_duration_ms
-from app.services.lessons.cefr import process_sentences_with_cefr
+from app.services.collins_levels import normalize_collins_level
+from app.services.lessons.vocabulary import process_sentences_with_vocabulary
 from app.services.lessons.content_options import (
     CONTENT_STATE_GENERATED,
     CONTENT_STATE_PENDING_REGENERATE,
@@ -44,17 +45,17 @@ BuildTaskResultMetaFn = Callable[..., dict[str, Any]]
 BuildSubtitleCacheSeedFn = Callable[..., dict[str, Any]]
 
 
-def _resolve_owner_user_cefr_level(db: Session, owner_id: int, fallback: str = "B1") -> str:
+def _resolve_owner_user_collins_level(db: Session, owner_id: int, fallback: int = 3) -> int:
     try:
         from app.models import User
 
         user = db.get(User, int(owner_id))
-        level = str(getattr(user, "cefr_level", "") or "").strip().upper()
-        if level:
-            return level
+        normalized = normalize_collins_level(getattr(user, "collins_level", None), default=None)
+        if normalized is not None:
+            return normalized
     except Exception:
-        logger.warning("[DEBUG] lesson.cefr_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
-    return fallback
+        logger.warning("[DEBUG] lesson.collins_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
+    return normalize_collins_level(fallback, default=3) or 3
 
 
 def _append_translation_request_logs_safe(
@@ -119,7 +120,7 @@ def _add_runtime_sentences(db: Session, *, lesson_id: int, runtime_sentences: li
                     text_zh=str(sentence["text_zh"]),
                     tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                     audio_clip_path=None,
-                    cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                    vocabulary_analysis_json=sentence.get("vocabulary_analysis_json"),
                     needs_explanation=sentence.get("needs_explanation", False),
                     explanation_text=sentence.get("explanation_text"),
                     simplified_sentence=sentence.get("simplified_sentence"),
@@ -159,12 +160,12 @@ def create_lesson_from_local_generation_result(
         local_generation_result.get("effective_generation_options"),
         defaults=requested_generation_options,
     )
-    resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
-    cefr_state = CONTENT_STATE_GENERATED
+    resolved_user_level = _resolve_owner_user_collins_level(db, owner_id)
+    vocabulary_state = CONTENT_STATE_GENERATED
     explanation_state = CONTENT_STATE_GENERATED
-    if effective_generation_options["cefr_annotation"]:
+    if effective_generation_options["vocabulary_annotation"]:
         try:
-            runtime_sentences = process_sentences_with_cefr(
+            runtime_sentences = process_sentences_with_vocabulary(
                 sentences=runtime_sentences,
                 target_level=resolved_user_level,
                 user_level=resolved_user_level,
@@ -172,14 +173,14 @@ def create_lesson_from_local_generation_result(
             )
             variant["sentences"] = runtime_sentences
         except Exception:
-            logger.exception("[DEBUG] lesson.cefr_processing_failed.local_complete owner_id=%s", owner_id)
-            cefr_state = CONTENT_STATE_PENDING_REGENERATE
+            logger.exception("[DEBUG] lesson.vocabulary_processing_failed.local_complete owner_id=%s", owner_id)
+            vocabulary_state = CONTENT_STATE_PENDING_REGENERATE
             explanation_state = CONTENT_STATE_PENDING_REGENERATE if effective_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
             runtime_sentences = [
                 clear_sentence_generated_content(
                     sentence,
                     clear_translation=False,
-                    clear_cefr=True,
+                    clear_vocabulary=True,
                     clear_explanation=True,
                 )
                 for sentence in runtime_sentences
@@ -190,7 +191,7 @@ def create_lesson_from_local_generation_result(
             clear_sentence_generated_content(
                 sentence,
                 clear_translation=False,
-                clear_cefr=True,
+                clear_vocabulary=True,
                 clear_explanation=True,
             )
             for sentence in runtime_sentences
@@ -233,7 +234,7 @@ def create_lesson_from_local_generation_result(
     generated_content_status = build_generated_content_status(
         effective_options=effective_generation_options,
         translation_state=translation_state,
-        cefr_state=cefr_state,
+        vocabulary_state=vocabulary_state,
         explanation_state=explanation_state,
     )
 
@@ -296,7 +297,7 @@ def create_lesson_from_local_generation_result(
             source_duration_ms=reserved_duration_ms,
             status="partial_ready" if failed_count > 0 else "ready",
         )
-        lesson.user_cefr_level = resolved_user_level
+        lesson.user_collins_level = resolved_user_level
         lesson.requested_generation_options_json = requested_generation_options
         lesson.effective_generation_options_json = effective_generation_options
         lesson.generated_content_status_json = generated_content_status
@@ -440,7 +441,7 @@ def build_one_lesson(
 
         user = db.query(User).filter(User.id == owner_id).first()
         if user:
-            lesson.user_cefr_level = user.cefr_level
+            lesson.user_collins_level = normalize_collins_level(getattr(user, "collins_level", None), default=3) or 3
     except Exception:
         pass
     if not str(getattr(lesson, "title", "") or "").strip():
@@ -514,3 +515,4 @@ __all__ = [
     "build_one_lesson",
     "create_lesson_from_local_generation_result",
 ]
+

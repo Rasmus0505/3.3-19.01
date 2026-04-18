@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CourseProgressBar — Horizontal step indicator for 4 course scenes.
  */
 import { cn } from "../../../lib/utils";
@@ -66,3 +66,5 @@ export function CourseProgressBar({ activeScene, progress, onGoToScene }) {
     </div>
   );
 }
+
+

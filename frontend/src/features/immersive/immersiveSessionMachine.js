@@ -1,4 +1,4 @@
-export const LESSON_LOADED = "LESSON_LOADED";
+﻿export const LESSON_LOADED = "LESSON_LOADED";
 export const PLAYBACK_STARTED = "PLAYBACK_STARTED";
 export const PLAYBACK_FINISHED = "PLAYBACK_FINISHED";
 export const ANSWER_COMPLETED = "ANSWER_COMPLETED";
@@ -245,3 +245,5 @@ export function immersiveSessionReducer(state, event) {
       return state;
   }
 }
+
+

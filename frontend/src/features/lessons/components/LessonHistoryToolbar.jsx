@@ -1,4 +1,4 @@
-import { Trash2 } from "lucide-react";
+﻿import { Trash2 } from "lucide-react";
 
 import { Button } from "../../../shared/ui";
 
@@ -54,3 +54,5 @@ export function LessonHistoryToolbar({
     </div>
   );
 }
+
+

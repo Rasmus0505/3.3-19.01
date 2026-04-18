@@ -1,4 +1,4 @@
-import { parseJsonSafely } from "./errorFormatter";
+﻿import { parseJsonSafely } from "./errorFormatter";
 
 const TONE_BY_STATE = {
   healthy: "success",
@@ -55,3 +55,5 @@ export function buildExportProtectionPrompt(exportProtection) {
     placeholder: strong ? "输入当前环境中的高强度确认词" : "输入当前环境中的确认词",
   };
 }
+
+

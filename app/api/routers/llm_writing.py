@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, strip_json_fences
+from app.api.routers.llm_shared import _require_api_key, recover_json_payload, require_collins_level, strip_json_fences
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
@@ -24,7 +24,7 @@ router = APIRouter()
 
 class WritingPromptRequest(BaseModel):
     article_text: str = Field(..., min_length=20)
-    target_level: str = Field("B1")
+    target_level: int = Field(3, ge=1, le=5)
     key_vocabulary: list[str] = Field(default_factory=list)
 
 
@@ -38,7 +38,7 @@ class WritingEvaluateRequest(BaseModel):
     article_text: str = Field(..., min_length=20)
     writing_prompt: str
     user_response: str = Field(..., min_length=5)
-    target_level: str = Field("B1")
+    target_level: int = Field(3, ge=1, le=5)
 
 
 class WritingEvaluateResponse(BaseModel):
@@ -51,7 +51,7 @@ class WritingEvaluateResponse(BaseModel):
 _PROMPT_SYSTEM = (
     "You are an English writing teacher helping a learner practice writing.\n"
     "Based on the article text, generate a writing prompt and guidance for the learner.\n"
-    "The learner's CEFR level is {target_level}.\n"
+    "The learner's Collins level is {target_level}, where 5 is easier and 1 is harder.\n"
     "\n"
     "Rules:\n"
     "- The prompt should ask the learner to write 2-4 sentences about the article.\n"
@@ -66,7 +66,7 @@ _PROMPT_SYSTEM = (
 
 _EVALUATE_SYSTEM = (
     "You are an English writing teacher evaluating a learner's writing.\n"
-    "The learner's CEFR level is {target_level}.\n"
+    "The learner's Collins level is {target_level}, where 5 is easier and 1 is harder.\n"
     "\n"
     "Evaluate the writing based on:\n"
     "1. Grammar correctness\n"
@@ -145,8 +145,9 @@ def generate_writing_prompt_endpoint(
 
     api_key = _require_api_key()
     llm_root.ensure_default_billing_rates(db)
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=3)
 
-    messages = _build_prompt_messages(body.article_text, body.target_level, body.key_vocabulary)
+    messages = _build_prompt_messages(body.article_text, str(target_level), body.key_vocabulary)
 
     try:
         raw_response, usage = llm_root.call_deepseek(
@@ -213,9 +214,10 @@ def evaluate_writing_endpoint(
 
     api_key = _require_api_key()
     llm_root.ensure_default_billing_rates(db)
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=3)
 
     messages = _build_evaluate_messages(
-        body.article_text, body.writing_prompt, body.user_response, body.target_level
+        body.article_text, body.writing_prompt, body.user_response, str(target_level)
     )
 
     try:

@@ -1,4 +1,4 @@
-const DB_NAME = "english_trainer_local_media";
+﻿const DB_NAME = "english_trainer_local_media";
 const DB_VERSION = 1;
 const STORE_NAME = "lesson_media";
 const COVER_CAPTURE_VERSION = 3;
@@ -549,3 +549,5 @@ export async function requestPersistentStorage() {
   }
   return navigator.storage.persist();
 }
+
+

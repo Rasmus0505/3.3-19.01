@@ -1,4 +1,4 @@
-import ChatPanel from "../ChatPanel";
+﻿import ChatPanel from "../ChatPanel";
 import ExplanationSidebarContent from "../ExplanationSidebarContent";
 import ImmersiveLayout from "../ImmersiveLayout";
 import TypingPanel from "../TypingPanel";
@@ -43,3 +43,5 @@ export default function ImmersiveLessonShell({
     />
   );
 }
+
+

@@ -1,4 +1,4 @@
-import { getAsrModelCatalogItem } from "../../shared/lib/asrModels";
+﻿import { getAsrModelCatalogItem } from "../../shared/lib/asrModels";
 import { formatMoneyYuanPerMinute } from "../../shared/lib/money";
 import {
   BOTTLE2_CLOUD_DESKTOP_RECOMMEND_DURATION_SECONDS,
@@ -245,3 +245,5 @@ export function getDiagnosticBadgeClassName(tone = "neutral") {
   if (tone === "danger") return "border-rose-500/30 bg-rose-500/10 text-rose-700";
   return "border-slate-500/20 bg-slate-500/10 text-slate-700";
 }
+
+

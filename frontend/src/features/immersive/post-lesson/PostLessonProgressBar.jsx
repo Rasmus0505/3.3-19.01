@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PostLessonProgressBar — Horizontal step indicator for 3 post-lesson scenes.
  */
 import { cn } from "../../../lib/utils";
@@ -70,3 +70,5 @@ export function PostLessonProgressBar({ activeScene, progress, onGoToScene }) {
     </div>
   );
 }
+
+

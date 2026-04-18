@@ -1,4 +1,4 @@
-import { Settings2 } from "lucide-react";
+﻿import { Settings2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -513,3 +513,5 @@ export function AdminRatesTab({ apiCall }) {
     </Card>
   );
 }
+
+

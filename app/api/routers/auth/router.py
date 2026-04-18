@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
@@ -13,6 +13,7 @@ from app.repositories.user import UserRepository, canonicalize_username, normali
 from app.schemas import AuthRequest, AuthResponse, ErrorResponse, LogoutResponse, ProfileUpdateRequest, RefreshRequest, RegisterRequest, UserResponse
 from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.services.billing import get_or_create_wallet_account
+from app.services.collins_levels import normalize_collins_level
 from app.services.user_activity import ensure_user_activity_schema, record_user_login_event
 
 
@@ -39,6 +40,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         username_normalized=username_normalized,
         password_hash=hash_password(payload.password),
         is_admin=False,
+        collins_level=3,
     )
     db.add(user)
     db.flush()
@@ -93,8 +95,9 @@ def update_profile(
     updated_user = user_repo.update_username(current_user.id, username)
     if not updated_user:
         return error_response(404, "USER_NOT_FOUND", "用户不存在")
-    if payload.cefr_level is not None:
-        user_repo.update_cefr_level(current_user.id, payload.cefr_level)
+    if payload.collins_level is not None:
+        normalized_collins_level = normalize_collins_level(payload.collins_level, default=3) or 3
+        user_repo.update_collins_level(current_user.id, normalized_collins_level)
     db.commit()
     refreshed_user = db.get(User, current_user.id)
     if not refreshed_user:
@@ -127,3 +130,4 @@ def refresh_token(payload: RefreshRequest, db: Session = Depends(get_db)):
 @router.post("/logout", response_model=LogoutResponse)
 def logout() -> LogoutResponse:
     return LogoutResponse(ok=True, message="已退出登录")
+

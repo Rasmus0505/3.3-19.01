@@ -1,4 +1,4 @@
-/**
+﻿/**
  * extractApi.js — Phase 39: 多模态内容提取 API 客户端
  * =====================================================
  * URL 提取 (服务端) 和图片 OCR (服务端) 的前端封装
@@ -73,3 +73,5 @@ export async function extractOcr(file, accessToken) {
 
   return resp.json();
 }
+
+

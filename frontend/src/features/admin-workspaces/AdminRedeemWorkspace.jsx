@@ -1,4 +1,4 @@
-import { Gift, ScrollText, Ticket } from "lucide-react";
+﻿import { Gift, ScrollText, Ticket } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -112,3 +112,5 @@ export function AdminRedeemWorkspace({ apiCall, showTabsNavigation = true }) {
     </div>
   );
 }
+
+

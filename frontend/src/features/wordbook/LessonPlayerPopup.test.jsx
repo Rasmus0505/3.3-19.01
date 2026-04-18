@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+﻿import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LessonPlayerPopup } from "./LessonPlayerPopup";
@@ -75,3 +75,5 @@ describe("LessonPlayerPopup", () => {
     expect(document.querySelector("video")).not.toBeNull();
   });
 });
+
+

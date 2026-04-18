@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+﻿import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { useReadingRewrite } from "../../hooks/useReadingRewrite";
 import { clearAllRewriteRecords, saveRewriteRecord } from "./readingRewriteDB";
@@ -91,3 +91,5 @@ describe("useReadingRewrite resume behavior", () => {
     expect(result.current.viewMode).toBe("original");
   });
 });
+
+

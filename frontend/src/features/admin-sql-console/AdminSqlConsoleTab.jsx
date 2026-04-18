@@ -1,4 +1,4 @@
-import { Database, Play, RefreshCcw, ShieldAlert, ShieldCheck, TerminalSquare } from "lucide-react";
+﻿import { Database, Play, RefreshCcw, ShieldAlert, ShieldCheck, TerminalSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -363,4 +363,6 @@ export function AdminSqlConsoleTab({ apiCall }) {
     </div>
   );
 }
+
+
 

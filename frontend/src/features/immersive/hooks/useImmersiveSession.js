@@ -1,4 +1,4 @@
-// 沉浸式学习会话 Hook
+﻿// 沉浸式学习会话 Hook
 // 管理会话状态和 reducer
 
 import { useCallback, useMemo, useReducer } from "react";
@@ -117,3 +117,5 @@ export {
   SET_TRANSLATION_DISPLAY_MODE,
   SET_POST_ANSWER_REPLAY_STATE,
 };
+
+

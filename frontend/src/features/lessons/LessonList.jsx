@@ -1,4 +1,4 @@
-import { History } from "lucide-react";
+﻿import { History } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
@@ -136,8 +136,8 @@ export function LessonList({
           actionLabel: isLocalLesson ? "本地导入" : hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习",
           isLocalLesson,
           createdAtLabel: formatCreatedAt(lesson.created_at),
-          cefrLoading: Boolean(lessonCardMetaMap[lesson.id]?.cefrLoading),
-          cefrDistribution: lessonCardMetaMap[lesson.id]?.cefrDistribution || null,
+          difficultyLoading: Boolean(lessonCardMetaMap[lesson.id]?.difficultyLoading),
+          difficultyDistribution: lessonCardMetaMap[lesson.id]?.difficultyDistribution || null,
         };
       }),
     [lessonCardMetaMap, lessonMediaMetaMap, progressOverrides, visibleLessons],
@@ -425,7 +425,7 @@ export function LessonList({
 
   useEffect(() => {
     for (const card of cards) {
-      if (!card.isLocalLesson && !card.cefrLoading && !card.cefrDistribution) {
+      if (!card.isLocalLesson && !card.difficultyLoading && !card.difficultyDistribution) {
         const sentences = card.lesson?.sentences?.map((sentence) => sentence.en || sentence.text_en) || [];
         if (sentences.length > 0) {
           void ensureCefrAnalysis(card.lesson.id, sentences);
@@ -726,3 +726,5 @@ export function LessonList({
     </Card>
   );
 }
+
+

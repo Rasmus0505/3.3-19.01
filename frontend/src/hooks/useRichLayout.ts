@@ -1,14 +1,7 @@
-/**
- * useRichLayout.ts — CEFR-aware Pretext 布局 hook
- * =================================================
- * 结合 @chenglou/pretext 的 prepareWithSegments/layoutWithLines 与
- * VocabAnalyzer 的词级 CEFR 查询，返回带 CEFR 元数据的行布局数据。
- *
- * 流程：text + font
- *   → prepareWithSegments(text, font)
- *   → layoutWithLines(prepared, maxWidth, lineHeight)
- *   → 用每条 LayoutLine 的 start/end 游标在 prepared.segments 上切片 → RichLine[]
- *   （不再用 line.text 与 split(/\\s+/) 词做前缀匹配：Pretext 行内逗号等处无空格，会失步导致只渲染首行）
+﻿/**
+ * useRichLayout.ts — Pretext 布局 hook
+ * ====================================
+ * 只负责把文本切成可渲染的行与片段，不再承担词典等级判断。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -17,46 +10,24 @@ import {
   type LayoutLine,
   type PreparedTextWithSegments,
 } from "@chenglou/pretext";
-import { VocabAnalyzer } from "../utils/vocabAnalyzer";
 
-/** 单个词的 CEFR 标注 */
 export interface RichSegment {
   text: string;
-  cefrLevel: string | null;
+  levelBand: string | null;
   word: string;
 }
 
-/** 带 CEFR 元数据的单行 */
 export interface RichLine {
   text: string;
   width: number;
   segments: RichSegment[];
 }
 
-/** VocabAnalyzer 单例（页面生命周期内只 load 一次） */
-let _analyzerInstance: VocabAnalyzer | null = null;
-let _analyzerLoadPromise: Promise<VocabAnalyzer> | null = null;
-
-export async function getOrCreateAnalyzer(): Promise<VocabAnalyzer> {
-  if (_analyzerInstance?.isLoaded) {
-    return _analyzerInstance;
-  }
-  if (_analyzerLoadPromise) {
-    return _analyzerLoadPromise;
-  }
-  _analyzerLoadPromise = (async () => {
-    _analyzerInstance = new VocabAnalyzer();
-    await _analyzerInstance.load();
-    // Expose globally for browser console debugging
-    if (typeof window !== "undefined") {
-      (window as any).__vocabAnalyzer = _analyzerInstance;
-    }
-    return _analyzerInstance;
-  })();
-  return _analyzerLoadPromise;
+/** @deprecated layout-only hook no longer loads any analyzer. */
+export async function getOrCreateAnalyzer(): Promise<null> {
+  return null;
 }
 
-/** 与 @chenglou/pretext buildLineTextFromRange 中 discretionary hyphen 判定一致 */
 function lineHasDiscretionaryHyphen(
   kinds: readonly string[],
   startSegmentIndex: number,
@@ -75,48 +46,38 @@ function getSegmentGraphemesFromCache(
   segments: readonly string[],
   cache: Map<number, string[]>
 ): string[] {
-  let g = cache.get(segmentIndex);
-  if (g) return g;
+  let graphemes = cache.get(segmentIndex);
+  if (graphemes) return graphemes;
   const raw = segments[segmentIndex] ?? "";
-  const ge = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-  g = [];
-  for (const x of ge.segment(raw)) {
-    g.push(x.segment);
+  const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  graphemes = [];
+  for (const piece of segmenter.segment(raw)) {
+    graphemes.push(piece.segment);
   }
-  cache.set(segmentIndex, g);
-  return g;
+  cache.set(segmentIndex, graphemes);
+  return graphemes;
 }
 
-function pushRichPiece(
-  out: RichSegment[],
-  piece: string,
-  kind: string,
-  analyzer: VocabAnalyzer
-): void {
+function pushRichPiece(out: RichSegment[], piece: string, kind: string): void {
   if (!piece) return;
   if (kind === "space" || kind === "preserved-space") {
-    out.push({ text: piece, cefrLevel: null, word: "" });
+    out.push({ text: piece, levelBand: null, word: "" });
     return;
   }
   if (kind === "zero-width-break" || kind === "tab" || kind === "glue") {
-    out.push({ text: piece, cefrLevel: null, word: "" });
+    out.push({ text: piece, levelBand: null, word: "" });
     return;
   }
   if (kind === "soft-hyphen" || kind === "hard-break") {
     return;
   }
-  const level = analyzer.lookupCefrLevelForSurfaceForm(piece);
   const normalized = piece.toLowerCase().replace(/[^a-zA-Z']/g, "");
-  out.push({ text: piece, cefrLevel: level, word: normalized });
+  out.push({ text: piece, levelBand: null, word: normalized });
 }
 
-/**
- * 按 Pretext 的 segment 游标收集本行要渲染的片段（与 line.text 逐字对齐）
- */
 function collectRichSegmentsForLayoutLine(
   prepared: PreparedTextWithSegments,
   line: LayoutLine,
-  analyzer: VocabAnalyzer,
   graphemeCache: Map<number, string[]>
 ): RichSegment[] {
   const segments = prepared.segments;
@@ -140,20 +101,20 @@ function collectRichSegmentsForLayoutLine(
     } else {
       piece = segments[i] ?? "";
     }
-    pushRichPiece(out, piece, kind, analyzer);
+    pushRichPiece(out, piece, kind);
   }
 
   if (eg > 0) {
     if (endsWithDiscretionaryHyphen) {
-      pushRichPiece(out, "-", "text", analyzer);
+      pushRichPiece(out, "-", "text");
     }
     const gStart = si === ei ? sg : 0;
     const graphemes = getSegmentGraphemesFromCache(ei, segments, graphemeCache);
     const piece = graphemes.slice(gStart, eg).join("");
     const endKind = kinds[ei] ?? "text";
-    pushRichPiece(out, piece, endKind, analyzer);
+    pushRichPiece(out, piece, endKind);
   } else if (endsWithDiscretionaryHyphen) {
-    pushRichPiece(out, "-", "text", analyzer);
+    pushRichPiece(out, "-", "text");
   }
 
   return out;
@@ -162,22 +123,18 @@ function collectRichSegmentsForLayoutLine(
 function layoutLinesToRichLines(
   prepared: PreparedTextWithSegments,
   lines: LayoutLine[],
-  analyzer: VocabAnalyzer
 ): RichLine[] {
   const graphemeCache = new Map<number, string[]>();
   return lines.map((line) => ({
     text: line.text,
     width: line.width,
-    segments: collectRichSegmentsForLayoutLine(prepared, line, analyzer, graphemeCache),
+    segments: collectRichSegmentsForLayoutLine(prepared, line, graphemeCache),
   }));
 }
 
 const DEFAULT_FONT = "16px Inter";
 const DEFAULT_LINE_HEIGHT = 24;
 
-/**
- * useRichLayout — CEFR-aware Pretext 行布局 hook
- */
 export function useRichLayout(
   text: string,
   maxWidth: number,
@@ -199,15 +156,10 @@ export function useRichLayout(
       }
 
       try {
-        // FIX: Don't set isReady(false) immediately. Instead:
-        // 1. Compute new layout first (keeping old content visible)
-        // 2. Only update state when new layout is ready
-        // This prevents the skeleton flicker during resize
         const prepared = prepareWithSegments(textToMeasure, font);
         preparedRef.current = prepared;
-        const analyzer = await getOrCreateAnalyzer();
         const result = layoutWithLines(prepared, width, lineHeight);
-        const richLines = layoutLinesToRichLines(prepared, result.lines, analyzer);
+        const richLines = layoutLinesToRichLines(prepared, result.lines);
 
         setLines(richLines);
         setIsReady(true);
@@ -235,3 +187,5 @@ export function useRichLayout(
 
   return { lines, isReady, error, reload };
 }
+
+

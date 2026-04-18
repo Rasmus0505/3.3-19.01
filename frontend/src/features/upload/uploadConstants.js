@@ -1,4 +1,4 @@
-import { ASR_MODEL_KEYS, buildAsrModelCatalogMap } from "../../shared/lib/asrModels";
+﻿import { ASR_MODEL_KEYS, buildAsrModelCatalogMap } from "../../shared/lib/asrModels";
 
 export const QWEN_MODEL = "qwen3-asr-flash-filetrans";
 export const FASTER_WHISPER_MODEL = "faster-whisper-medium";
@@ -78,7 +78,7 @@ export const DISPLAY_STAGES = [
   { key: "asr_transcribe", label: "识别字幕" },
   { key: "build_lesson", label: "生成课程结构" },
   { key: "translate_zh", label: "翻译" },
-  { key: "cefr_annotation", label: "生词标注" },
+  { key: "vocabulary_annotation", label: "生词标注" },
   { key: "word_explanation", label: "生成讲解" },
   { key: "write_lesson", label: "保存完成" },
 ];
@@ -88,7 +88,7 @@ export const STAGE_PROGRESS_BOUNDS = {
   asr_transcribe: { start: 15, end: 45 },
   build_lesson: { start: 45, end: 60 },
   translate_zh: { start: 60, end: 85 },
-  cefr_annotation: { start: 85, end: 90 },
+  vocabulary_annotation: { start: 85, end: 90 },
   word_explanation: { start: 90, end: 95 },
   write_lesson: { start: 95, end: 100 },
 };
@@ -117,3 +117,6 @@ export const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
 export const LOCAL_LESSON_UPDATE_EVENT = "bottle-local-lessons-updated";
 export const POLL_RETRY_LIMIT = 3;
 export const POLL_RETRY_DELAY_MS = 1500;
+
+
+

@@ -16,13 +16,13 @@ from app.api.routers.llm_sentence import (
     router as sentence_router,
 )
 from app.api.routers.llm_shared import (
-    CEFR_LEVELS,
     COMMON_SIMPLIFY_WORD_MEANINGS,
     LLM_MODEL_DEEPSEEK_FAST,
     LLM_MODEL_DEEPSEEK_THINKING,
     LLM_VALID_MODELS,
     _require_api_key,
 )
+from app.services.collins_levels import VALID_COLLINS_LEVELS
 from app.api.routers.llm_usage import (
     estimate_tokens_endpoint,
     list_llm_models_endpoint,
@@ -59,7 +59,6 @@ router.include_router(reading_course_router)
 router.include_router(writing_router)
 
 __all__ = [
-    "CEFR_LEVELS",
     "COMMON_SIMPLIFY_WORD_MEANINGS",
     "EVENT_CONSUME_LLM",
     "ExtractLemmasRequest",
@@ -87,4 +86,5 @@ __all__ = [
     "list_llm_usage_endpoint",
     "router",
     "simplify_words_endpoint",
+    "VALID_COLLINS_LEVELS",
 ]

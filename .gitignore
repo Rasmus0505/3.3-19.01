@@ -20,6 +20,8 @@ test_app.db
 
 app/static/index.html
 app/static/assets/
+app/data/vocab/vocabulary.mdx
+app/data/vocab/vocabulary.sqlite
 
 run_asr_matrix.py
 run_filetrans_via_dashscope_files.py

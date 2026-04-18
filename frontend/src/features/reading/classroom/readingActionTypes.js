@@ -1,4 +1,4 @@
-export const READING_ACTION_TYPES = {
+﻿export const READING_ACTION_TYPES = {
   SPEECH: "speech",
   SPOTLIGHT: "spotlight",
   DISCUSSION: "discussion",
@@ -163,3 +163,5 @@ export function buildSceneActionSequence(scene) {
 
   return actions;
 }
+
+

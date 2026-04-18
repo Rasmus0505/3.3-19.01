@@ -1,4 +1,4 @@
-import { CheckCircle2, RefreshCw, XCircle } from "lucide-react";
+﻿import { CheckCircle2, RefreshCw, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "../../lib/utils";
 import { getRewriteRecord, saveQuizToRecord } from "./readingRewriteDB";
@@ -412,3 +412,5 @@ export function QuizPanel({ pack, articleId, apiCall }) {
     </div>
   );
 }
+
+

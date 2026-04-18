@@ -213,7 +213,7 @@ def call_deepseek(
 
 def generate_reading_material(
     user_words: list[dict],
-    target_level: str,
+    target_level: int,
     enable_thinking: bool,
     api_key: str,
 ) -> Generator[tuple[str, LLMTokenUsage], None, None]:
@@ -234,17 +234,17 @@ def generate_reading_material(
     system_prompt = (
         "You are an English reading material generator for language learners. "
         "Generate engaging, grade-appropriate reading passages that naturally incorporate the provided vocabulary words. "
-        "The reading level should target the specified CEFR level (A1, A2, B1, B2, C1). "
+        "The reading level should target the specified Collins star level, where 5 is easier and 1 is harder. "
         "Include comprehension questions after the passage. "
         "Format output as clean markdown."
     )
 
     user_prompt = (
-        f"Target CEFR Level: {target_level.upper()}\n"
+        f"Target Collins Level: {int(target_level)}\n"
         f"Vocabulary words to incorporate: {word_list_str}\n\n"
         f"Please generate a reading passage (around 200-400 words) that naturally uses these words in context. "
         f"Include 3-5 comprehension questions at the end. "
-        f"Make sure the reading is appropriate for {target_level.upper()} level learners."
+        f"Make sure the reading is appropriate for Collins {int(target_level)} learners."
     )
 
     messages = [

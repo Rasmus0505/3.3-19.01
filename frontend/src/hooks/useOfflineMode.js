@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 const CLOUD_HEALTH_CHECK_INTERVAL_MS = 30000;
@@ -169,3 +169,5 @@ export function useOfflineMode({ onSyncStart, onSyncComplete } = {}) {
     checkHealth,
   };
 }
+
+

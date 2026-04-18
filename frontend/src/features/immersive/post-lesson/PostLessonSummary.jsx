@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PostLessonSummary — Completion screen shown after all 3 post-lesson scenes.
  */
 import { Button, Card, Badge } from "../../../shared/ui";
@@ -114,3 +114,5 @@ export function PostLessonSummary({ postLessonData, lesson, onGoToScene, onExit,
     </div>
   );
 }
+
+

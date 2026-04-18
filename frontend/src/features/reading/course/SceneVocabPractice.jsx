@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SceneVocabPractice — Scene 3: Vocabulary practice from the article.
  *
  * MVP: Shows key vocabulary with meanings. Users mark each as "known" or "learning".
@@ -121,3 +121,5 @@ export function SceneVocabPractice({ pack, courseData, onComplete }) {
     </div>
   );
 }
+
+

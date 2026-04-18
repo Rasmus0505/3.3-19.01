@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 // ─── 智聆音素 → IPA 映射表（腾讯云官方文档） ───────────────────────────────
 const ARPABET_TO_IPA = {
@@ -695,3 +695,5 @@ export default function SOEResultCard({ result, onClose }) {
     </>
   );
 }
+
+

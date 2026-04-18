@@ -1,4 +1,4 @@
-/**
+﻿/**
  * pdfExtractor.js — 客户端 PDF 文本提取工具
  * ===========================================
  * Phase 39: Multi-Modal Input Pipeline (D-05, D-13, D-16)
@@ -67,3 +67,5 @@ async function loadPdfJs() {
 
   return pdfjsLib;
 }
+
+

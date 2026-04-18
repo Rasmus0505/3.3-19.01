@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { BookOpenText, ChevronLeft, ChevronRight, LogIn, Sparkles, UploadCloud } from "lucide-react";
 
 import { Button } from "../../shared/ui";
@@ -286,3 +286,5 @@ export function GettingStartedPanel({
     </div>
   );
 }
+
+

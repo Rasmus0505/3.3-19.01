@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Roundtable — bottom stage bar, OpenMAIC style.
  * Three-column: [Teacher 90px] | [Speech bubble flex-1] | [Students 80px]
  *
@@ -255,3 +255,5 @@ export function Roundtable({
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SceneReading — Scene 1: Read the article with vocabulary highlights.
  */
 import { Button } from "../../../shared/ui";
@@ -82,3 +82,5 @@ export function SceneReading({ pack, onComplete }) {
     </div>
   );
 }
+
+

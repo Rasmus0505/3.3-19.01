@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+﻿import { useState, useEffect, useCallback } from "react";
 
 export function useDashboardData(apiCall) {
   const [stats, setStats] = useState(null);
@@ -29,3 +29,5 @@ export function useDashboardData(apiCall) {
 
   return { stats, loading, error, refetch: fetchStats };
 }
+
+

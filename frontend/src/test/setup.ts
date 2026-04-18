@@ -1,4 +1,4 @@
-/// <reference types="vitest" />
+﻿/// <reference types="vitest" />
 import { vi } from 'vitest';
 
 // 模拟 window.matchMedia
@@ -37,3 +37,5 @@ vi.setConfig({ testTimeout: 10000 });
 afterEach(() => {
   vi.clearAllMocks();
 });
+
+

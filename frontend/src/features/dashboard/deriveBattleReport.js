@@ -1,4 +1,4 @@
-const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1"];
+﻿const Collins_LEVELS = ["A1", "A2", "B1", "B2", "C1"];
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -29,8 +29,8 @@ function countActive(items = []) {
 }
 
 function getCefrDistribution(vocabularyByLevel = {}) {
-  const total = CEFR_LEVELS.reduce((sum, level) => sum + (Number(vocabularyByLevel[level]) || 0), 0);
-  const items = CEFR_LEVELS.map((level) => {
+  const total = Collins_LEVELS.reduce((sum, level) => sum + (Number(vocabularyByLevel[level]) || 0), 0);
+  const items = Collins_LEVELS.map((level) => {
     const count = Number(vocabularyByLevel[level]) || 0;
     return {
       level,
@@ -189,9 +189,11 @@ export function deriveBattleReport(stats) {
     headerSummary: buildHeaderSummary(safeStats, inputFit),
     verdictLine: buildVerdictLine(inputFit, inputIntensity, conversion),
     verdictSupport: buildVerdictSupport(inputFit, inputIntensity, conversion),
-    predictedLevel: inputFit.score >= 82 ? "B2 Input" : inputFit.score >= 68 ? "B1+ Input" : inputFit.score >= 54 ? "B1 Input" : "A2 Input",
+    predictedLevel: inputFit.score >= 82 ? "高命中" : inputFit.score >= 68 ? "较稳" : inputFit.score >= 54 ? "可用" : "待校准",
     inputFit,
     inputIntensity,
     conversion,
   };
 }
+
+

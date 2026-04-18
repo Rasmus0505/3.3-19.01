@@ -1,4 +1,4 @@
-export function readIntParam(searchParams, key, fallback, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
+﻿export function readIntParam(searchParams, key, fallback, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
   const raw = String(searchParams.get(key) || "").trim();
   if (!raw) return fallback;
   const parsed = Number(raw);
@@ -129,3 +129,5 @@ export async function copyCurrentUrl() {
   textarea.remove();
   return href;
 }
+
+

@@ -1,4 +1,4 @@
-import { BookOpenText, BookmarkPlus, Check, Layers3, Sparkles, Upload } from "lucide-react";
+﻿import { BookOpenText, BookmarkPlus, Check, Layers3, Sparkles, Upload } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { getAllRewriteRecords } from "./readingRewriteDB";
@@ -420,3 +420,5 @@ export function ReadingPackPanel({
     </section>
   );
 }
+
+

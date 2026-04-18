@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { MessageSquareQuote, Sparkles } from "lucide-react";
 import { Button, Card } from "../../../shared/ui";
 
@@ -57,3 +57,5 @@ export function ProactiveCard({ action, onJoin, onSkip, liveActive = false }) {
     </motion.div>
   );
 }
+
+

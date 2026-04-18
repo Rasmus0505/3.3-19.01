@@ -1,9 +1,9 @@
-/**
+﻿/**
  * reading.css — 阅读板块样式
  * ==================================
- * 方案 A 布局、CEFR 词着色、WordSidebar 样式
+ * 方案 A 布局、Collins 词着色、WordSidebar 样式
  *
- * CEFR class names are "cefr-i-plus-one", "cefr-above-i-plus-one", "cefr-mastered"
+ * Collins class names are "difficulty-i-plus-one", "difficulty-above-i-plus-one", "difficulty-default"
  */
 
 /* ─── 阅读容器 + 视图切换 ─────────────────────────────── */
@@ -444,18 +444,18 @@
   animation: word-select-success 400ms ease-out forwards;
 }
 
-/* ─── CEFR 三色态（在 .article-word 基础上覆盖）───────────── */
-.article-content .article-word.cefr-i-plus-one {
+/* ─── Collins 三色态（在 .article-word 基础上覆盖）───────────── */
+.article-content .article-word.difficulty-i-plus-one {
   border-bottom-color: oklch(0.75 0.16 175);
   color: oklch(0.20 0.02 85);
 }
 
-.article-content .article-word.cefr-above-i-plus-one {
+.article-content .article-word.difficulty-above-i-plus-one {
   border-bottom-color: oklch(0.58 0.24 25);
   color: oklch(0.20 0.02 85);
 }
 
-.article-content .article-word.cefr-mastered {
+.article-content .article-word.difficulty-default {
   border-bottom-color: transparent;
   color: oklch(0.52 0.02 85);
 }
@@ -5480,7 +5480,7 @@
 
 .rc-rewrite-tooltip { background: oklch(0.15 0 0 / 0.92); color: #fff; border-radius: 0.375rem; padding: 0.3rem 0.6rem; font-size: 0.72rem; line-height: 1.4; display: flex; gap: 0.5rem; align-items: center; white-space: nowrap; backdrop-filter: blur(8px); }
 .rc-rewrite-tooltip__orig { font-weight: 500; }
-.rc-rewrite-tooltip__cefr { font-size: 0.62rem; font-weight: 700; background: oklch(0.6 0.15 230 / 0.4); padding: 0 0.3rem; border-radius: 0.2rem; }
+.rc-rewrite-tooltip__level { font-size: 0.62rem; font-weight: 700; background: oklch(0.6 0.15 230 / 0.4); padding: 0 0.3rem; border-radius: 0.2rem; }
 
 /* WordCard (wc-*) */
 .wc-card { position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%); width: 280px; background: var(--card); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 8px 32px oklch(0 0 0 / 0.12), 0 2px 8px oklch(0 0 0 / 0.08); overflow: hidden; z-index: 1200; }
@@ -5489,7 +5489,7 @@
 .wc-header__right { display: flex; align-items: center; gap: 0.4rem; }
 .wc-word     { font-size: 1.05rem; font-weight: 700; color: var(--foreground); }
 .wc-phonetic { font-size: 0.72rem; color: var(--muted-foreground); }
-.wc-cefr     { font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 0.25rem; }
+.wc-collins     { font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 0.25rem; }
 .wc-close    { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border: none; background: none; cursor: pointer; color: var(--muted-foreground); border-radius: 0.25rem; transition: background 0.1s; }
 .wc-close:hover { background: var(--accent); }
 .wc-definition { padding: 0 0.875rem 0.625rem; border-bottom: 1px solid var(--border); }
@@ -6577,4 +6577,7 @@
   letter-spacing: 0.07em;
   font-weight: 700;
 }
+
+
+
 

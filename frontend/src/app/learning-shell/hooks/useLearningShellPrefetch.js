@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 
 export function useLearningShellPrefetch({
   accessToken,
@@ -24,3 +24,5 @@ export function useLearningShellPrefetch({
     void refreshSubtitleCacheMeta(lessons);
   }, [accessToken, activePanel, immersiveLayoutActive, lessons, prefetchLessonMediaMeta, refreshSubtitleCacheMeta]);
 }
+
+

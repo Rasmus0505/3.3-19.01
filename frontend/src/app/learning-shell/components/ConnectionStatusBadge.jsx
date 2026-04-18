@@ -1,4 +1,4 @@
-import { RefreshCw, Wifi, WifiOff } from "lucide-react";
+﻿import { RefreshCw, Wifi, WifiOff } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../../shared/ui";
 import { SYNC_STATUS } from "../../../hooks/useOfflineMode";
 
@@ -96,3 +96,5 @@ export function ConnectionStatusBadge({
     </Tooltip>
   );
 }
+
+

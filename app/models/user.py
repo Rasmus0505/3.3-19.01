@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -19,7 +19,7 @@ class User(Base):
     username_normalized: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
-    cefr_level: Mapped[str | None] = mapped_column(String(2), nullable=True, default="B1", index=True)
+    collins_level: Mapped[int] = mapped_column(Integer, nullable=False, default=3, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
@@ -41,3 +41,4 @@ class UserLoginEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
 
     user: Mapped["User"] = relationship(back_populates="login_events")
+

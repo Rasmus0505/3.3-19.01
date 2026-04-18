@@ -1,4 +1,4 @@
-const DB_NAME = "english_trainer_local_subtitles";
+﻿const DB_NAME = "english_trainer_local_subtitles";
 const DB_VERSION = 2;
 const STORE_NAME = "lesson_subtitle_variants";
 const ORIGINAL_SUBTITLE_STRATEGY_VERSION = 2;
@@ -473,3 +473,5 @@ export async function deleteLessonSubtitleCache(lessonId) {
   await withStore("readwrite", (store) => store.delete(normalizedLessonId));
   console.debug("[DEBUG] localSubtitleStore.delete", { lessonId: normalizedLessonId });
 }
+
+

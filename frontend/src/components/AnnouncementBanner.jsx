@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+﻿import { X } from "lucide-react";
 import { useState } from "react";
 
 import { Badge } from "../shared/ui";
@@ -70,3 +70,5 @@ export function AnnouncementBanner({ announcement, onDismiss }) {
     </div>
   );
 }
+
+

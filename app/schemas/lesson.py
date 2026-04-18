@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
@@ -9,14 +9,14 @@ from pydantic import BaseModel, Field
 class LessonGenerationOptions(BaseModel):
     core_subtitles: bool = True
     zh_translation: bool = True
-    cefr_annotation: bool = True
+    vocabulary_annotation: bool = True
     word_explanation: bool = True
 
 
 class GeneratedContentStatusResponse(BaseModel):
     core_subtitles: str = "generated"
     zh_translation: str = "generated"
-    cefr_annotation: str = "generated"
+    vocabulary_annotation: str = "generated"
     word_explanation: str = "generated"
 
 
@@ -28,7 +28,7 @@ class LessonSentenceResponse(BaseModel):
     text_zh: str
     tokens: list[str]
     audio_url: str | None
-    cefr_vocab_json: dict | None = None
+    vocabulary_analysis_json: dict | None = None
     needs_explanation: bool = False
     explanation_text: str | None = None
     simplified_sentence: str | None = None
@@ -232,7 +232,7 @@ class LocalAsrLessonTaskCreateRequest(BaseModel):
 
 class LessonGenerateMissingRequest(BaseModel):
     zh_translation: bool = False
-    cefr_annotation: bool = False
+    vocabulary_annotation: bool = False
     word_explanation: bool = False
 
 
@@ -277,3 +277,4 @@ class LessonSubtitleVariantErrorEvent(BaseModel):
     error_code: str = ""
     message: str
     detail: str = ""
+

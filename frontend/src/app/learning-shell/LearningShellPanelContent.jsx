@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+﻿import { Suspense, lazy } from "react";
 
 import { AuthPanel } from "../../features/auth/components/AuthPanel";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui";
@@ -186,3 +186,5 @@ export function LearningShellPanelContent({
     </section>
   );
 }
+
+

@@ -39,6 +39,16 @@ def test_auth_profile_rename_updates_username(authenticated_client):
     assert refreshed_payload.username == "Test User Renamed"
 
 
+def test_auth_profile_updates_collins_level(authenticated_client):
+    response = authenticated_client.patch(
+        "/api/auth/profile",
+        json={"username": "Test User", "collins_level": 4},
+    )
+    assert response.status_code == 200
+    payload = UserResponse.model_validate(response.json())
+    assert payload.collins_level == 4
+
+
 def test_auth_login_returns_access_and_refresh_token(test_user, db_session):
     """POST /api/auth/login 继续只接受邮箱密码，不接受用户名。"""
     from fastapi import FastAPI

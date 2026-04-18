@@ -1,4 +1,4 @@
-export const ASR_EXECUTION_STRATEGIES = Object.freeze({
+﻿export const ASR_EXECUTION_STRATEGIES = Object.freeze({
   BOTTLE2_CLOUD: "bottle2_cloud",
 });
 
@@ -254,3 +254,5 @@ export function mapCloudAsrFailureToMessage(errorLike = "", serverStatus = {}) {
     browserOnline: typeof navigator === "undefined" ? true : navigator.onLine !== false,
   }).message;
 }
+
+

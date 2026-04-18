@@ -1,4 +1,4 @@
-import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+﻿import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -546,3 +546,5 @@ export function LessonListLocalSubtitles({
     </Card>
   );
 }
+
+

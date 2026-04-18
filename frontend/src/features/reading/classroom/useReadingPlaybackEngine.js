@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef } from "react";
+﻿import { useEffect, useMemo, useReducer, useRef } from "react";
 import { buildSceneActionSequence, READING_ACTION_TYPES } from "./readingActionTypes";
 import {
   createReadingPlaybackState,
@@ -342,3 +342,5 @@ export function useReadingPlaybackEngine({ course, apiCall, onPersistPlayback })
 
   return { playbackState: state, activeScene, sceneActions, actions: engineActions };
 }
+
+

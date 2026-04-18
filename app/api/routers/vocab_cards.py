@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, strip_json_fences
+from app.api.routers.llm_shared import _require_api_key, recover_json_payload, require_collins_level, strip_json_fences
 from app.db import get_db
 from app.models import User
 from app.schemas.vocab_cards import (
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/vocab-cards", tags=["vocab-cards"])
 _SYSTEM_PROMPT = (
     "You are an English vocabulary teacher creating flashcard content.\n"
     "For each word provided, generate:\n"
-    "1. A concise definition in English (one sentence, suitable for CEFR {target_level} learners)\n"
+    "1. A concise definition in English (one sentence, suitable for Collins {target_level} learners)\n"
     "2. A Chinese definition (简明中文释义)\n"
     "3. One example sentence from or inspired by the provided text context\n"
     "\n"
@@ -40,7 +40,7 @@ _SYSTEM_PROMPT = (
     "Rules:\n"
     "- Keep definitions clear and age-appropriate\n"
     "- Example sentences should use the word naturally in context\n"
-    "- Target CEFR level: {target_level}\n"
+    "- Target Collins level: {target_level}\n"
     "- No markdown fences, no extra explanation\n"
 )
 
@@ -106,12 +106,13 @@ def generate_vocab_cards(
 
     if not body.words or len(body.words) > 10:
         raise HTTPException(status_code=422, detail="Provide 1-10 words")
+    target_level = require_collins_level(body.target_level, field_name="target_level", default=3)
 
     api_key = _require_api_key()
     llm_root.ensure_default_billing_rates(db)
 
-    word_dicts = [{"word": w.word, "cefr_level": w.cefr_level} for w in body.words]
-    messages = _build_messages(word_dicts, body.target_level, body.context_text)
+    word_dicts = [{"word": w.word, "collins_level": w.collins_level} for w in body.words]
+    messages = _build_messages(word_dicts, str(target_level), body.context_text)
 
     try:
         raw_response, usage = llm_root.call_deepseek(
@@ -149,7 +150,7 @@ def generate_vocab_cards(
         cards.append(
             VocabCardResult(
                 word=word,
-                cefr_level=input_word.cefr_level if input_word else None,
+                collins_level=input_word.collins_level if input_word else None,
                 definition=combined_definition,
                 example_sentence=str(item.get("example_sentence", "")),
                 image_url=None,

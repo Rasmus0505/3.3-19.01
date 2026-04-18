@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LeftPanel.jsx — 阅读板块左侧面板
  * =================================
  * 两种模式：
@@ -65,7 +65,7 @@ function InputPlaceholder() {
       </div>
       <p className="left-panel__placeholder-title">粘贴或输入英文文章</p>
       <p className="left-panel__placeholder-hint">
-        直接在下方输入框粘贴文章，自动进行 CEFR 难度分析
+        直接在下方输入框粘贴文章，自动进行词汇难度分析
       </p>
     </div>
   );
@@ -374,6 +374,7 @@ export function LeftPanel({
   validAboveI1Words = [],
   removedWords = [],
   wordLevels = {},
+  collinsBandMap = {},
   viewMode = "original",
   isRewriting = false,
   rewriteError = null,
@@ -421,6 +422,7 @@ export function LeftPanel({
               validAboveI1Words={validAboveI1Words}
               removedWords={removedWords}
               wordLevels={wordLevels}
+              collinsBandMap={collinsBandMap}
               viewMode={viewMode}
             />
           </Suspense>
@@ -481,3 +483,5 @@ function LeftPanelSkeleton() {
     </div>
   );
 }
+
+

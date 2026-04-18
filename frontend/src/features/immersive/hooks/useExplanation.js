@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useExplanation({ currentSentence }) {
   const [showExplanation, setShowExplanation] = useState(false);
@@ -170,3 +170,5 @@ export function useExplanation({ currentSentence }) {
     markExplanationViewed,
   };
 }
+
+

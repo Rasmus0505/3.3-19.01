@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from decimal import Decimal
 
@@ -20,6 +20,7 @@ from app.schemas import (
     UserResponse,
 )
 from app.services.asr_model_registry import get_asr_display_meta
+from app.services.collins_levels import normalize_collins_level
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 from app.services.lessons.content_options import (
     infer_generated_content_status_from_lesson,
@@ -53,7 +54,7 @@ def to_user_response(user: User) -> UserResponse:
         email=user.email,
         username=str(getattr(user, "username", "") or ""),
         is_admin=bool(getattr(user, "is_admin", False)),
-        cefr_level=str(getattr(user, "cefr_level", "B1") or "B1"),
+        collins_level=normalize_collins_level(getattr(user, "collins_level", None), default=3) or 3,
         created_at=to_shanghai_aware(user.created_at),
     )
 
@@ -71,7 +72,7 @@ def to_sentence_response(lesson: Lesson, sentence: LessonSentence) -> LessonSent
         text_zh=sentence.text_zh,
         tokens=tokenize_learning_sentence(normalized_text_en),
         audio_url=audio_url,
-        cefr_vocab_json=sentence.cefr_vocab_json,
+        vocabulary_analysis_json=sentence.vocabulary_analysis_json,
         needs_explanation=sentence.needs_explanation,
         explanation_text=sentence.explanation_text,
         simplified_sentence=sentence.simplified_sentence,
@@ -93,7 +94,7 @@ def to_runtime_sentence_response(sentence: dict, *, audio_url: str | None = None
         text_zh=str(sentence.get("text_zh") or ""),
         tokens=[str(item) for item in tokens],
         audio_url=audio_url,
-        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+        vocabulary_analysis_json=sentence.get("vocabulary_analysis_json"),
         needs_explanation=sentence.get("needs_explanation", False),
         explanation_text=sentence.get("explanation_text"),
         simplified_sentence=sentence.get("simplified_sentence"),
@@ -276,3 +277,4 @@ def to_admin_subtitle_settings_item(item: SubtitleSetting) -> AdminSubtitleSetti
         translation_batch_max_chars=max(1, min(12000, int(getattr(item, "translation_batch_max_chars", 2600) or 2600))),
         updated_at=to_shanghai_aware(item.updated_at),
     )
+

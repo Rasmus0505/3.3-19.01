@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useVocabularyFilter.js — 词汇筛选与简化 Hook
  * ==============================================
  * 整合三步处理流程：
@@ -8,15 +8,15 @@
  *
  * @param {object} params
  * @param {string|null} params.accessToken - 用户 access token
- * @param {string} [params.userLevel="B1"] - 用户当前 CEFR 等级
- * @param {string} [params.targetLevel="B2"] - 目标 CEFR 等级 (i+1)
+ * @param {string} [params.userLevel="B1"] - 用户当前 Collins 等级
+ * @param {string} [params.targetLevel="B2"] - 目标 Collins 等级 (i+1)
  */
 import { useCallback, useState } from "react";
 import { filterAndSimplifyWords } from "./api/readingRewriteApi";
 
-/* ─── CEFR 等级常量 ──────────────────────────────────── */
+/* ─── Collins 等级常量 ──────────────────────────────────── */
 
-const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
+const Collins_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
 
 /**
  * 根据用户等级计算目标等级 (i+1)
@@ -24,9 +24,9 @@ const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
  * @returns {string}
  */
 export function getTargetLevel(userLevel) {
-  const userIdx = CEFR_ORDER.indexOf(userLevel);
-  const targetIdx = Math.min(userIdx + 1, CEFR_ORDER.length - 1);
-  return CEFR_ORDER[targetIdx];
+  const userIdx = Collins_ORDER.indexOf(userLevel);
+  const targetIdx = Math.min(userIdx + 1, Collins_ORDER.length - 1);
+  return Collins_ORDER[targetIdx];
 }
 
 /* ─── 辅助函数 ───────────────────────────────────────── */
@@ -100,7 +100,7 @@ function applySimplifiedWords(originalText, words, replacements) {
  *   removedWords: Array<{word: string, reason: string}>,
  *   rewriteMappings: Array<{original: string, originalLower: string, rewritten: string, confirmed: boolean, dsLevel: string}>,
  *   wordLevels: object,
- *   processArticle: (text: string, candidateWords: Array<{word: string, cefrLevel: string}>) => Promise<{success: boolean, rewrittenText?: string, error?: string}>,
+ *   processArticle: (text: string, candidateWords: Array<{word: string, collinsLevel: string}>) => Promise<{success: boolean, rewrittenText?: string, error?: string}>,
  *   reset: () => void
  * }}
  */
@@ -120,7 +120,7 @@ export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel
   /**
    * 处理文章：调用 DeepSeek 二次筛选并构建 rewriteMappings
    * @param {string} text - 原文
-   * @param {Array<{word: string, cefrLevel: string}>} candidateWords - 词典分析结果
+   * @param {Array<{word: string, collinsLevel: string}>} candidateWords - 词典分析结果
    * @returns {Promise<{success: boolean, rewrittenText?: string, error?: string}>}
    */
   const processArticle = useCallback(async (text, candidateWords) => {
@@ -159,7 +159,7 @@ export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel
       const words = candidateWords.map((w) => w.word);
       const wordLevelsMap = {};
       candidateWords.forEach((w) => {
-        wordLevelsMap[w.word.toLowerCase()] = w.cefrLevel || "B2";
+        wordLevelsMap[w.word.toLowerCase()] = w.collinsLevel || "B2";
       });
 
       // 调用 DeepSeek 二次筛选 API
@@ -251,3 +251,6 @@ export function useVocabularyFilter({ accessToken, userLevel = "B1", targetLevel
 }
 
 export default useVocabularyFilter;
+
+
+

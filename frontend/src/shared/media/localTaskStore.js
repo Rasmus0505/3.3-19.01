@@ -1,4 +1,4 @@
-const DB_NAME = "english_trainer_generation_tasks";
+﻿const DB_NAME = "english_trainer_generation_tasks";
 const DB_VERSION = 4;
 const STORE_NAME = "generation_tasks";
 const LEGACY_ACTIVE_KEY = "active";
@@ -337,3 +337,5 @@ export async function clearUploadPanelSuccessSnapshot(ownerUserId) {
 export async function clearUploadPanelTaskSnapshots(ownerUserId) {
   await Promise.all([clearActiveGenerationTask(ownerUserId), clearUploadPanelSuccessSnapshot(ownerUserId)]);
 }
+
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Curated demo data for the showcase dashboard.
  * The dataset is deterministic so screenshots remain stable.
  */
@@ -68,3 +68,5 @@ export const MOCK_COACH_VARIANTS = [
 ];
 
 export const MOCK_COACH_TEXT = MOCK_COACH_VARIANTS[0];
+
+

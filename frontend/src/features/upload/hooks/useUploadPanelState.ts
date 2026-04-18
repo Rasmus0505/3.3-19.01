@@ -1,4 +1,4 @@
-// 上传面板状态管理 Hook。
+﻿// 上传面板状态管理 Hook。
 // 管理 UploadPanel 的核心状态逻辑。
 
 import { useState, useCallback, useMemo, useRef } from 'react';
@@ -227,3 +227,5 @@ export function useActiveTaskState() {
 
   return { activeTask, activeTaskRef, updateActiveTask, setActiveTask };
 }
+
+

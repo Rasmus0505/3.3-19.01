@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+﻿import { useCallback, useEffect, useState } from "react";
 
 import {
   LEARNING_SETTINGS_UPDATED_EVENT,
@@ -291,3 +291,5 @@ export function useImmersivePreferences({
     handleTogglePlaybackRatePinned,
   };
 }
+
+

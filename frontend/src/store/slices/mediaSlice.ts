@@ -1,4 +1,4 @@
-import { getLessonMediaPreview, hasLessonMedia } from "../../shared/media/localMediaStore";
+﻿import { getLessonMediaPreview, hasLessonMedia } from "../../shared/media/localMediaStore";
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
@@ -84,3 +84,5 @@ export function createMediaSlice(set: Setter, get: Getter) {
     },
   };
 }
+
+

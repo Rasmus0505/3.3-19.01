@@ -1,4 +1,4 @@
-import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+﻿import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import React, { useState, useRef, useCallback, useLayoutEffect } from "react";
 import { cn } from "../../lib/utils";
 
@@ -143,3 +143,5 @@ export function SimpleTooltip({ children, content, side = "top", className }) {
 export function TooltipHint({ children, content, side = "top" }) {
   return <SimpleTooltip children={children} content={content} side={side} />;
 }
+
+

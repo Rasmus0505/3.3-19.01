@@ -1,11 +1,11 @@
-/**
+﻿/**
  * WordSidebar.jsx — 阅读板块右侧词边栏
  * =====================================
  * 受控组件，接收 selectedWords 列表和操作回调。
  *
  * Props:
- *   selectedWords  {{ word: string, cefrLevel: string|null, cefrClass: string }[]}
- *   wordStats     {{ total: number, cefrCounts: Record<string,number> }|null}
+ *   selectedWords  {{ word: string, difficultyLevel: string|null, difficultyClass: string }[]}
+ *   wordStats     {{ total: number, difficultyCounts: Record<string,number> }|null}
  *   onRemove      {(item: WordItem) => void}
  *   onAddAllToWordbook {() => void}
  *   onClearAll    {() => void}
@@ -135,10 +135,10 @@ function WordSidebarItem({ item, onRemove, onTranslate }) {
         <span
           className={cn(
             "word-sidebar-item__level",
-            `word-sidebar-item__level--${item.cefrClass}`
+            `word-sidebar-item__level--${item.difficultyClass}`
           )}
         >
-          {item.cefrLevel || "?"}
+          {item.difficultyLevel || "?"}
         </span>
       </div>
       <div className="word-sidebar-item__actions">
@@ -199,7 +199,7 @@ const STAT_LEVELS = [
 ];
 
 function WordSidebarStats({ stats }) {
-  const counts = stats.cefrCounts || {};
+  const counts = stats.difficultyCounts || {};
   const total = stats.total || 1;
   const nonZeroLevels = STAT_LEVELS.filter((l) => (counts[l.key] || 0) > 0);
 
@@ -236,3 +236,6 @@ function WordSidebarStats({ stats }) {
     </div>
   );
 }
+
+
+

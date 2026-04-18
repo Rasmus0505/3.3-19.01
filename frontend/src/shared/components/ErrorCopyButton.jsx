@@ -1,4 +1,4 @@
-import { Copy } from "lucide-react";
+﻿import { Copy } from "lucide-react";
 import { useCallback } from "react";
 import { toast } from "sonner";
 
@@ -24,3 +24,5 @@ export function ErrorCopyButton({ error, className }) {
     </Button>
   );
 }
+
+

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 
 export function useLearningShellBootstrap({ accessToken, loadCatalog, loadWallet, loadBillingRates }) {
   useEffect(() => {
@@ -11,3 +11,5 @@ export function useLearningShellBootstrap({ accessToken, loadCatalog, loadWallet
     void loadBillingRates();
   }, [accessToken, loadBillingRates, loadCatalog, loadWallet]);
 }
+
+

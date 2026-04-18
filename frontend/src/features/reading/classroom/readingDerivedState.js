@@ -1,4 +1,4 @@
-import { buildSceneActionSequence, READING_ACTION_TYPES } from "./readingActionTypes";
+﻿import { buildSceneActionSequence, READING_ACTION_TYPES } from "./readingActionTypes";
 
 function asRoundtableRole(role) {
   const r = String(role || "").toLowerCase();
@@ -104,3 +104,5 @@ export function getReadingDerivedState(course, playbackState, runtime) {
     canPause: playbackState.mode === "playing",
   };
 }
+
+

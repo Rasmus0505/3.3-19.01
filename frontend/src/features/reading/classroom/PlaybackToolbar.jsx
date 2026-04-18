@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PlaybackToolbar — control bar between canvas and Roundtable.
  * Modelled after OpenMAIC's canvas-toolbar.
  * Layout: [scene count] [volume] [speed] [← prev] [⏸/▶ play] [→ next] [auto-play]
@@ -115,3 +115,5 @@ export function PlaybackToolbar({
     </div>
   );
 }
+
+

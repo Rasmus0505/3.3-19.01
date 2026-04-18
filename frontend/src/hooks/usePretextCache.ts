@@ -1,4 +1,4 @@
-/**
+﻿/**
  * usePretextCache.ts — Pretext 测量结果 localStorage 缓存
  * ===========================================================
  * 缓存 key = text hash + font，命中则跳过 Pretext 内部测量。
@@ -72,3 +72,5 @@ export function usePretextCache() {
 
   return { get, set, remove, clear, getCacheSize };
 }
+
+

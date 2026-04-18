@@ -1,4 +1,4 @@
-// 上传面板头部组件。
+﻿// 上传面板头部组件。
 // 显示标题和 ASR 模型选择器。
 
 import { useMemo } from 'react';
@@ -51,3 +51,5 @@ export function UploadPanelHeader({ state, onAsrModelChange }: UploadPanelHeader
     </div>
   );
 }
+
+

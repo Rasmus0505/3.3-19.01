@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   buildDiagnosticSnapshot,
   deriveTargetMetrics,
@@ -19,7 +19,7 @@ describe("readingDiagnostics", () => {
     expect(getRecommendedTargetLevel("C2", "C2")).toBe("C2");
   });
 
-  it("derives selected-target impact metrics from CEFR counts", () => {
+  it("derives selected-target impact metrics from Collins counts", () => {
     expect(
       deriveTargetMetrics(
         { A1: 6, A2: 4, B1: 10, B2: 8, C1: 3, C2: 1, SUPER: 2 },
@@ -64,3 +64,5 @@ describe("readingDiagnostics", () => {
     expect(formatEstimateTime(90)).toBe("约 2 分钟");
   });
 });
+
+

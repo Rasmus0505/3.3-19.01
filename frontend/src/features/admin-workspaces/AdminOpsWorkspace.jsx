@@ -1,4 +1,4 @@
-import { AlertTriangle, ClipboardList, Settings2, Sparkles } from "lucide-react";
+﻿import { AlertTriangle, ClipboardList, Settings2, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -121,3 +121,5 @@ export function AdminOpsWorkspace({ apiCall, showTabsNavigation = true }) {
     </div>
   );
 }
+
+

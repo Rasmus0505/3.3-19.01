@@ -1,4 +1,4 @@
-/**
+﻿/**
  * useReadingRewrite.js — 阅读板块 AI 重写状态管理
  * ==============================================
  * Phase 29: AI 重写与路由
@@ -7,7 +7,7 @@
  * Phase 36: 显式阶段流水线 + 阅读包资产
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readCefrLevel } from "../app/authStorage";
+import { readCollinsLevel } from "../app/authStorage";
 import { syncReadingPackToServer } from "../features/reading/api/readingRewriteApi";
 import {
   getRewriteRecord,
@@ -27,26 +27,12 @@ import {
   extractLemmas,
   simplifyWords,
 } from "../features/reading/api/readingRewriteApi";
-import { getOrCreateAnalyzer } from "../utils/vocabAnalyzer";
-
-const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1", "C2"];
 const EXTRACT_LEMMAS_MAX_CONTEXT_CHARS = 2800;
 const SIMPLIFY_WORDS_MAX_CONTEXT_CHARS = 1800;
 // Hard cap on words per batch to prevent LLM token overflow.
 // 15 words × ~30 tokens/word ≈ 450 tokens — well within 2048 limit.
 const SIMPLIFY_WORDS_MAX_PER_BATCH = 15;
 const EXTRACT_LEMMAS_MAX_PER_BATCH = 20;
-
-function levelToNum(level) {
-  const idx = CEFR_ORDER.indexOf(level);
-  return idx >= 0 ? idx : CEFR_ORDER.length;
-}
-
-function getTargetLevel(userLevel) {
-  const userIdx = CEFR_ORDER.indexOf(userLevel);
-  const targetIdx = Math.min(userIdx + 1, CEFR_ORDER.length - 1);
-  return CEFR_ORDER[targetIdx];
-}
 
 function toUniqueLowerWordList(words = []) {
   const seen = new Set();
@@ -628,8 +614,8 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
       };
 
       try {
-        const userLevel = readCefrLevel() || "B1";
-        const targetLevel = targetLevelOverride || diagnosticSnapshot?.selectedTargetLevel || getTargetLevel(userLevel);
+        const userLevel = readCollinsLevel() || 3;
+        const targetLevel = targetLevelOverride || diagnosticSnapshot?.selectedTargetLevel || userLevel;
 
         await startStage("parsing", "读取材料", "正在准备文本与当前选择", 5);
         await completeStage("parsing", `已读取 ${safeOriginalText.length} 个字符`);
@@ -699,31 +685,27 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
           lemmas.push(...batchResult.lemmas);
         }
 
-        const analyzer = await getOrCreateAnalyzer();
         const validI1WordsList = [];
         const validAboveI1WordsList = [];
         const removedByLemmaWordsList = [];
         const finalWordLevels = {};
-        const userLevelNum = levelToNum(userLevel);
-        const targetLevelNum = levelToNum(targetLevel);
 
         for (let index = 0; index < inputWords.length; index += 1) {
           const originalWord = inputWords[index].word;
           const lemma = lemmas[index] || originalWord.toLowerCase();
-          const surfaceLevel = String(inputWords[index].level || "");
-          const finalLevel = analyzer.lookupCefrLevelForDictionaryForm(lemma) || surfaceLevel || null;
+          const finalLevel = String(inputWords[index].level || "");
+          const difficultyBand = String(inputWords[index].band || "");
           const originalLower = originalWord.toLowerCase();
           finalWordLevels[originalLower] = finalLevel || "";
 
-          const finalLevelNum = levelToNum(finalLevel);
-          if (finalLevelNum < userLevelNum) {
+          if (!difficultyBand || difficultyBand === "default" || difficultyBand === "unrated") {
             removedByLemmaWordsList.push({
               word: originalWord,
               lemma,
               finalLevel: finalLevel || "unknown",
-              reason: `原型 "${lemma}" 最终等级为 ${finalLevel || "unknown"}，低于用户等级 ${userLevel}`,
+              reason: `原型 "${lemma}" 不属于当前需要改写的 Collins 分级范围`,
             });
-          } else if (finalLevelNum === userLevelNum || finalLevelNum === targetLevelNum) {
+          } else if (difficultyBand === "i_plus_one") {
             validI1WordsList.push(originalWord);
           } else {
             validAboveI1WordsList.push(originalWord);
@@ -988,3 +970,5 @@ export function useReadingRewrite({ apiCall, accessToken, articleId, onSuccess }
     handleRewrite,
   };
 }
+
+

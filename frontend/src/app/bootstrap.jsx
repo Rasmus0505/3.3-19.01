@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+﻿import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { LEARNING_PAGE_PATHS } from "./learning-shell/panelRoutes";
 
@@ -22,3 +22,5 @@ export function BootstrapApp() {
     </Suspense>
   );
 }
+
+

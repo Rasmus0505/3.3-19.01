@@ -1,4 +1,4 @@
-import { api, parseResponse, toErrorText } from "../../shared/api/client";
+﻿import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { deleteLessonMedia } from "../../shared/media/localMediaStore";
 import { deleteLessonSubtitleCache, getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore.js";
 
@@ -511,3 +511,5 @@ export function createLessonSlice(set: Setter, get: Getter) {
     },
   };
 }
+
+

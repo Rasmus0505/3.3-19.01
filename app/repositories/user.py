@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import re
 import unicodedata
@@ -94,11 +94,12 @@ class UserRepository(Repository[User]):
         self.session.flush()
         return user
 
-    def update_cefr_level(self, user_id: int, cefr_level: str | None) -> Optional[User]:
+    def update_collins_level(self, user_id: int, collins_level: int) -> Optional[User]:
         user = self.get(user_id)
         if not user:
             return None
-        user.cefr_level = cefr_level
+        user.collins_level = collins_level
         self.session.add(user)
         self.session.flush()
         return user
+

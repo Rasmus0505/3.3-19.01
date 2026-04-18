@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HistoryPanel.jsx — 阅读板块顶部历史记录区
  * ==========================================
  * 展示用户之前阅读过的文章列表，点击后加载到左侧阅读区。
@@ -330,3 +330,5 @@ export function HistoryPanel({ onSelect, activeId, refreshKey }) {
     </div>
   );
 }
+
+

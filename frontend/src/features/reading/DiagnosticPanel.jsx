@@ -1,10 +1,10 @@
-import { Loader2, RefreshCw, WandSparkles } from "lucide-react";
+﻿import { Loader2, RefreshCw, WandSparkles } from "lucide-react";
 import { Button } from "../../shared/ui";
 import { cn } from "../../lib/utils";
-import { CEFR_LEVELS, formatEstimateTime } from "./readingDiagnostics";
+import { COLLINS_LEVELS, formatEstimateTime } from "./readingDiagnostics";
 
 export function DiagnosticPanel({
-  userLevel = "B1",
+  userLevel = 3,
   snapshot = null,
   isDiagnosing = false,
   diagnosticError = null,
@@ -69,9 +69,9 @@ export function DiagnosticPanel({
 
       {/* ── 目标等级 ── */}
       <div className="dp-section">
-        <span className="dp-section__label">目标等级</span>
-        <div className="dp-levels" role="radiogroup">
-          {CEFR_LEVELS.map((level) => (
+          <span className="dp-section__label">目标难度</span>
+          <div className="dp-levels" role="radiogroup">
+          {COLLINS_LEVELS.map((level) => (
             <button
               key={level}
               type="button"
@@ -83,7 +83,7 @@ export function DiagnosticPanel({
               onClick={() => onTargetLevelChange?.(level)}
               aria-pressed={selectedTargetLevel === level}
             >
-              {level}
+              {level} 星
               {recommendedTargetLevel === level && <span className="dp-level__rec">推荐</span>}
             </button>
           ))}
@@ -110,15 +110,15 @@ export function DiagnosticPanel({
 
       {/* ── 难度分布色条（只保留色条，tooltip 显示数值）── */}
       <div className="dp-dist">
-        {[...CEFR_LEVELS, "SUPER"].map((level) => {
-          const count = levelCounts?.[level] || 0;
+        {[...COLLINS_LEVELS, "unrated"].map((level) => {
+          const count = levelCounts?.[String(level)] || levelCounts?.[level] || 0;
           const width = count > 0 ? Math.max((count / totalWords) * 100, 4) : 0;
           return width > 0 ? (
             <span
               key={level}
-              className={cn("dp-dist__seg", `dp-dist__seg--${level.toLowerCase()}`)}
+              className={cn("dp-dist__seg", `dp-dist__seg--${String(level).toLowerCase()}`)}
               style={{ width: `${width}%` }}
-              title={`${level}: ${count} 词`}
+              title={level === "unrated" ? `未评级: ${count} 词` : `${level} 星: ${count} 词`}
             />
           ) : null;
         })}
@@ -159,3 +159,5 @@ export function DiagnosticPanel({
     </aside>
   );
 }
+
+

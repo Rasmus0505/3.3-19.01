@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CourseSummary — Completion screen shown after all 4 scenes.
  */
 import { Button, Card, Badge } from "../../../shared/ui";
@@ -90,3 +90,5 @@ export function CourseSummary({ courseData, pack, onGoToScene, onExit, onReset }
     </div>
   );
 }
+
+

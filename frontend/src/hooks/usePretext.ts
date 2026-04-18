@@ -1,4 +1,4 @@
-/**
+﻿/**
  * usePretext.ts — Pretext 基础测量 hook
  * ==========================================
  * 封装 @chenglou/pretext 的 prepare/layout API，提供 React 友好的接口。
@@ -99,3 +99,5 @@ export function usePretext(
     meta: metaRef,
   };
 }
+
+

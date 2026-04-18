@@ -1,4 +1,4 @@
-import { buildSceneActionSequence } from "./readingActionTypes";
+﻿import { buildSceneActionSequence } from "./readingActionTypes";
 
 export const READING_PLAYBACK_EVENTS = {
   LOAD_COURSE: "LOAD_COURSE",
@@ -153,3 +153,5 @@ export function readingPlaybackReducer(state, event) {
       return state;
   }
 }
+
+

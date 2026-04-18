@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SceneListeningQuiz — Scene 2: LLM-generated listening comprehension quiz.
  */
 import { useState, useCallback, useEffect } from "react";
@@ -58,7 +58,7 @@ export function SceneListeningQuiz({ lesson, apiClient, onComplete, onSaveResult
           return;
         }
 
-        const firstCefr = sentences[0]?.cefr_vocab_json?.sentence_level;
+        const firstCefr = sentences[0]?.vocabulary_analysis_json?.sentence_level;
         const targetLevel = firstCefr || "B1";
 
         const res = await apiClient("/api/llm/quiz/generate", {
@@ -255,3 +255,5 @@ export function SceneListeningQuiz({ lesson, apiClient, onComplete, onSaveResult
     </div>
   );
 }
+
+

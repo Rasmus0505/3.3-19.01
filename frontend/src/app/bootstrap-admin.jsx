@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+﻿import { Suspense, lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 const AdminShellStandalone = lazy(() =>
@@ -15,3 +15,5 @@ export function BootstrapAdminApp() {
     </Suspense>
   );
 }
+
+

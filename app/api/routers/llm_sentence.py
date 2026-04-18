@@ -1,13 +1,14 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import CEFR_LEVELS, LLM_MODEL_DEEPSEEK_FAST
+from app.api.routers.llm_shared import LLM_MODEL_DEEPSEEK_FAST
+from app.services.collins_levels import normalize_collins_level
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
@@ -17,22 +18,8 @@ router = APIRouter()
 
 class SentenceExplanationRequest(BaseModel):
     sentence: str = Field(..., description="原始句子")
-    words_above: list[dict] = Field(default=[], description="高于目标等级的词汇列表")
-    target_level: str = Field(default="B1", description="用户目标 CEFR 等级")
-
-    @field_validator("sentence")
-    @classmethod
-    def sentence_max_length(cls, value: str) -> str:
-        if len(value) > 3000:
-            raise ValueError("Sentence too long (max 3000 chars)")
-        return value
-
-    @field_validator("target_level")
-    @classmethod
-    def validate_target_level(cls, value: str) -> str:
-        if value.upper() not in CEFR_LEVELS:
-            raise ValueError(f"Invalid CEFR level '{value}'. Must be one of: {', '.join(sorted(CEFR_LEVELS))}")
-        return value.upper()
+    words_above: list[dict] = Field(default_factory=list, description="高于当前输入级别的词汇列表")
+    target_level: int = Field(default=3, ge=1, le=5, description="学习者当前 Collins 星级")
 
 
 class SentenceExplanationResponse(BaseModel):
@@ -56,10 +43,12 @@ def explain_sentence(
     返回简化句和关键词解释，用于听力前的讲解展示。
     """
     from app.api.routers import llm as llm_root
-    from app.services.cefr_explain_service import CefrExplainService
+    from app.services.vocabulary_explain_service import VocabularyExplainService
     from app.services.llm_usage_service import log_llm_usage
 
     llm_root.ensure_default_billing_rates(db)
+    if len(body.sentence) > 3000:
+        raise HTTPException(status_code=422, detail="Sentence too long (max 3000 chars)")
 
     try:
         rate = llm_root.get_model_rate(db, LLM_MODEL_DEEPSEEK_FAST)
@@ -67,7 +56,7 @@ def explain_sentence(
         raise HTTPException(status_code=503, detail="LLM model not available")
 
     trace_id = str(uuid.uuid4())
-    service = CefrExplainService(db=db, target_level=body.target_level)
+    service = VocabularyExplainService(db=db, target_level=normalize_collins_level(body.target_level, default=3) or 3)
     result = service.generate_explanation(body.sentence, body.words_above)
 
     prompt_tokens = len(body.sentence.split()) * 2 + len(body.words_above) * 10
@@ -109,3 +98,4 @@ def explain_sentence(
 
     db.commit()
     return SentenceExplanationResponse(**result)
+

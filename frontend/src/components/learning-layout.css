@@ -1,4 +1,4 @@
-/* LearningLayout 布局样式 */
+﻿/* LearningLayout 布局样式 */
 .learning-layout {
   display: flex;
   flex-direction: column;
@@ -203,3 +203,5 @@
 .learning-layout--fullscreen .ai-sidebar {
   /* 全屏时侧边栏可能需要隐藏或缩小 */
 }
+
+

@@ -1,4 +1,4 @@
-import { cn } from "../../lib/utils";
+﻿import { cn } from "../../lib/utils";
 
 export function Card({ className, size = "default", ...props }) {
   return <div data-slot="card" data-size={size} className={cn("cn-card group/card flex flex-col", className)} {...props} />;
@@ -36,3 +36,5 @@ export function CardContent({ className, ...props }) {
 export function CardFooter({ className, ...props }) {
   return <div data-slot="card-footer" className={cn("cn-card-footer flex items-center", className)} {...props} />;
 }
+
+

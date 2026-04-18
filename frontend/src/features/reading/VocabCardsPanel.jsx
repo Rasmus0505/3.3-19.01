@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VocabCardsPanel.jsx — 词汇卡片面板（Phase 42）
  * =================================================
  * 从阅读包词汇生成带定义、例句和 AI 图片的学习卡片。
@@ -74,7 +74,7 @@ function VocabCard({ card, onGenerateImage, onAddToWordbook }) {
   const [added, setAdded] = useState(false);
   const [adding, setAdding] = useState(false);
 
-  const levelLower = (card.cefr_level || "").toLowerCase().replace("+", "-plus-");
+  const levelLower = String(card.collins_level || "").toLowerCase().replace("+", "-plus-");
 
   async function handleImageGen() {
     setImageLoading(true);
@@ -100,9 +100,9 @@ function VocabCard({ card, onGenerateImage, onAddToWordbook }) {
     <article className="reading-cards__card">
       <div className="reading-cards__card-header">
         <h3 className="reading-cards__card-word">{card.word}</h3>
-        {card.cefr_level ? (
+        {card.collins_level ? (
           <span className={cn("reading-cards__card-level", `analysis-level--${levelLower}`)}>
-            {card.cefr_level}
+            {card.collins_level} 星
           </span>
         ) : null}
       </div>
@@ -203,10 +203,10 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
         body: JSON.stringify({
           words: selectedWords.map((word) => ({
             word,
-            cefr_level: wordLevels[word] || wordLevels[word.toLowerCase()] || null,
+            collins_level: Number(wordLevels[word] || wordLevels[word.toLowerCase()] || 0) || null,
             context_sentence: null,
           })),
-          target_level: pack.targetLevel || "B1",
+          target_level: Number(pack.targetLevel || 0) || 3,
           context_text: pack.rewrittenText || pack.originalText || "",
         }),
       });
@@ -378,3 +378,5 @@ export function VocabCardsPanel({ pack, articleId, apiCall, accessToken }) {
     </div>
   );
 }
+
+

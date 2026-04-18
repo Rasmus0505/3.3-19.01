@@ -1,4 +1,4 @@
-export const DEFAULT_PANEL_KEY = "history";
+﻿export const DEFAULT_PANEL_KEY = "history";
 
 export const PANEL_ROUTE_ITEMS = [
   {
@@ -52,3 +52,5 @@ export function getPanelItemByPathname(pathname) {
 export function getPanelPath(panelKey) {
   return PANEL_ROUTE_ITEMS.find((item) => item.key === panelKey)?.path || getDefaultPanelItem().path;
 }
+
+

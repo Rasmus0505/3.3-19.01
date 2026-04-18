@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SceneShadowing — Scene 3: TTS playback + recording + SOE oral assessment.
  */
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
@@ -294,3 +294,5 @@ function ScoreCircle({ label, score }) {
     </div>
   );
 }
+
+

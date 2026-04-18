@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+﻿import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Pause, Play, Volume2, VolumeX } from "lucide-react";
 
 import { parseResponse, toErrorText } from "../../shared/api/client";
@@ -507,3 +507,5 @@ function LessonPlayer({
     </div>
   );
 }
+
+

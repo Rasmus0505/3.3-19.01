@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import logging
@@ -45,6 +45,7 @@ from app.services.billing_service import (
     settle_reserved_points,
 )
 from app.services.llm_usage_service import log_llm_usage
+from app.services.collins_levels import normalize_collins_level
 from app.services.lesson_builder import (
     build_lesson_sentences,
     compose_text_from_words,
@@ -55,10 +56,10 @@ from app.services.lesson_builder import (
     tokenize_learning_sentence,
     tokenize_sentence,
 )
-from app.services.lessons.cefr import (
-    extract_cefr_from_sentences as _extract_cefr_from_sentences_impl,
-    generate_sentence_explanation as _generate_sentence_explanation_impl,
-    process_sentences_with_cefr as _process_sentences_with_cefr_impl,
+from app.services.lessons.vocabulary import (
+    extract_vocabulary_analysis_from_sentences as _extract_vocabulary_analysis_from_sentences_impl,
+    generate_vocabulary_explanation as _generate_vocabulary_explanation_impl,
+    process_sentences_with_vocabulary as _process_sentences_with_vocabulary_impl,
 )
 from app.services.lessons.persistence import (
     attach_task_result_metadata as _attach_task_result_metadata_impl,
@@ -253,7 +254,7 @@ def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
         return int(48 + 20 * ratio)
     if stage_key == "translate_zh":
         return int(68 + 17 * ratio)
-    if stage_key == "cefr_annotation":
+    if stage_key == "vocabulary_annotation":
         return int(85 + 5 * ratio)
     if stage_key == "word_explanation":
         return int(90 + 5 * ratio)
@@ -265,37 +266,37 @@ def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
 def _apply_generation_content_selection(
     *,
     sentences: list[dict[str, Any]],
-    user_level: str,
+    user_level: int,
     generation_options: dict[str, Any] | None,
 ) -> tuple[list[dict[str, Any]], str, str]:
     normalized_generation_options = normalize_generation_options(generation_options)
-    if not normalized_generation_options["cefr_annotation"]:
+    if not normalized_generation_options["vocabulary_annotation"]:
         return [
             clear_sentence_generated_content(
                 sentence,
                 clear_translation=False,
-                clear_cefr=True,
+                clear_vocabulary=True,
                 clear_explanation=True,
             )
             for sentence in sentences
         ], CONTENT_STATE_SKIPPED, CONTENT_STATE_SKIPPED
 
-    cefr_state = CONTENT_STATE_GENERATED
+    vocabulary_state = CONTENT_STATE_GENERATED
     explanation_state = CONTENT_STATE_GENERATED if normalized_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
     try:
-        enriched = process_sentences_with_cefr(
+        enriched = process_sentences_with_vocabulary(
             sentences=sentences,
             target_level=user_level,
             user_level=user_level,
             include_explanations=normalized_generation_options["word_explanation"],
         )
     except Exception:
-        logger.exception("[DEBUG] lesson.cefr_processing_failed, continuing without explanation")
+        logger.exception("[DEBUG] lesson.vocabulary_processing_failed, continuing without explanation")
         fallback = [
             clear_sentence_generated_content(
                 sentence,
                 clear_translation=False,
-                clear_cefr=True,
+                clear_vocabulary=True,
                 clear_explanation=True,
             )
             for sentence in sentences
@@ -303,7 +304,7 @@ def _apply_generation_content_selection(
         return fallback, CONTENT_STATE_PENDING_REGENERATE, (
             CONTENT_STATE_PENDING_REGENERATE if normalized_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
         )
-    return enriched, cefr_state, explanation_state
+    return enriched, vocabulary_state, explanation_state
 
 
 def _single_asr_stage_ratio(elapsed_seconds: int) -> float:
@@ -692,17 +693,17 @@ def _call_transcribe_segment(
         return payload
 
 
-def _resolve_owner_user_cefr_level(db: Session, owner_id: int, fallback: str = "B1") -> str:
+def _resolve_owner_user_collins_level(db: Session, owner_id: int, fallback: int = 3) -> int:
     try:
         from app.models import User
 
         user = db.get(User, int(owner_id))
-        level = str(getattr(user, "cefr_level", "") or "").strip().upper()
-        if level:
-            return level
+        normalized = normalize_collins_level(getattr(user, "collins_level", None), default=None)
+        if normalized is not None:
+            return normalized
     except Exception:
-        logger.warning("[DEBUG] lesson.cefr_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
-    return fallback
+        logger.warning("[DEBUG] lesson.collins_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
+    return normalize_collins_level(fallback, default=3) or 3
 
 
 class LessonService:
@@ -1230,34 +1231,34 @@ class LessonService:
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
-            resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
-            lesson.user_cefr_level = resolved_user_level
+            resolved_user_level = _resolve_owner_user_collins_level(db, owner_id)
+            lesson.user_collins_level = resolved_user_level
             lesson.requested_generation_options_json = normalized_generation_options
             lesson.effective_generation_options_json = normalized_generation_options
             db.add(lesson)
             db.flush()
 
-            cefr_state = CONTENT_STATE_SKIPPED
+            vocabulary_state = CONTENT_STATE_SKIPPED
             explanation_state = CONTENT_STATE_SKIPPED
-            if normalized_generation_options["cefr_annotation"]:
+            if normalized_generation_options["vocabulary_annotation"]:
                 _emit_progress(
                     progress_callback,
-                    stage_key="cefr_annotation",
+                    stage_key="vocabulary_annotation",
                     stage_status="running",
-                    overall_percent=_progress_percent_by_stage("cefr_annotation", 0.0),
+                    overall_percent=_progress_percent_by_stage("vocabulary_annotation", 0.0),
                     current_text="生成生词标注",
                 )
-                runtime_sentences, cefr_state, explanation_state = _apply_generation_content_selection(
+                runtime_sentences, vocabulary_state, explanation_state = _apply_generation_content_selection(
                     sentences=runtime_sentences,
                     user_level=resolved_user_level,
                     generation_options=normalized_generation_options,
                 )
                 _emit_progress(
                     progress_callback,
-                    stage_key="cefr_annotation",
-                    stage_status="completed" if cefr_state == CONTENT_STATE_GENERATED else "failed",
-                    overall_percent=_progress_percent_by_stage("cefr_annotation", 1.0),
-                    current_text="生词标注生成完成" if cefr_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
+                    stage_key="vocabulary_annotation",
+                    stage_status="completed" if vocabulary_state == CONTENT_STATE_GENERATED else "failed",
+                    overall_percent=_progress_percent_by_stage("vocabulary_annotation", 1.0),
+                    current_text="生词标注生成完成" if vocabulary_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
                 )
                 if normalized_generation_options["word_explanation"]:
                     _emit_progress(
@@ -1279,8 +1280,8 @@ class LessonService:
                         text_zh=str(sentence["text_zh"]),
                         tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
-                        # CEFR 字段
-                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                        # 词汇分级字段
+                        vocabulary_analysis_json=sentence.get("vocabulary_analysis_json"),
                         needs_explanation=sentence.get("needs_explanation", False),
                         explanation_text=sentence.get("explanation_text"),
                         simplified_sentence=sentence.get("simplified_sentence"),
@@ -1355,7 +1356,7 @@ class LessonService:
             lesson.generated_content_status_json = build_generated_content_status(
                 effective_options=normalized_generation_options,
                 translation_state=translation_state,
-                cefr_state=cefr_state,
+                vocabulary_state=vocabulary_state,
                 explanation_state=explanation_state,
             )
             db.add(lesson)
@@ -2093,8 +2094,8 @@ class LessonService:
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
-            resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
-            lesson.user_cefr_level = resolved_user_level
+            resolved_user_level = _resolve_owner_user_collins_level(db, owner_id)
+            lesson.user_collins_level = resolved_user_level
             lesson.requested_generation_options_json = normalized_generation_options
             lesson.effective_generation_options_json = normalized_generation_options
             db.add(lesson)
@@ -2105,27 +2106,27 @@ class LessonService:
                 reserved_duration_ms,
             )
 
-            cefr_state = CONTENT_STATE_SKIPPED
+            vocabulary_state = CONTENT_STATE_SKIPPED
             explanation_state = CONTENT_STATE_SKIPPED
-            if normalized_generation_options["cefr_annotation"]:
+            if normalized_generation_options["vocabulary_annotation"]:
                 _emit_progress(
                     progress_callback,
-                    stage_key="cefr_annotation",
+                    stage_key="vocabulary_annotation",
                     stage_status="running",
-                    overall_percent=_progress_percent_by_stage("cefr_annotation", 0.0),
+                    overall_percent=_progress_percent_by_stage("vocabulary_annotation", 0.0),
                     current_text="生成生词标注",
                 )
-                runtime_sentences, cefr_state, explanation_state = _apply_generation_content_selection(
+                runtime_sentences, vocabulary_state, explanation_state = _apply_generation_content_selection(
                     sentences=runtime_sentences,
                     user_level=resolved_user_level,
                     generation_options=normalized_generation_options,
                 )
                 _emit_progress(
                     progress_callback,
-                    stage_key="cefr_annotation",
-                    stage_status="completed" if cefr_state == CONTENT_STATE_GENERATED else "failed",
-                    overall_percent=_progress_percent_by_stage("cefr_annotation", 1.0),
-                    current_text="生词标注生成完成" if cefr_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
+                    stage_key="vocabulary_annotation",
+                    stage_status="completed" if vocabulary_state == CONTENT_STATE_GENERATED else "failed",
+                    overall_percent=_progress_percent_by_stage("vocabulary_annotation", 1.0),
+                    current_text="生词标注生成完成" if vocabulary_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
                 )
                 if normalized_generation_options["word_explanation"]:
                     _emit_progress(
@@ -2147,7 +2148,7 @@ class LessonService:
                         text_zh=str(sentence["text_zh"]),
                         tokens_json=[str(item) for item in list(sentence.get("tokens") or [])],
                         audio_clip_path=None,
-                        cefr_vocab_json=sentence.get("cefr_vocab_json"),
+                        vocabulary_analysis_json=sentence.get("vocabulary_analysis_json"),
                         needs_explanation=sentence.get("needs_explanation", False),
                         explanation_text=sentence.get("explanation_text"),
                         simplified_sentence=sentence.get("simplified_sentence"),
@@ -2232,7 +2233,7 @@ class LessonService:
             lesson.generated_content_status_json = build_generated_content_status(
                 effective_options=normalized_generation_options,
                 translation_state=translation_state,
-                cefr_state=cefr_state,
+                vocabulary_state=vocabulary_state,
                 explanation_state=explanation_state,
             )
             db.add(lesson)
@@ -2652,31 +2653,31 @@ class LessonService:
                 )
             lesson: Lesson = Lesson()
             lesson.title = Path(source_filename or "lesson").stem[:200] or "lesson"
-            resolved_user_level = _resolve_owner_user_cefr_level(db, owner_id)
-            lesson.user_cefr_level = resolved_user_level
+            resolved_user_level = _resolve_owner_user_collins_level(db, owner_id)
+            lesson.user_collins_level = resolved_user_level
             lesson.requested_generation_options_json = normalized_generation_options
             lesson.effective_generation_options_json = normalized_generation_options
-            cefr_state = CONTENT_STATE_SKIPPED
+            vocabulary_state = CONTENT_STATE_SKIPPED
             explanation_state = CONTENT_STATE_SKIPPED
-            if normalized_generation_options["cefr_annotation"]:
+            if normalized_generation_options["vocabulary_annotation"]:
                 _emit_progress(
                     progress_callback,
-                    stage_key="cefr_annotation",
+                    stage_key="vocabulary_annotation",
                     stage_status="running",
-                    overall_percent=_progress_percent_by_stage("cefr_annotation", 0.0),
+                    overall_percent=_progress_percent_by_stage("vocabulary_annotation", 0.0),
                     current_text="生成生词标注",
                 )
-                variant["sentences"], cefr_state, explanation_state = _apply_generation_content_selection(
+                variant["sentences"], vocabulary_state, explanation_state = _apply_generation_content_selection(
                     sentences=list(variant["sentences"]),
                     user_level=resolved_user_level,
                     generation_options=normalized_generation_options,
                 )
                 _emit_progress(
                     progress_callback,
-                    stage_key="cefr_annotation",
-                    stage_status="completed" if cefr_state == CONTENT_STATE_GENERATED else "failed",
-                    overall_percent=_progress_percent_by_stage("cefr_annotation", 1.0),
-                    current_text="生词标注生成完成" if cefr_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
+                    stage_key="vocabulary_annotation",
+                    stage_status="completed" if vocabulary_state == CONTENT_STATE_GENERATED else "failed",
+                    overall_percent=_progress_percent_by_stage("vocabulary_annotation", 1.0),
+                    current_text="生词标注生成完成" if vocabulary_state == CONTENT_STATE_GENERATED else "生词标注待补生成",
                 )
                 if normalized_generation_options["word_explanation"]:
                     _emit_progress(
@@ -2785,7 +2786,7 @@ class LessonService:
             lesson.generated_content_status_json = build_generated_content_status(
                 effective_options=normalized_generation_options,
                 translation_state=translation_state,
-                cefr_state=cefr_state,
+                vocabulary_state=vocabulary_state,
                 explanation_state=explanation_state,
             )
             db.add(lesson)
@@ -2872,15 +2873,15 @@ class LessonService:
         normalized_request = {
             "core_subtitles": True,
             "zh_translation": bool(requested_options.get("zh_translation")),
-            "cefr_annotation": bool(requested_options.get("cefr_annotation")),
+            "vocabulary_annotation": bool(requested_options.get("vocabulary_annotation")),
             "word_explanation": bool(requested_options.get("word_explanation")),
         }
         if normalized_request["word_explanation"]:
-            normalized_request["cefr_annotation"] = True
-        if not any(normalized_request[key] for key in ("zh_translation", "cefr_annotation", "word_explanation")):
+            normalized_request["vocabulary_annotation"] = True
+        if not any(normalized_request[key] for key in ("zh_translation", "vocabulary_annotation", "word_explanation")):
             return lesson
 
-        for key in ("zh_translation", "cefr_annotation", "word_explanation"):
+        for key in ("zh_translation", "vocabulary_annotation", "word_explanation"):
             if normalized_request[key]:
                 requested_generation_options[key] = True
                 effective_generation_options[key] = True
@@ -2896,7 +2897,7 @@ class LessonService:
                 "text_en": str(item.text_en),
                 "text_zh": str(item.text_zh or ""),
                 "tokens": [str(token) for token in list(item.tokens_json or [])],
-                "cefr_vocab_json": item.cefr_vocab_json,
+                "vocabulary_analysis_json": item.vocabulary_analysis_json,
                 "needs_explanation": bool(item.needs_explanation),
                 "explanation_text": item.explanation_text,
                 "simplified_sentence": item.simplified_sentence,
@@ -2950,23 +2951,23 @@ class LessonService:
                     input_text_preview="",
                 )
 
-        if normalized_request["cefr_annotation"] or normalized_request["word_explanation"]:
-            user_level = _resolve_owner_user_cefr_level(db, lesson.user_id)
-            runtime_sentences, cefr_state, explanation_state = _apply_generation_content_selection(
+        if normalized_request["vocabulary_annotation"] or normalized_request["word_explanation"]:
+            user_level = _resolve_owner_user_collins_level(db, lesson.user_id)
+            runtime_sentences, vocabulary_state, explanation_state = _apply_generation_content_selection(
                 sentences=runtime_sentences,
                 user_level=user_level,
                 generation_options={
                     **effective_generation_options,
-                    "cefr_annotation": effective_generation_options["cefr_annotation"],
+                    "vocabulary_annotation": effective_generation_options["vocabulary_annotation"],
                     "word_explanation": effective_generation_options["word_explanation"],
                 },
             )
-            generated_content_status["cefr_annotation"] = cefr_state
+            generated_content_status["vocabulary_annotation"] = vocabulary_state
             generated_content_status["word_explanation"] = explanation_state
 
         for sentence, runtime_sentence in zip(sentences, runtime_sentences):
             sentence.text_zh = str(runtime_sentence.get("text_zh") or "")
-            sentence.cefr_vocab_json = runtime_sentence.get("cefr_vocab_json")
+            sentence.vocabulary_analysis_json = runtime_sentence.get("vocabulary_analysis_json")
             sentence.needs_explanation = bool(runtime_sentence.get("needs_explanation"))
             sentence.explanation_text = runtime_sentence.get("explanation_text")
             sentence.simplified_sentence = runtime_sentence.get("simplified_sentence")
@@ -2978,7 +2979,7 @@ class LessonService:
         lesson.generated_content_status_json = build_generated_content_status(
             effective_options=effective_generation_options,
             translation_state=generated_content_status["zh_translation"],
-            cefr_state=generated_content_status["cefr_annotation"],
+            vocabulary_state=generated_content_status["vocabulary_annotation"],
             explanation_state=generated_content_status["word_explanation"],
         )
         if CONTENT_STATE_PENDING_REGENERATE in set(lesson.generated_content_status_json.values()):
@@ -2994,22 +2995,23 @@ class LessonService:
         return lesson
 
 
-def extract_cefr_from_sentences(sentences: list[str], target_level: str) -> list[dict]:
-    return _extract_cefr_from_sentences_impl(sentences, target_level)
+def extract_vocabulary_analysis_from_sentences(sentences: list[str], target_level: int) -> list[dict]:
+    return _extract_vocabulary_analysis_from_sentences_impl(sentences, target_level)
 
 
-def generate_sentence_explanation(
+def generate_vocabulary_explanation(
     sentence: str,
     words_above: list[dict],
-    target_level: str
+    target_level: int
 ) -> dict:
-    return _generate_sentence_explanation_impl(sentence, words_above, target_level)
+    return _generate_vocabulary_explanation_impl(sentence, words_above, target_level)
 
 
-def process_sentences_with_cefr(
+def process_sentences_with_vocabulary(
     sentences: list[dict],
-    target_level: str,
-    user_level: str | None = None,
+    target_level: int,
+    user_level: int | None = None,
     include_explanations: bool = True,
 ) -> list[dict]:
-    return _process_sentences_with_cefr_impl(sentences, target_level, user_level, include_explanations)
+    return _process_sentences_with_vocabulary_impl(sentences, target_level, user_level, include_explanations)
+

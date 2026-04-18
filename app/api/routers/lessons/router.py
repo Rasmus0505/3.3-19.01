@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import json
@@ -627,7 +627,7 @@ def generate_missing_lesson_content(
             lesson=lesson,
             requested_options={
                 "zh_translation": bool(payload.zh_translation),
-                "cefr_annotation": bool(payload.cefr_annotation),
+                "vocabulary_annotation": bool(payload.vocabulary_annotation),
                 "word_explanation": bool(payload.word_explanation),
             },
             db=db,
@@ -832,3 +832,4 @@ def bulk_delete_lessons(
         deleted_count=int(result.get("deleted_count") or len(deleted_ids)),
         failed_ids=failed_ids,
     )
+

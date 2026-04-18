@@ -1,11 +1,11 @@
-import React, { forwardRef } from "react";
+﻿import React, { forwardRef } from "react";
 import { GraduationCap, Loader2, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 import AudioRecorder from "../../shared/components/AudioRecorder";
 import { Button } from "../../shared/ui";
 import { cn } from "../../lib/utils";
-import { computeCefrClassName } from "./CefrBadge";
+import { computeDifficultyClassName } from "./DifficultyBadge";
 import SOEResultCard from "./SOEResultCard";
 
 function formatSoeAssessErrorMessage(data, httpStatus = 0) {
@@ -48,10 +48,10 @@ function renderWordSlots({
   wordRevealComparableIndices,
   wordRowLines,
   buildLetterSlots,
-  currentSentenceCefrMap,
-  cefrAnalyzerRef,
-  cefrLevel,
-  lookupCefrLevelFromMap,
+  currentSentenceBandMap,
+  difficultyAnalyzerRef,
+  collinsLevel,
+  lookupBandFromMap,
   sentenceTypingDone,
 }) {
   const renderToken = (token, index) => {
@@ -65,9 +65,9 @@ function renderWordSlots({
         key={`${token}-${index}`}
         className={cn(
           `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
-          computeCefrClassName(
-            lookupCefrLevelFromMap(currentSentenceCefrMap, token, cefrAnalyzerRef.current),
-            cefrLevel,
+          computeDifficultyClassName(
+            lookupBandFromMap(currentSentenceBandMap, token, difficultyAnalyzerRef.current),
+            collinsLevel,
           ),
         )}
       >
@@ -115,9 +115,9 @@ const TypingPanel = forwardRef(function TypingPanel(
     wordInputs,
     wordRowLines,
     wordRowFrameRef,
-    currentSentenceCefrMap,
-    cefrAnalyzerRef,
-    cefrLevel,
+    currentSentenceBandMap,
+    difficultyAnalyzerRef,
+    collinsLevel,
     buildLetterSlots,
     wordRevealComparableIndices,
     showPreviousSentenceBlock,
@@ -138,9 +138,9 @@ const TypingPanel = forwardRef(function TypingPanel(
     currentLessonId,
     audioRecorderRef,
     parseResponse,
-    wordbookSentenceCefrMap,
+    wordbookSentenceBandMap,
     translationZh,
-    lookupCefrLevelFromMap,
+    lookupBandFromMap,
     currentSentence,
     nextSentence,
     sentenceTypingDone,
@@ -179,10 +179,10 @@ const TypingPanel = forwardRef(function TypingPanel(
           wordRevealComparableIndices,
           wordRowLines,
           buildLetterSlots,
-          currentSentenceCefrMap,
-          cefrAnalyzerRef,
-          cefrLevel,
-          lookupCefrLevelFromMap,
+          currentSentenceBandMap,
+          difficultyAnalyzerRef,
+          collinsLevel,
+          lookupBandFromMap,
           sentenceTypingDone,
         })}
       </div>
@@ -252,3 +252,5 @@ const TypingPanel = forwardRef(function TypingPanel(
 });
 
 export default TypingPanel;
+
+

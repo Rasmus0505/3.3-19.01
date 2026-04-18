@@ -1,4 +1,4 @@
-const EDGE_PUNCT_REGEX = /^[\s\.,!?;:"'`~\-\(\)\[\]\{\}]+|[\s\.,!?;:"'`~\-\(\)\[\]\{\}]+$/g;
+﻿const EDGE_PUNCT_REGEX = /^[\s\.,!?;:"'`~\-\(\)\[\]\{\}]+|[\s\.,!?;:"'`~\-\(\)\[\]\{\}]+$/g;
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".mkv", ".avi", ".webm"]);
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg", ".opus"]);
@@ -27,3 +27,5 @@ export function isVideoFilename(filename) {
 export function isAudioFilename(filename) {
   return AUDIO_EXTENSIONS.has(getMediaExt(filename));
 }
+
+

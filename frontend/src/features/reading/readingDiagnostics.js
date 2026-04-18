@@ -1,41 +1,34 @@
-export const CEFR_LEVELS = ["A1", "A2", "B1", "B2", "C1", "C2"];
+﻿export const COLLINS_LEVELS = [5, 4, 3, 2, 1];
 
 export const EMPTY_LEVEL_COUNTS = {
-  A1: 0,
-  A2: 0,
-  B1: 0,
-  B2: 0,
-  C1: 0,
-  C2: 0,
-  SUPER: 0,
+  5: 0,
+  4: 0,
+  3: 0,
+  2: 0,
+  1: 0,
+  unrated: 0,
 };
 
-export function getCefrLevelIndex(level) {
-  return CEFR_LEVELS.indexOf(level);
-}
-
-export function clampCefrLevel(level, fallback = "B1") {
-  return CEFR_LEVELS.includes(level) ? level : fallback;
-}
-
-export function getNextCefrLevel(level) {
-  const index = getCefrLevelIndex(level);
-  if (index === -1) {
-    return "B2";
+export function clampCollinsLevel(level, fallback = 3) {
+  const normalized = Number(level);
+  if (COLLINS_LEVELS.includes(normalized)) {
+    return normalized;
   }
-  return CEFR_LEVELS[Math.min(index + 1, CEFR_LEVELS.length - 1)];
+  return fallback;
+}
+
+export function getNextCollinsTarget(level) {
+  const normalized = clampCollinsLevel(level, 3);
+  return Math.max(1, normalized - 1);
 }
 
 export function getRecommendedTargetLevel(userLevel, materialDifficulty) {
-  const safeUserLevel = clampCefrLevel(userLevel);
-  const safeMaterialLevel = clampCefrLevel(materialDifficulty, safeUserLevel);
-  const userIndex = getCefrLevelIndex(safeUserLevel);
-  const materialIndex = getCefrLevelIndex(safeMaterialLevel);
-
-  if (materialIndex <= userIndex) {
+  const safeUserLevel = clampCollinsLevel(userLevel);
+  const safeMaterialLevel = clampCollinsLevel(materialDifficulty, safeUserLevel);
+  if (safeMaterialLevel >= safeUserLevel) {
     return safeUserLevel;
   }
-  return getNextCefrLevel(safeUserLevel);
+  return getNextCollinsTarget(safeUserLevel);
 }
 
 export function splitDiagnosticText(text) {
@@ -51,18 +44,13 @@ export function splitDiagnosticText(text) {
 }
 
 export function deriveTargetMetrics(levelCounts, totalWords, targetLevel) {
-  const safeTargetLevel = clampCefrLevel(targetLevel);
-  const targetIndex = getCefrLevelIndex(safeTargetLevel);
+  const safeTargetLevel = clampCollinsLevel(targetLevel);
   const counts = { ...EMPTY_LEVEL_COUNTS, ...(levelCounts || {}) };
 
-  const preservedI1Count = counts[safeTargetLevel] || 0;
-  const aboveI1Count = Object.entries(counts).reduce((sum, [level, count]) => {
-    const index = level === "SUPER" ? Number.POSITIVE_INFINITY : getCefrLevelIndex(level);
-    if (index > targetIndex) {
-      return sum + (count || 0);
-    }
-    return sum;
-  }, 0);
+  const preservedI1Count = counts[String(safeTargetLevel)] || counts[safeTargetLevel] || 0;
+  const aboveI1Count = COLLINS_LEVELS
+    .filter((level) => level < safeTargetLevel)
+    .reduce((sum, level) => sum + (counts[String(level)] || counts[level] || 0), 0);
 
   const simplificationImpactPercent = totalWords > 0
     ? Math.round((aboveI1Count / totalWords) * 100)
@@ -98,6 +86,16 @@ export function formatEstimateTime(seconds) {
   return `约 ${minutes} 分钟`;
 }
 
+function normalizeMaterialDifficulty(levelCounts, userLevel) {
+  const counts = { ...EMPTY_LEVEL_COUNTS, ...(levelCounts || {}) };
+  const total = COLLINS_LEVELS.reduce((sum, level) => sum + (counts[String(level)] || counts[level] || 0), 0);
+  if (total <= 0) {
+    return userLevel;
+  }
+  const score = COLLINS_LEVELS.reduce((sum, level) => sum + level * (counts[String(level)] || counts[level] || 0), 0) / total;
+  return clampCollinsLevel(Math.round(score), userLevel);
+}
+
 export function buildDiagnosticSnapshot({
   text,
   userLevel,
@@ -107,12 +105,12 @@ export function buildDiagnosticSnapshot({
   estimatedChargeYuan = null,
   diagnosedAt = Date.now(),
 }) {
-  const safeUserLevel = clampCefrLevel(userLevel);
+  const safeUserLevel = clampCollinsLevel(userLevel);
   const levelCounts = { ...EMPTY_LEVEL_COUNTS, ...(report?.levelCounts || {}) };
   const totalWords = Number(report?.totalWords || 0);
-  const materialDifficulty = clampCefrLevel(report?.overallGrade, safeUserLevel);
+  const materialDifficulty = normalizeMaterialDifficulty(levelCounts, safeUserLevel);
   const recommendedTargetLevel = getRecommendedTargetLevel(safeUserLevel, materialDifficulty);
-  const safeSelectedTargetLevel = clampCefrLevel(selectedTargetLevel, recommendedTargetLevel);
+  const safeSelectedTargetLevel = clampCollinsLevel(selectedTargetLevel, recommendedTargetLevel);
   const targetMetrics = deriveTargetMetrics(levelCounts, totalWords, safeSelectedTargetLevel);
   const estimatedSeconds = estimateDiagnosticSeconds(estimatedTokens, text);
 
@@ -123,8 +121,8 @@ export function buildDiagnosticSnapshot({
     selectedTargetLevel: safeSelectedTargetLevel,
     totalWords,
     levelCounts,
-    fitMessage: report?.userAdaptability?.message || "",
-    fitScore: report?.userAdaptability?.score ?? null,
+    fitMessage: report?.fitMessage || "",
+    fitScore: report?.fitScore ?? null,
     estimatedTokens,
     estimatedChargeYuan,
     estimatedSeconds,
@@ -137,7 +135,7 @@ export function updateDiagnosticTarget(snapshot, targetLevel) {
   if (!snapshot) {
     return null;
   }
-  const safeTargetLevel = clampCefrLevel(targetLevel, snapshot.recommendedTargetLevel || snapshot.userLevel);
+  const safeTargetLevel = clampCollinsLevel(targetLevel, snapshot.recommendedTargetLevel || snapshot.userLevel);
   const targetMetrics = deriveTargetMetrics(snapshot.levelCounts, snapshot.totalWords, safeTargetLevel);
   return {
     ...snapshot,
@@ -145,3 +143,5 @@ export function updateDiagnosticTarget(snapshot, targetLevel) {
     ...targetMetrics,
   };
 }
+
+

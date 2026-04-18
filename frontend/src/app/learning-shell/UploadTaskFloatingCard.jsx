@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getUploadTaskTone, getUploadToneStyles } from "../../features/upload/uploadStatusTheme";
 
@@ -103,3 +103,5 @@ export function UploadTaskFloatingCard({ activePanel, accessToken, uploadTaskSta
     </div>
   );
 }
+
+

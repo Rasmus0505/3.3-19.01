@@ -1,4 +1,4 @@
-/**
+﻿/**
  * readingRewriteDB.js — IndexedDB 模块：重写结果持久化
  * ======================================================
  * Phase 32: Rewrite Persistence
@@ -289,3 +289,5 @@ export async function clearAllRewriteRecords() {
     req.onerror = () => reject(req.error);
   });
 }
+
+

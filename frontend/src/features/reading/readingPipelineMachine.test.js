@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import {
   createInitialPipelineState,
   normalizePipelineState,
@@ -70,3 +70,5 @@ describe("readingPipelineMachine", () => {
     expect(restored.resumeAvailable).toBe(true);
   });
 });
+
+

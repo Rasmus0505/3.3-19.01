@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import DASHSCOPE_API_KEY
 from app.core.timezone import now_shanghai_naive
 from app.models.lesson import Lesson, LessonSentence
+from app.services.collins_levels import normalize_collins_level
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
 from app.services.tts_service import synthesize_speech, get_available_voices
 
@@ -49,7 +50,7 @@ def generate_dictation_lesson(
     *,
     user_id: int,
     sentences: list[str],
-    target_level: str,
+    target_level: int,
     article_title: str,
     voice: Optional[str] = None,
 ) -> Lesson:
@@ -77,7 +78,7 @@ def generate_dictation_lesson(
         duration_ms=0,
         source_duration_ms=0,
         status="ready",
-        user_cefr_level=target_level,
+        user_collins_level=normalize_collins_level(target_level, default=3) or 3,
     )
     db.add(lesson)
     db.flush()

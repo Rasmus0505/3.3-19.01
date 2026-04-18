@@ -1,4 +1,4 @@
-const STORAGE_PREFIX = "english_asr_getting_started";
+﻿const STORAGE_PREFIX = "english_asr_getting_started";
 
 const DEFAULT_PROGRESS = Object.freeze({
   homeVisited: false,
@@ -70,3 +70,5 @@ export function markGettingStartedCompleted(userId) {
     welcomeShown: true,
   });
 }
+
+

@@ -1,4 +1,4 @@
-"""Reading classroom generation and live discussion endpoints."""
+﻿"""Reading classroom generation and live discussion endpoints."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ class ReadingCourseGenerateRequest(BaseModel):
     article_title: str = ""
     original_text: str = Field(..., min_length=20)
     rewritten_text: str = Field(..., min_length=20)
-    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    target_level: int = Field(3, ge=1, le=5)
     valid_i1_words: list[str] = Field(default_factory=list)
     valid_above_i1_words: list[str] = Field(default_factory=list)
     word_levels: dict[str, str] = Field(default_factory=dict)
@@ -386,7 +386,7 @@ The classroom has three participants:
 You will receive a fallback course structure. Your job is to REWRITE the content of every scene so it is:
 1. Directly based on the actual article text provided.
 2. Rich with natural teacher/student dialogue in the beats.
-3. Pedagogically sound for the target CEFR level.
+3. Pedagogically sound for the target Collins level.
 
 CRITICAL RULES:
 - Return ONLY valid JSON. No markdown, no explanation outside the JSON.
@@ -422,7 +422,7 @@ def generate_reading_course_endpoint(body: ReadingCourseGenerateRequest, current
 
     # Send the fallback as the structural template + article text for content grounding
     user_content = (
-        f"Target CEFR level: {body.target_level}\n"
+        f"Target Collins level: {body.target_level}\n"
         f"Key vocabulary: {', '.join(_dedupe_words([*body.valid_above_i1_words, *body.valid_i1_words])[:12])}\n\n"
         f"REWRITTEN ARTICLE (i+1 version — use this as primary teaching material):\n{body.rewritten_text[:MAX_TEXT_CHARS]}\n\n"
         f"ORIGINAL ARTICLE (for reference):\n{body.original_text[:3000]}\n\n"
@@ -549,7 +549,7 @@ class V3CourseGenerateRequest(BaseModel):
     article_title: str = ""
     original_text: str = Field(..., min_length=20)
     rewritten_text: str = Field(..., min_length=20)
-    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    target_level: int = Field(3, ge=1, le=5)
     rewrite_mappings: list[dict] = Field(default_factory=list)  # [{original, replacement}]
     valid_above_i1_words: list[str] = Field(default_factory=list)
     word_levels: dict[str, str] = Field(default_factory=dict)
@@ -726,7 +726,7 @@ def generate_v3_course_endpoint(
     ]
     user_content = (
         f"Article title: {body.article_title or 'Reading Classroom'}\n"
-        f"Target CEFR level: {body.target_level}\n"
+        f"Target Collins level: {body.target_level}\n"
         f"Key vocabulary (i+1 words): {', '.join(body.valid_above_i1_words[:10])}\n\n"
         "Sections to process:\n"
         + json.dumps(sections_for_llm, ensure_ascii=False)
@@ -797,7 +797,7 @@ class ExplainGenerateRequest(BaseModel):
     confused_words: list[str] = Field(default_factory=list)
     color_marks: list[dict] = Field(default_factory=list)  # [{text, color}]
     default_spotlight_words: list[str] = Field(default_factory=list)
-    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    target_level: int = Field(3, ge=1, le=5)
     article_title: str = ""
     teacher_name: str = "Coach Mira"
 
@@ -952,7 +952,7 @@ class DiscussGenerateRequest(BaseModel):
     article_title: str = ""
     teacher_name: str = "Coach Mira"
     student_names: list[str] = Field(default_factory=list)
-    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    target_level: int = Field(3, ge=1, le=5)
 
 
 class DiscussGenerateResponse(BaseModel):
@@ -1074,14 +1074,14 @@ def generate_discuss_actions(
 class WordDefinitionRequest(BaseModel):
     word: str = Field(..., min_length=1, max_length=80)
     context_sentence: str = Field("", max_length=400)
-    target_level: str = Field("B1", pattern="^(A1|A2|B1|B2|C1|C2)$")
+    target_level: int = Field(3, ge=1, le=5)
 
 
 class WordDefinitionResponse(BaseModel):
     ok: bool
     word: str
     definition: str
-    cefr: str
+    collins: int
     phonetic: str = ""
 
 
@@ -1100,7 +1100,7 @@ def get_word_definition(
     system = (
         "You are a concise English dictionary for language learners.\n"
         "Return ONLY valid JSON with exactly these fields:\n"
-        '{"definition": "Chinese definition (1 sentence, max 20 chars)", "cefr": "A1/A2/B1/B2/C1/C2", "phonetic": "IPA or empty string"}\n'
+        '{"definition": "Chinese definition (1 sentence, max 20 chars)", "collins": 3, "phonetic": "IPA or empty string"}\n'
         "No markdown. No extra fields. Definition must be in Chinese."
     )
     context_hint = f"\nContext: {body.context_sentence}" if body.context_sentence else ""
@@ -1120,9 +1120,10 @@ def get_word_definition(
             ok=True,
             word=body.word,
             definition=_trim(parsed.get("definition", ""), 80) or body.word,
-            cefr=_trim(parsed.get("cefr", ""), 4) or "?",
+            collins=int(parsed.get("collins", 3) or 3),
             phonetic=_trim(parsed.get("phonetic", ""), 80),
         )
     except Exception as exc:
         logger.warning("word_definition failed for %r: %s", body.word, exc)
         raise HTTPException(status_code=502, detail="Definition lookup failed")
+

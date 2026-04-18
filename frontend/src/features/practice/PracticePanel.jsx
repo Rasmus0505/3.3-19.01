@@ -423,3 +423,5 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
   );
 }
 
+
+

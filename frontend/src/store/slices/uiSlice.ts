@@ -1,4 +1,4 @@
-type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
+﻿type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 
 export const uiInitialState = {
   globalStatus: "",
@@ -25,3 +25,5 @@ export function createUiSlice(set: Setter) {
     setUploadTaskState: (uploadTaskState: unknown) => set({ uploadTaskState: uploadTaskState || null }),
   };
 }
+
+

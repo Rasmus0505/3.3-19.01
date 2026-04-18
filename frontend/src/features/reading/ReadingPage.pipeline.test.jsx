@@ -1,15 +1,15 @@
-import { render, screen, waitFor } from "@testing-library/react";
+﻿import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 let mockRewriteState = null;
 
 vi.mock("../../app/authStorage", () => ({
-  readCefrLevel: () => "B1",
+  readCollinsLevel: () => 3,
 }));
 
 vi.mock("./ArticlePanel", () => ({
-  computeCefrClassName: () => "cefr-i-plus-one",
+  computeDifficultyClassName: () => "difficulty-i-plus-one",
   ArticlePanel: () => <div>ArticlePanel</div>,
 }));
 
@@ -181,3 +181,5 @@ describe("ReadingPage phase 36 flow", () => {
     });
   });
 });
+
+

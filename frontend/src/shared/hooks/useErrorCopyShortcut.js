@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+﻿import { useEffect } from "react";
 import { toast } from "sonner";
 
 import { copyErrorToClipboard, getActiveAdminError } from "../lib/errorFormatter";
@@ -23,3 +23,5 @@ export function useErrorCopyShortcut() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 }
+
+

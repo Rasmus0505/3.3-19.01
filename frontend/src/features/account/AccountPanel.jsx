@@ -1,9 +1,9 @@
-import { Bell, ChevronDown, ChevronRight } from "lucide-react";
+﻿import { Bell, ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CircleUserRound, Save } from "lucide-react";
 import { toast } from "sonner";
 
-import { writeStoredUser, writeCefrLevel } from "../../app/authStorage";
+import { writeStoredUser, writeCollinsLevel } from "../../app/authStorage";
 import { parseResponse, toErrorText } from "../../shared/api/client";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, RadioGroup, RadioGroupItem, ScrollArea } from "../../shared/ui";
 import { useAppStore } from "../../store";
@@ -19,19 +19,18 @@ function formatDate(isoString) {
   }
 }
 
-const CEFR_LEVELS = [
-  { value: "A1", label: "A1", description: "能理解和使用熟悉的日常表达和非常简单的句子" },
-  { value: "A2", label: "A2", description: "能理解最直接相关领域的熟悉事物，能进行简单日常对话" },
-  { value: "B1", label: "B1", description: "在英语国家旅行时能应对大多数情况，能围绕熟悉话题简单连贯地表达" },
-  { value: "B2", label: "B2", description: "能与母语者比较流利地互动，能清晰详细地表达观点" },
-  { value: "C1", label: "C1", description: "能有效运用语言，能流畅自如地表达复杂思想" },
-  { value: "C2", label: "C2", description: "毫不费力地进行理解，能非常流利地精确表达" },
+const COLLINS_LEVELS = [
+  { value: 5, label: "5 星", description: "最常见、最基础的词。更适合刚起步的学习者。" },
+  { value: 4, label: "4 星", description: "高频常用词。适合已经掌握 5 星词后继续扩展。" },
+  { value: 3, label: "3 星", description: "常见但开始有一定门槛，适合作为中间层。" },
+  { value: 2, label: "2 星", description: "偏进阶词。通常会明显更有挑战。" },
+  { value: 1, label: "1 星", description: "相对更难、更不常见的词。" },
 ];
 
 export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
   const setCurrentUser = useAppStore((state) => state.setCurrentUser);
-  const cefrLevel = useAppStore((state) => state.cefrLevel);
-  const setCefrLevel = useAppStore((state) => state.setCefrLevel);
+  const collinsLevel = useAppStore((state) => state.collinsLevel);
+  const setCollinsLevel = useAppStore((state) => state.setCollinsLevel);
   const [username, setUsername] = useState(currentUser?.username || "");
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -117,21 +116,21 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
     }
   }
 
-  async function handleCefrLevelChange(newLevel) {
+  async function handleCollinsLevelChange(newLevel) {
     try {
       const resp = await apiCall("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: currentUser?.username, cefr_level: newLevel }),
+        body: JSON.stringify({ username: currentUser?.username, collins_level: Number(newLevel) }),
       });
       const data = await parseResponse(resp);
       if (!resp.ok) {
-        toast.error(toErrorText(data, "更新学习水平失败"));
+        toast.error(toErrorText(data, "更新 Collins 等级失败"));
         return;
       }
-      setCefrLevel(newLevel);
-      writeCefrLevel(newLevel);
-      toast.success("学习水平已更新");
+      setCollinsLevel(Number(newLevel));
+      writeCollinsLevel(Number(newLevel));
+      toast.success("Collins 等级已更新");
     } catch (error) {
       toast.error(`网络错误: ${String(error)}`);
     }
@@ -180,26 +179,26 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
         </CardContent>
       </Card>
 
-      {/* CEFR Level Selector */}
+      {/* Collins Level Selector */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">学习水平</CardTitle>
-          <CardDescription>设置你的 CEFR 水平，影响生词高亮和内容推荐</CardDescription>
+          <CardTitle className="text-base">学习词汇等级</CardTitle>
+          <CardDescription>设置你当前适合的 Collins 星级，影响 i+1 绿色和高难红色下划线。</CardDescription>
         </CardHeader>
         <CardContent>
           <RadioGroup
-            value={cefrLevel}
-            onValueChange={handleCefrLevelChange}
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+            value={String(collinsLevel)}
+            onValueChange={(value) => handleCollinsLevelChange(Number(value))}
+            className="grid grid-cols-1 gap-2"
           >
-            {CEFR_LEVELS.map((level) => (
+            {COLLINS_LEVELS.map((level) => (
               <div
                 key={level.value}
                 className="flex items-start gap-3 rounded-xl border p-3 hover:bg-muted/40 transition-colors"
               >
-                <RadioGroupItem value={level.value} id={`cefr-${level.value}`} className="mt-0.5" />
-                <Label htmlFor={`cefr-${level.value}`} className="flex-1 cursor-pointer">
-                  <span className="text-sm font-bold text-foreground">{level.value}</span>
+                <RadioGroupItem value={String(level.value)} id={`collins-${level.value}`} className="mt-0.5" />
+                <Label htmlFor={`collins-${level.value}`} className="flex-1 cursor-pointer">
+                  <span className="text-sm font-bold text-foreground">{level.label}</span>
                   <span className="ml-2 text-xs text-muted-foreground">{level.description}</span>
                 </Label>
               </div>
@@ -268,3 +267,5 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-// 沉浸式学习媒体控制 Hook
+﻿// 沉浸式学习媒体控制 Hook
 // 管理媒体加载、播放状态和错误处理
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -284,3 +284,5 @@ export function useMediaController({
     handleMainMediaError,
   };
 }
+
+

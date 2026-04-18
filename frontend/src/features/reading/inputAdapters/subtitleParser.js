@@ -1,4 +1,4 @@
-/**
+﻿/**
  * subtitleParser.js — 客户端 SRT/VTT 字幕解析工具
  * =================================================
  * Phase 39: Multi-Modal Input Pipeline (D-06, D-08, D-09)
@@ -198,3 +198,5 @@ export function readSubtitleFile(file) {
     reader.readAsText(file, "utf-8");
   });
 }
+
+

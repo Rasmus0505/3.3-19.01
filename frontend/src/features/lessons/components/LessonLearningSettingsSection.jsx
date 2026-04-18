@@ -1,4 +1,4 @@
-import { cn } from "../../../lib/utils";
+﻿import { cn } from "../../../lib/utils";
 import { Alert, AlertDescription, Button, Switch } from "../../../shared/ui";
 import { getShortcutLabel, SHORTCUT_ACTIONS, HINT_AFTER_REPLAY_OPTIONS } from "../../immersive/learningSettings";
 
@@ -70,3 +70,5 @@ export function LessonLearningSettingsSection({
     </section>
   );
 }
+
+

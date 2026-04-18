@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SelectionToolbar — appears when user selects text.
  * Actions: color marks | Mark as confused | Add to wordbook
  */
@@ -58,3 +58,5 @@ export function SelectionToolbar({ text, rect, onMarkConfused, onAddToWordbook, 
     </motion.div>
   );
 }
+
+

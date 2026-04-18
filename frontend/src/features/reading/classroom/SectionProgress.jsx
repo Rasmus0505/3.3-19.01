@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SectionProgress — top bar showing "第 N 节 / 共 M 节" and current phase name.
  */
 import { cn } from "../../../lib/utils";
@@ -35,3 +35,5 @@ export function SectionProgress({ sectionIndex, totalSections, phase, className 
     </div>
   );
 }
+
+

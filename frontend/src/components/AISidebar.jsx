@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+﻿import { useState, useRef, useCallback } from "react";
 import { PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 
 /**
@@ -117,3 +117,5 @@ export default function AISidebar({
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import { Badge, Card, CardContent } from "../../shared/ui";
 
@@ -83,3 +83,5 @@ export function HeatmapChart({ report }) {
     </Card>
   );
 }
+
+

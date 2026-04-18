@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Volume2, Loader2 } from "lucide-react";
 import { parseResponse } from "../../shared/api/client";
 import SOEResultCard from "./SOEResultCard";
@@ -165,3 +165,5 @@ export function ChatTypingIndicator() {
     </div>
   );
 }
+
+

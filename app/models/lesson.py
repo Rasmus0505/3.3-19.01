@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 
@@ -22,7 +22,7 @@ class Lesson(Base):
     media_storage: Mapped[str] = mapped_column(String(32), default="server", nullable=False)
     source_duration_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
-    user_cefr_level: Mapped[str | None] = mapped_column(String(10), nullable=True, comment="用户生成课程时的CEFR等级")
+    user_collins_level: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="用户生成课程时的 Collins 星级")
     requested_generation_options_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     effective_generation_options_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     generated_content_status_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -50,8 +50,7 @@ class LessonSentence(Base):
     tokens_json: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
     audio_clip_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    # CEFR 相关字段
-    cefr_vocab_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 句子中词汇的CEFR等级信息
+    vocabulary_analysis_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # 句子中的 Collins 分级与高亮信息
     needs_explanation: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # 讲解相关字段
@@ -178,3 +177,4 @@ class WordbookEntrySource(Base):
 
     entry: Mapped[WordbookEntry] = relationship(back_populates="source_links")
     lesson: Mapped[Lesson] = relationship()
+

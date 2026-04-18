@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, CircleHelp, RotateCcw } from "lucide-react";
 
 import { Badge, Button } from "../../shared/ui";
@@ -178,3 +178,5 @@ export default function ComprehensionCheckPanel({
     </div>
   );
 }
+
+

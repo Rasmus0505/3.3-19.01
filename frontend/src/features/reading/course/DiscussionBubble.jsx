@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DiscussionBubble — A single Teacher or Student chat bubble.
  */
 import { cn } from "../../../lib/utils";
@@ -53,3 +53,5 @@ export function DiscussionBubble({ role, content, isActive, index = 0 }) {
     </div>
   );
 }
+
+

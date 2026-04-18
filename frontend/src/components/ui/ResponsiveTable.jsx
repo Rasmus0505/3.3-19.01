@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+﻿import { ChevronRight } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import { Card, CardContent } from "./card";
@@ -110,3 +110,5 @@ export function ResponsiveTable({
     </div>
   );
 }
+
+

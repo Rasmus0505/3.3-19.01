@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, Download, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
+﻿import { CheckCircle2, Clock3, Download, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 
 import { cn } from "../../../lib/utils";
 import { Badge, Button, MediaCover, Popover, PopoverContent, PopoverTrigger, Progress } from "../../../shared/ui";
@@ -34,12 +34,12 @@ export function LessonHistoryCard({
     actionLabel,
     isLocalLesson,
     createdAtLabel,
-    cefrLoading,
-    cefrDistribution,
+    difficultyLoading,
+    difficultyDistribution,
   } = card;
   const contentStatus = lesson?.generated_content_status || {};
   const canRecoverTranslation = contentStatus.zh_translation && contentStatus.zh_translation !== "generated";
-  const canRecoverCefr = contentStatus.cefr_annotation && contentStatus.cefr_annotation !== "generated";
+  const canRecoverVocabulary = contentStatus.vocabulary_annotation && contentStatus.vocabulary_annotation !== "generated";
   const canRecoverExplanation = contentStatus.word_explanation && contentStatus.word_explanation !== "generated";
 
   return (
@@ -144,41 +144,41 @@ export function LessonHistoryCard({
               </div>
             </div>
 
-            {cefrLoading ? (
+            {difficultyLoading ? (
               <div className="flex items-center gap-2">
                 <div className="h-1 flex-1 animate-pulse rounded-full bg-muted" />
                 <span className="text-xs text-muted-foreground">分析中...</span>
               </div>
-            ) : cefrDistribution ? (
+            ) : difficultyDistribution ? (
               <div className="flex items-center gap-2">
-                <div className="cefr-distribution-bar flex-1">
-                  {cefrDistribution.masteredPercent > 0 ? (
+                <div className="difficulty-distribution-bar flex-1">
+                  {difficultyDistribution.masteredPercent > 0 ? (
                     <div
-                      className="cefr-distribution-segment cefr-distribution-segment--mastered"
-                      style={{ width: `${cefrDistribution.masteredPercent}%` }}
+                      className="difficulty-distribution-segment difficulty-distribution-segment--mastered"
+                      style={{ width: `${difficultyDistribution.masteredPercent}%` }}
                     />
                   ) : null}
-                  {cefrDistribution.iPlusOnePercent > 0 ? (
+                  {difficultyDistribution.iPlusOnePercent > 0 ? (
                     <div
-                      className="cefr-distribution-segment cefr-distribution-segment--i-plus-one"
-                      style={{ width: `${cefrDistribution.iPlusOnePercent}%` }}
+                      className="difficulty-distribution-segment difficulty-distribution-segment--i-plus-one"
+                      style={{ width: `${difficultyDistribution.iPlusOnePercent}%` }}
                     />
                   ) : null}
-                  {cefrDistribution.aboveIPlusOnePercent > 0 ? (
+                  {difficultyDistribution.aboveIPlusOnePercent > 0 ? (
                     <div
-                      className="cefr-distribution-segment cefr-distribution-segment--above-i-plus-one"
-                      style={{ width: `${cefrDistribution.aboveIPlusOnePercent}%` }}
+                      className="difficulty-distribution-segment difficulty-distribution-segment--above-i-plus-one"
+                      style={{ width: `${difficultyDistribution.aboveIPlusOnePercent}%` }}
                     />
                   ) : null}
                 </div>
                 <span
-                  className={`history-card-cefr-badge ${
-                    cefrDistribution.iPlusOnePercent >= cefrDistribution.aboveIPlusOnePercent
-                      ? "history-card-cefr-badge--i-plus-one"
-                      : "history-card-cefr-badge--above-i-plus-one"
+                  className={`history-card-difficulty-badge ${
+                    difficultyDistribution.iPlusOnePercent >= difficultyDistribution.aboveIPlusOnePercent
+                      ? "history-card-difficulty-badge--i-plus-one"
+                      : "history-card-difficulty-badge--above-i-plus-one"
                   }`}
                 >
-                  {cefrDistribution.dominantLevel}: {Math.max(cefrDistribution.iPlusOnePercent, cefrDistribution.aboveIPlusOnePercent)}%
+                  {difficultyDistribution.dominantLabel}: {Math.max(difficultyDistribution.iPlusOnePercent, difficultyDistribution.aboveIPlusOnePercent)}%
                 </span>
               </div>
             ) : null}
@@ -254,13 +254,13 @@ export function LessonHistoryCard({
                       {actionLessonId === String(lesson.id) ? "补翻译中..." : "补翻译"}
                     </Button>
                   ) : null}
-                  {canRecoverCefr ? (
+                  {canRecoverVocabulary ? (
                     <Button
                       type="button"
                       size="sm"
                       variant="ghost"
                       className="w-full justify-start"
-                      onClick={() => onGenerateMissingContent(lesson, { cefr_annotation: true }, "已补充生词标注")}
+                      onClick={() => onGenerateMissingContent(lesson, { vocabulary_annotation: true }, "已补充生词标注")}
                       disabled={renameBusy || deleteBusy || Boolean(restoringLessonId) || Boolean(actionLessonId)}
                     >
                       <RotateCcw className="size-4" />
@@ -326,3 +326,6 @@ export function LessonHistoryCard({
     </div>
   );
 }
+
+
+

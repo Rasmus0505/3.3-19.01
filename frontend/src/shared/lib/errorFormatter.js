@@ -1,4 +1,4 @@
-import { formatDateTimeBeijing } from "./datetime";
+﻿import { formatDateTimeBeijing } from "./datetime";
 
 let activeAdminError = null;
 
@@ -308,3 +308,5 @@ export async function copyErrorToClipboard(error = activeAdminError) {
   setActiveAdminError(error);
   await copyTextToClipboard(buildErrorCopyText(error));
 }
+
+

@@ -1,4 +1,4 @@
-import { Gift } from "lucide-react";
+﻿import { Gift } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -96,3 +96,5 @@ export function RedeemCodePanel({ apiCall, onWalletChanged }) {
     </Card>
   );
 }
+
+

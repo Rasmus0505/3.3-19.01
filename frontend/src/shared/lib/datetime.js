@@ -1,4 +1,4 @@
-const BEIJING_TIME_ZONE = "Asia/Shanghai";
+﻿const BEIJING_TIME_ZONE = "Asia/Shanghai";
 const BEIJING_OFFSET = "+08:00";
 
 function pad2(value) {
@@ -77,3 +77,5 @@ export function datetimeLocalToBeijingOffset(value) {
   const parts = getBeijingParts(parsed);
   return `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}T${pad2(parts.hour)}:${pad2(parts.minute)}:${pad2(parts.second)}${BEIJING_OFFSET}`;
 }
+
+

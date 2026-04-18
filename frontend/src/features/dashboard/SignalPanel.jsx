@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+﻿import { motion } from "framer-motion";
 import { Activity, Crosshair, Gauge, Sparkles } from "lucide-react";
 import { Badge, Card, CardContent } from "../../shared/ui";
 
@@ -51,3 +51,5 @@ export function SignalPanel({ report }) {
     </Card>
   );
 }
+
+

@@ -1,4 +1,4 @@
-import { BarChart3, BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff } from "lucide-react";
+﻿import { BarChart3, BookOpenText, ChevronDown, History, LogIn, LogOut, RefreshCw, Search, Shield, Sparkles, UploadCloud, UserRound, Wifi, WifiOff } from "lucide-react";
 
 import {
   SidebarContent,
@@ -303,3 +303,5 @@ export function LearningShellSidebar({
     </>
   );
 }
+
+

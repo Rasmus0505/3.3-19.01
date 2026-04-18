@@ -1,4 +1,4 @@
-import { Trash2, Archive, Move, X } from "lucide-react";
+﻿import { Trash2, Archive, Move, X } from "lucide-react";
 import { Button, Separator } from "../../shared/ui";
 import {
   Tooltip,
@@ -88,3 +88,5 @@ export function FloatingToolbar({
     </TooltipProvider>
   );
 }
+
+

@@ -1,7 +1,7 @@
-import { TOKEN_KEY, readCefrLevel } from "../../app/authStorage";
+﻿import { TOKEN_KEY, readCollinsLevel } from "../../app/authStorage";
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
+import { classifyTokensByCollins } from "../../shared/api/dictionaryApi";
 import { useAppStore } from "../../store";
-import { VocabAnalyzer } from "../../utils/vocabAnalyzer";
 
 const BOTTLE_LESSON_SCHEMA_VERSION = "1";
 const BOTTLE_LESSON_FILE_SUFFIX = ".bottle-lesson.json";
@@ -265,60 +265,51 @@ export function buildLessonProgressState(progress, sentenceCount) {
   };
 }
 
-const CEFR_ANALYSIS_KEY_PREFIX = "cefr_analysis_v1:";
+const WORD_DIFFICULTY_KEY_PREFIX = "difficulty_distribution_v1:";
 
-function getCefrAnalysisKey(lessonId) {
-  return `${CEFR_ANALYSIS_KEY_PREFIX}${lessonId}`;
+function getDifficultyAnalysisKey(lessonId) {
+  return `${WORD_DIFFICULTY_KEY_PREFIX}${lessonId}`;
 }
 
-function computeCefrDistribution(analysisResult, userLevel) {
-  const distribution = analysisResult?.distribution ?? analysisResult?.levelCounts;
-  const grade = analysisResult?.grade ?? analysisResult?.overallGrade ?? "B1";
+function computeCollinsDistribution(analysisResult) {
+  const distribution = analysisResult?.distribution;
   if (!distribution || typeof distribution !== "object") return null;
-  const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
+  const total = Object.values(distribution).reduce((sum, count) => sum + (Number(count) || 0), 0);
   if (total === 0) return null;
-
-  const levelOrder = ["A1", "A2", "B1", "B2", "C1", "C2", "SUPER"];
-  const rawUserIndex = levelOrder.indexOf(userLevel);
-  const userIndex = rawUserIndex === -1 ? levelOrder.indexOf("B1") : rawUserIndex;
-
-  let iPlusOnePercent = 0;
-  let aboveIPlusOnePercent = 0;
-  let masteredPercent = 0;
-
-  for (const [level, count] of Object.entries(distribution)) {
-    const levelIndex = levelOrder.indexOf(level);
-    const percent = (count / total) * 100;
-    if (levelIndex <= userIndex) {
-      masteredPercent += percent;
-    } else if (levelIndex === userIndex + 1) {
-      iPlusOnePercent += percent;
-    } else {
-      aboveIPlusOnePercent += percent;
-    }
-  }
+  const defaultPercent = Math.round(((Number(distribution.default) || 0) / total) * 100);
+  const iPlusOnePercent = Math.round(((Number(distribution.i_plus_one) || 0) / total) * 100);
+  const aboveIPlusOnePercent = Math.round(((Number(distribution.above_i_plus_one) || 0) / total) * 100);
+  const unratedPercent = Math.round(((Number(distribution.unrated) || 0) / total) * 100);
+  const dominantLabel =
+    iPlusOnePercent >= aboveIPlusOnePercent
+      ? "i+1"
+      : "高难";
 
   return {
     iPlusOnePercent: Math.round(iPlusOnePercent),
     aboveIPlusOnePercent: Math.round(aboveIPlusOnePercent),
-    masteredPercent: Math.round(masteredPercent),
-    dominantLevel: grade,
+    masteredPercent: Math.round(defaultPercent),
+    unratedPercent,
+    dominantLabel,
     rawDistribution: distribution,
   };
 }
 
 export async function ensureCefrAnalysis(lessonId, sentences) {
-  const key = getCefrAnalysisKey(lessonId);
+  const key = getDifficultyAnalysisKey(lessonId);
+  const accessToken = typeof window !== "undefined" && window.localStorage ? window.localStorage.getItem(TOKEN_KEY) || "" : "";
+  if (!accessToken) {
+    return;
+  }
 
   if (typeof localStorage !== "undefined") {
     const cached = localStorage.getItem(key);
     if (cached) {
       try {
         const analysis = JSON.parse(cached);
-        const userLevel = readCefrLevel() || "B1";
-        const distribution = computeCefrDistribution(analysis, userLevel);
+        const distribution = computeCollinsDistribution(analysis);
         if (distribution) {
-          useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrDistribution: distribution });
+          useAppStore.getState().mergeLessonCardMeta(lessonId, { difficultyDistribution: distribution });
           return;
         }
       } catch (_) {
@@ -327,19 +318,31 @@ export async function ensureCefrAnalysis(lessonId, sentences) {
     }
   }
 
-  useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrLoading: true });
+  useAppStore.getState().mergeLessonCardMeta(lessonId, { difficultyLoading: true });
   try {
-    const analyzer = new VocabAnalyzer();
-    await analyzer.load();
-    const analysis = analyzer.analyzeVideo(sentences || []);
+    const tokens = Array.from(
+      new Set(
+        (Array.isArray(sentences) ? sentences : [])
+          .flatMap((sentence) => String(sentence?.text_en || sentence?.english_text || sentence?.text || "").match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) || [])
+          .map((item) => String(item || "").trim())
+          .filter(Boolean)
+      )
+    );
+    const userCollinsLevel = readCollinsLevel() || 3;
+    const payload = await classifyTokensByCollins(api, accessToken, tokens);
+    const distribution = { default: 0, i_plus_one: 0, above_i_plus_one: 0, unrated: 0 };
+    for (const item of Array.isArray(payload?.items) ? payload.items : []) {
+      const band = String(item?.band || "unrated");
+      distribution[band] = (Number(distribution[band]) || 0) + 1;
+    }
+    const analysis = { distribution, userCollinsLevel };
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(key, JSON.stringify(analysis));
     }
-    const userLevel = readCefrLevel() || "B1";
-    const distribution = computeCefrDistribution(analysis, userLevel);
-    useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrDistribution: distribution, cefrLoading: false });
+    const distributionSummary = computeCollinsDistribution(analysis);
+    useAppStore.getState().mergeLessonCardMeta(lessonId, { difficultyDistribution: distributionSummary, difficultyLoading: false });
   } catch (_) {
-    useAppStore.getState().mergeLessonCardMeta(lessonId, { cefrLoading: false });
+    useAppStore.getState().mergeLessonCardMeta(lessonId, { difficultyLoading: false });
   }
 }
 
@@ -347,3 +350,5 @@ export function getCoverAssistiveText(lesson) {
   const title = String(lesson?.title || "").trim();
   return title ? `${title} 默认封面` : "课程默认封面";
 }
+
+
