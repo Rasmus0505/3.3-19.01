@@ -32,6 +32,7 @@ describe("LessonPlayerPopup", () => {
                 end_ms: 1200,
                 text_en: "Hello world",
                 text_zh: "你好，世界",
+                tokens: ["Hello", "world"],
                 audio_url: "/api/lessons/12/sentences/0/audio",
               },
             ],
@@ -55,6 +56,9 @@ describe("LessonPlayerPopup", () => {
         onClose={() => {}}
         lessonId={12}
         sentenceIndex={0}
+        highlightStartTokenIndex={0}
+        highlightEndTokenIndex={0}
+        entryText="Hello"
         apiCall={apiCall}
       />,
     );
@@ -65,7 +69,9 @@ describe("LessonPlayerPopup", () => {
     });
 
     await screen.findAllByText("Replay Lesson");
-    expect(screen.getByText("Hello world")).toBeTruthy();
+    expect(screen.getByText("Hello")).toBeTruthy();
+    expect(screen.getByText("高亮词条：Hello")).toBeTruthy();
+    expect(document.querySelector(".text-primary")).not.toBeNull();
     expect(document.querySelector("video")).not.toBeNull();
   });
 });

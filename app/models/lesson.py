@@ -141,6 +141,8 @@ class WordbookEntry(Base):
     entry_type: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="active", nullable=False, index=True)
     latest_sentence_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    start_token_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    end_token_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     latest_sentence_en: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
     latest_sentence_zh: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
     word_translation: Mapped[str] = mapped_column(String(500), nullable=False, default="")

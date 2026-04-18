@@ -93,6 +93,8 @@ def _entry_payload_to_dict(payload: dict[str, object]) -> dict[str, object]:
         "entry_type": str(entry.entry_type or WORD_ENTRY_TYPE),
         "status": str(entry.status or WORD_STATUS_ACTIVE),
         "latest_sentence_idx": int(entry.latest_sentence_idx or 0),
+        "start_token_index": int(getattr(entry, "start_token_index", 0) or 0),
+        "end_token_index": int(getattr(entry, "end_token_index", 0) or 0),
         "latest_sentence_en": str(entry.latest_sentence_en or ""),
         "latest_sentence_zh": str(entry.latest_sentence_zh or ""),
         "word_translation": str(entry.word_translation or ""),
@@ -144,6 +146,8 @@ def collect_wordbook_entry(
             normalized_text=normalized_text,
             entry_type=entry_type,
             latest_sentence_idx=sentence.idx,
+            start_token_index=int(start_token_index),
+            end_token_index=int(end_token_index),
             latest_sentence_en=str(sentence.text_en or ""),
             latest_sentence_zh=str(sentence.text_zh or ""),
             latest_collected_at=now_shanghai_naive(),
@@ -158,6 +162,8 @@ def collect_wordbook_entry(
         existing_entry.latest_lesson_id = lesson.id
         existing_entry.entry_text = canonical_text
         existing_entry.latest_sentence_idx = sentence.idx
+        existing_entry.start_token_index = int(start_token_index)
+        existing_entry.end_token_index = int(end_token_index)
         existing_entry.latest_sentence_en = str(sentence.text_en or "")
         existing_entry.latest_sentence_zh = str(sentence.text_zh or "")
         existing_entry.latest_collected_at = now_shanghai_naive()
@@ -261,14 +267,14 @@ def schedule_async_translation(entry_id: int) -> None:
         from app.db import SessionLocal
         db = SessionLocal()
         try:
-            entry = db.query(WordbookEntry).filter(WordbookEntry.id == entry_id).first()
-            if entry and not entry.word_translation:
-                try:
+            try:
+                entry = db.query(WordbookEntry).filter(WordbookEntry.id == entry_id).first()
+                if entry and not entry.word_translation:
                     translated = translate_to_zh(entry.entry_text, api_key=DASHSCOPE_API_KEY)
                     entry.word_translation = translated
                     db.commit()
-                except Exception:
-                    db.rollback()
+            except Exception:
+                db.rollback()
         finally:
             db.close()
 

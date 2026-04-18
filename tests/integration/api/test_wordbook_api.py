@@ -56,6 +56,8 @@ def test_wordbook_collect_returns_review_metadata(authenticated_client, db_sessi
     assert entry.next_review_at is not None
     assert entry.memory_score > 0
     assert entry.review_count == 0
+    assert entry.start_token_index == 0
+    assert entry.end_token_index == 0
 
     listing = authenticated_client.get("/api/wordbook")
     assert listing.status_code == 200
@@ -115,6 +117,8 @@ def test_wordbook_review_preview_returns_intervals(authenticated_client, db_sess
     )
     assert collect_response.status_code == 200
     entry = WordbookEntryResponse.model_validate(collect_response.json()["entry"])
+    assert entry.start_token_index == 0
+    assert entry.end_token_index == 0
 
     preview_response = authenticated_client.get(f"/api/wordbook/review-preview/{entry.id}")
     assert preview_response.status_code == 200

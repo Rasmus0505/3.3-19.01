@@ -69,7 +69,14 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [reviewPreview, setReviewPreview] = useState(null);
   const [todayCompleted, setTodayCompleted] = useState(0);
   const [reviewFeedback, setReviewFeedback] = useState(null);
-  const [lessonPopup, setLessonPopup] = useState({ open: false, lessonId: null, sentenceIndex: 0 });
+  const [lessonPopup, setLessonPopup] = useState({
+    open: false,
+    lessonId: null,
+    sentenceIndex: 0,
+    startTokenIndex: 0,
+    endTokenIndex: 0,
+    entryText: "",
+  });
   const [clickTooltip, setClickTooltip] = useState(null);
   const [translationDialog, setTranslationDialog] = useState({ open: false, text: "" });
 
@@ -264,12 +271,26 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     return gradeData?.interval || "";
   };
 
-  const openLessonPopup = useCallback((lessonId, sentenceIndex) => {
-    setLessonPopup({ open: true, lessonId, sentenceIndex: sentenceIndex || 0 });
+  const openLessonPopup = useCallback((lessonId, sentenceIndex, startTokenIndex = 0, endTokenIndex = 0, entryText = "") => {
+    setLessonPopup({
+      open: true,
+      lessonId,
+      sentenceIndex: sentenceIndex || 0,
+      startTokenIndex,
+      endTokenIndex,
+      entryText,
+    });
   }, []);
 
   const closeLessonPopup = useCallback(() => {
-    setLessonPopup({ open: false, lessonId: null, sentenceIndex: 0 });
+    setLessonPopup({
+      open: false,
+      lessonId: null,
+      sentenceIndex: 0,
+      startTokenIndex: 0,
+      endTokenIndex: 0,
+      entryText: "",
+    });
   }, []);
 
   const openTranslationDialog = useCallback((text) => {
@@ -633,6 +654,31 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                 type="button"
                                 size="sm"
                                 variant="ghost"
+                                disabled={!item.source_lesson_id}
+                                onClick={() =>
+                                  openLessonPopup(
+                                    item.source_lesson_id,
+                                    item.latest_sentence_idx,
+                                    item.start_token_index,
+                                    item.end_token_index,
+                                    item.entry_text,
+                                  )
+                                }
+                              >
+                                <Play className="size-4" />
+                                来源回看
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-black/80 text-white border-0 backdrop-blur-sm">
+                              <p>回看来源课程并高亮该词或短语</p>
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
                                 disabled={busy}
                                 onClick={() => void openTranslationDialog(item.entry_text)}
                               >
@@ -770,7 +816,15 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                               size="sm"
                               variant="outline"
                               className="shrink-0"
-                              onClick={() => void openLessonPopup(reviewItem.source_lesson_id, reviewItem.latest_sentence_idx)}
+                              onClick={() =>
+                                openLessonPopup(
+                                  reviewItem.source_lesson_id,
+                                  reviewItem.latest_sentence_idx,
+                                  reviewItem.start_token_index,
+                                  reviewItem.end_token_index,
+                                  reviewItem.entry_text,
+                                )
+                              }
                             >
                               <Play className="size-4" />
                               来源回看
@@ -832,6 +886,9 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         onClose={closeLessonPopup}
         lessonId={lessonPopup.lessonId}
         sentenceIndex={lessonPopup.sentenceIndex}
+        highlightStartTokenIndex={lessonPopup.startTokenIndex}
+        highlightEndTokenIndex={lessonPopup.endTokenIndex}
+        entryText={lessonPopup.entryText}
         apiCall={apiCall}
       />
 

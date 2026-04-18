@@ -24,6 +24,8 @@ class WordbookEntryResponse(BaseModel):
     entry_type: WordbookEntryType
     status: WordbookEntryStatus
     latest_sentence_idx: int
+    start_token_index: int = 0
+    end_token_index: int = 0
     latest_sentence_en: str
     latest_sentence_zh: str
     word_translation: str = ""

@@ -489,7 +489,7 @@ export function ImmersiveLessonPage({
     wordbookSuccessAnimationIndexes,
     wordbookSuccessMessage,
     wordbookActionRef,
-    handleWordbookTokenPointerDown,
+    handleWordbookTokenClick,
     collectWordbookEntry,
   } = useWordbookSelection({
     lessonId: lesson?.id,
@@ -2018,7 +2018,7 @@ export function ImmersiveLessonPage({
         wordbookSelectedTokenIndexes,
         wordbookBusy,
         wordbookSuccessAnimationIndexes,
-        handleWordbookTokenPointerDown,
+        handleWordbookTokenClick,
         requestInteractiveWordbookSentencePlayback,
         wordbookSentencePlaybackLabel,
         collectWordbookEntry,
