@@ -12,6 +12,7 @@ export default function ImmersiveLessonShell({
   fullscreenStudyMode = false,
 }) {
   const { ref: typingPanelRef, ...restTypingPanelProps } = typingPanelProps;
+  const typingPanelElement = <TypingPanel ref={typingPanelRef} {...restTypingPanelProps} />;
 
   return (
     <ImmersiveLayout
@@ -19,13 +20,14 @@ export default function ImmersiveLessonShell({
       leftTopContent={
         <VideoPanel
           {...videoPanelProps}
+          typingOverlayContent={fullscreenStudyMode ? typingPanelElement : null}
           currentSentence={restTypingPanelProps.currentSentence}
           previousSentence={restTypingPanelProps.previousSentence}
           nextSentence={restTypingPanelProps.nextSentence}
           sentenceTypingDone={restTypingPanelProps.sentenceTypingDone}
         />
       }
-      leftBottomContent={<TypingPanel ref={typingPanelRef} {...restTypingPanelProps} />}
+      leftBottomContent={fullscreenStudyMode ? null : typingPanelElement}
       rightTopContent={fullscreenStudyMode ? null : (
         <div className="immersive-explanation-shell">
           <ExplanationSidebarContent

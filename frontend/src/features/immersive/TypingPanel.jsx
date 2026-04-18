@@ -177,9 +177,13 @@ const TypingPanel = forwardRef(function TypingPanel(
   const hiddenInputClassName = isTouchDevice
     ? "immersive-hidden-input immersive-hidden-input--touch"
     : "immersive-hidden-input";
+  const typingPanelClassName = cn(
+    "immersive-typing immersive-typing--dock",
+    fullscreenStudyMode ? "immersive-typing--fullscreen-overlay" : "",
+  );
 
   return (
-    <div ref={ref} className="immersive-typing immersive-typing--dock">
+    <div ref={ref} className={typingPanelClassName}>
       {mediaError ? <p className="immersive-typing__notice immersive-typing__notice--error">{mediaError}</p> : null}
 
       <div ref={wordRowFrameRef} className="immersive-word-row-frame">

@@ -52,6 +52,7 @@ const VideoPanel = forwardRef(function VideoPanel(
     requestTogglePausePlayback,
     fullscreenStudyMode,
     onToggleFullscreenStudyMode,
+    typingOverlayContent,
     singleSentenceLoopEnabled,
     handleToggleSingleSentenceLoop,
     playbackRateInputValue,
@@ -192,6 +193,12 @@ const VideoPanel = forwardRef(function VideoPanel(
                         />
                       ))}
                     </div>
+                  </div>
+                ) : null}
+
+                {fullscreenStudyMode && typingOverlayContent ? (
+                  <div className="immersive-media__typing-overlay">
+                    {typingOverlayContent}
                   </div>
                 ) : null}
               </div>

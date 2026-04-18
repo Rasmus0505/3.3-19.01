@@ -9,12 +9,20 @@ export default function ImmersiveLayout({
     fullscreenStudyMode ? " immersive-layout--fullscreen-study" : ""
   }`;
 
+  if (fullscreenStudyMode) {
+    return (
+      <div className={layoutClassName}>
+        <section className="immersive-layout__left immersive-layout__left--fullscreen" aria-label="全屏视频与拼写工作区">
+          {leftTopContent}
+          {leftBottomContent}
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className={layoutClassName}>
-      <section
-        className="immersive-layout__left"
-        aria-label={fullscreenStudyMode ? "全屏视频与拼写工作区" : "视频与拼写工作区"}
-      >
+      <section className="immersive-layout__left" aria-label="视频与拼写工作区">
         <div className="immersive-layout__left-top">{leftTopContent}</div>
         <div className="immersive-layout__divider-horizontal" aria-hidden="true" />
         <div className="immersive-layout__left-bottom">{leftBottomContent}</div>
