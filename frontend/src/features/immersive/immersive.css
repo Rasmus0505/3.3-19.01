@@ -19,6 +19,12 @@
   box-sizing: border-box;
 }
 
+html.immersive-scroll-lock,
+body.immersive-scroll-lock {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
 .immersive-page--immersive {
   min-height: calc(var(--immersive-shell-height) - 24px);
 }

@@ -40,7 +40,10 @@ import {
   POST_ANSWER_REPLAY_STARTED,
   RESET_SENTENCE_GATE,
   SENTENCE_PASSED,
+  SET_LOOP_ENABLED,
   SET_MEDIA_BINDING_REQUIRED,
+  SET_PLAYBACK_RATE,
+  SET_PLAYBACK_RATE_PINNED,
   SET_POST_ANSWER_REPLAY_STATE,
   SET_PHASE,
   SET_SENTENCE_JUMP_VALUE,
@@ -1262,6 +1265,27 @@ export function ImmersiveLessonPage({
       viewportOrientationRef.current = "";
     };
   }, [immersiveActive, syncMobileViewportLayout]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    const shouldLockScroll = immersiveActive && fullscreenStudyMode;
+    const html = document.documentElement;
+    const body = document.body;
+
+    if (!shouldLockScroll) {
+      html.classList.remove("immersive-scroll-lock");
+      body?.classList.remove("immersive-scroll-lock");
+      return undefined;
+    }
+
+    html.classList.add("immersive-scroll-lock");
+    body?.classList.add("immersive-scroll-lock");
+
+    return () => {
+      html.classList.remove("immersive-scroll-lock");
+      body?.classList.remove("immersive-scroll-lock");
+    };
+  }, [fullscreenStudyMode, immersiveActive]);
 
   useEffect(() => {
     if (!typingEnabled || !isTouchDevice || !mobileViewportState.keyboardOpen) return;

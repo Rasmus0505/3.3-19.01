@@ -14,6 +14,23 @@ function addTokenBandToMap(map, token, band) {
   }
 }
 
+function buildStoredBandMap(sentence) {
+  const storedWordLevels = sentence?.vocabulary_analysis_json?.word_levels;
+  if (!storedWordLevels || typeof storedWordLevels !== "object") {
+    return null;
+  }
+  const map = new Map();
+  for (const [word, info] of Object.entries(storedWordLevels)) {
+    if (info?.band) {
+      addTokenBandToMap(map, word, info.band);
+      if (info?.lemma) {
+        addTokenBandToMap(map, info.lemma, info.band);
+      }
+    }
+  }
+  return map.size > 0 ? map : null;
+}
+
 export function lookupBandFromMap(map, token) {
   if (!(map instanceof Map)) return undefined;
   const normalized = normalizeToken(token);
@@ -33,16 +50,12 @@ export function useDifficultyHighlight({ lesson, currentSentenceIndex, accessTok
   const currentSentenceBandMap = useMemo(() => {
     const sentence = lesson?.sentences?.[currentSentenceIndex];
     const map = new Map(bandMap);
-    const storedWordLevels = sentence?.vocabulary_analysis_json?.word_levels;
     if (map.size > 0) {
       return map;
     }
-    if (storedWordLevels && typeof storedWordLevels === "object") {
-      for (const [word, info] of Object.entries(storedWordLevels)) {
-        if (info?.band) {
-          addTokenBandToMap(map, word, info.band);
-        }
-      }
+    const storedMap = buildStoredBandMap(sentence);
+    if (storedMap) {
+      return storedMap;
     }
     return map;
   }, [bandMap, currentSentenceIndex, lesson?.sentences, vocabEngineTick]);
@@ -50,8 +63,15 @@ export function useDifficultyHighlight({ lesson, currentSentenceIndex, accessTok
   useEffect(() => {
     const sentence = lesson?.sentences?.[currentSentenceIndex];
     const tokens = Array.isArray(sentence?.tokens) ? sentence.tokens.filter(Boolean) : [];
+    const storedMap = buildStoredBandMap(sentence);
+    if (storedMap) {
+      setBandMap(storedMap);
+      setAnalysisStatus("complete");
+      return;
+    }
     if (!accessToken || !apiClient || tokens.length === 0) {
       setBandMap(new Map());
+      setAnalysisStatus("idle");
       return;
     }
 
