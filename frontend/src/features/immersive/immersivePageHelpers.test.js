@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 
 import { resolveReplayAssistance } from "./learningSettings";
-import { shouldAutoAdvanceSentence } from "./immersivePageHelpers";
+import { resolveImmersiveShellHeightPx, shouldAutoAdvanceSentence } from "./immersivePageHelpers";
 
 describe("resolveReplayAssistance", () => {
   it("never reveals letters or words during replay", () => {
@@ -66,6 +66,31 @@ describe("shouldAutoAdvanceSentence", () => {
         sentencePlaybackDone: true,
       }),
     ).toBe(true);
+  });
+});
+
+describe("resolveImmersiveShellHeightPx", () => {
+  it("fits desktop fullscreen study to the remaining viewport below the shell top", () => {
+    expect(
+      resolveImmersiveShellHeightPx({
+        isTouchDevice: false,
+        fallbackHeight: 900,
+        currentBaseline: 900,
+        containerTop: 180,
+      }),
+    ).toBe(720);
+  });
+
+  it("keeps touch devices on the visual viewport baseline", () => {
+    expect(
+      resolveImmersiveShellHeightPx({
+        isTouchDevice: true,
+        fallbackHeight: 900,
+        currentBaseline: 812,
+        visualHeight: 700,
+        containerTop: 180,
+      }),
+    ).toBe(812);
   });
 });
 

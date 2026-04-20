@@ -94,6 +94,7 @@ import {
   normalizeComparableToken,
   pruneRevealComparableIndicesForInputs,
   readErrorPayload,
+  resolveImmersiveShellHeightPx,
   resolveInteractiveWordbookContext,
   resolveMediaModeByTypeAndName,
   resolveMediaModeFromFileName,
@@ -411,7 +412,14 @@ export function ImmersiveLessonPage({
     );
 
     if (!container) return;
-    container.style.setProperty("--immersive-shell-height", `${currentBaseline}px`);
+    const shellHeight = resolveImmersiveShellHeightPx({
+      isTouchDevice,
+      currentBaseline,
+      fallbackHeight,
+      visualHeight,
+      containerTop: container.getBoundingClientRect?.().top || 0,
+    });
+    container.style.setProperty("--immersive-shell-height", `${shellHeight}px`);
     container.style.setProperty("--immersive-visual-viewport-height", `${visualHeight}px`);
     container.style.setProperty("--immersive-keyboard-offset", `${keyboardInset}px`);
   }, [isTouchDevice]);

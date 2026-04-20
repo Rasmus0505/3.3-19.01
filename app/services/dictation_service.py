@@ -12,6 +12,7 @@ from app.core.timezone import now_shanghai_naive
 from app.models.lesson import Lesson, LessonSentence
 from app.services.collins_levels import normalize_collins_level
 from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
+from app.services.lessons.vocabulary import extract_vocabulary_analysis_from_sentences
 from app.services.tts_service import synthesize_speech, get_available_voices
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def generate_dictation_lesson(
     db.flush()
 
     cumulative_ms = 0
-    created_sentences: list[LessonSentence] = []
+    prepared_sentences: list[dict[str, object]] = []
 
     for idx, raw_sentence in enumerate(sentences):
         text = raw_sentence.strip()
@@ -118,22 +119,46 @@ def generate_dictation_lesson(
         end_ms = cumulative_ms + estimated_duration
         cumulative_ms = end_ms + 500  # 500ms gap between sentences
 
+        prepared_sentences.append(
+            {
+                "idx": idx,
+                "begin_ms": begin_ms,
+                "end_ms": end_ms,
+                "text_en": normalized_text,
+                "text_zh": text_zh,
+                "tokens": tokens,
+                "audio_url": audio_url,
+            }
+        )
+
+    if not prepared_sentences:
+        db.rollback()
+        raise ValueError("No valid sentences could be processed")
+
+    vocabulary_analyses = extract_vocabulary_analysis_from_sentences(
+        [str(item["text_en"]) for item in prepared_sentences],
+        lesson.user_collins_level,
+    )
+
+    created_sentences: list[LessonSentence] = []
+    for prepared, analysis in zip(prepared_sentences, vocabulary_analyses):
         sentence_record = LessonSentence(
             lesson_id=lesson.id,
-            idx=idx,
-            begin_ms=begin_ms,
-            end_ms=end_ms,
-            text_en=normalized_text,
-            text_zh=text_zh,
-            tokens_json=tokens,
-            audio_clip_path=audio_url,
+            idx=int(prepared["idx"]),
+            begin_ms=int(prepared["begin_ms"]),
+            end_ms=int(prepared["end_ms"]),
+            text_en=str(prepared["text_en"]),
+            text_zh=str(prepared["text_zh"]),
+            tokens_json=[str(item) for item in list(prepared["tokens"])],
+            audio_clip_path=str(prepared["audio_url"] or "") or None,
+            vocabulary_analysis_json={
+                "words": list(analysis.get("words_above") or []),
+                "word_levels": dict(analysis.get("word_levels") or {}),
+                "user_collins_level": lesson.user_collins_level,
+            },
         )
         created_sentences.append(sentence_record)
         db.add(sentence_record)
-
-    if not created_sentences:
-        db.rollback()
-        raise ValueError("No valid sentences could be processed")
 
     lesson.duration_ms = cumulative_ms
     lesson.source_duration_ms = cumulative_ms

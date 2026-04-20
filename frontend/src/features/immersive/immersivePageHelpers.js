@@ -75,6 +75,22 @@ function formatSoeAssessErrorMessage(data, httpStatus = 0) {
   if (typeof detail === "string" && detail.trim()) return detail.trim();
   return httpStatus ? `评测失败（HTTP ${httpStatus}）` : "评测失败";
 }
+
+function resolveImmersiveShellHeightPx({
+  isTouchDevice = false,
+  currentBaseline = 0,
+  fallbackHeight = 0,
+  visualHeight = 0,
+  containerTop = 0,
+}) {
+  if (isTouchDevice) {
+    return Math.max(0, Math.round(currentBaseline || fallbackHeight || visualHeight || 0));
+  }
+  const safeTop = Math.max(0, Math.round(containerTop || 0));
+  const availableHeight = Math.max(0, Math.round(fallbackHeight || 0) - safeTop);
+  if (availableHeight > 0) return availableHeight;
+  return Math.max(0, Math.round(currentBaseline || fallbackHeight || visualHeight || 0));
+}
 const WORD_TIMING_TOLERANCE_MS = 140;
 const WORDBOOK_LONG_PRESS_MS = 260;
 const MOBILE_KEYBOARD_MIN_INSET_PX = 120;
@@ -958,6 +974,7 @@ export {
   normalizeComparableToken,
   buildLetterSlots,
   formatSoeAssessErrorMessage,
+  resolveImmersiveShellHeightPx,
   addSentenceCefrTokensToMap,
   addTokenLevelToMap,
   lookupBandFromMap,
