@@ -1,4 +1,4 @@
-import { parseResponse } from "./client";
+﻿import { parseResponse } from "./client";
 
 export interface SOEPhoneResult {
   phone: string;
@@ -76,6 +76,10 @@ export async function assessSentence(
     body: formData,
   }, accessToken);
 
+  if (resp.status === 401 || resp.status === 403) {
+    return { ok: false, message: "登录已失效，请重新登录后再试" } as SOEResult;
+  }
+
   return parseResponse(resp) as SOEResult;
 }
 
@@ -102,3 +106,5 @@ export async function getSoeHistory(
   const data = (await parseResponse(resp)) as { results?: SOEResult[] };
   return Array.isArray(data.results) ? data.results : [];
 }
+
+

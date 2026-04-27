@@ -27,21 +27,19 @@ def _schema_name() -> str | None:
 def upgrade() -> None:
     schema = _schema_name()
     # Fix input_text_preview column to be 300 chars (was incorrectly set to 16 in some deployments)
-    op.alter_column(
-        "llm_usage_logs",
-        "input_text_preview",
-        type_=sa.String(300),
-        existing_type=sa.String(16),
-        schema=schema,
-    )
+    with op.batch_alter_table("llm_usage_logs", schema=schema) as batch_op:
+        batch_op.alter_column(
+            "input_text_preview",
+            type_=sa.String(300),
+            existing_type=sa.String(16),
+        )
 
 
 def downgrade() -> None:
     schema = _schema_name()
-    op.alter_column(
-        "llm_usage_logs",
-        "input_text_preview",
-        type_=sa.String(16),
-        existing_type=sa.String(300),
-        schema=schema,
-    )
+    with op.batch_alter_table("llm_usage_logs", schema=schema) as batch_op:
+        batch_op.alter_column(
+            "input_text_preview",
+            type_=sa.String(16),
+            existing_type=sa.String(300),
+        )

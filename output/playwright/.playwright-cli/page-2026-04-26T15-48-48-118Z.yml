@@ -1,0 +1,53 @@
+- generic [ref=e2]:
+  - region "全屏视频与拼写工作区" [ref=e357]:
+    - generic [ref=e361]:
+      - generic [ref=e363]:
+        - button "退出" [ref=e364]:
+          - img
+          - text: 退出
+        - heading "S01E07" [level=1] [ref=e365]
+      - generic [ref=e367]:
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - generic: Shift+S
+                - generic: 揭示单词
+              - generic:
+                - generic: Shift+R
+                - generic: 重播
+              - generic:
+                - generic: ArrowRight
+                - generic: 下一句
+            - paragraph: 快捷键可在首页修改
+    - generic [ref=e369]:
+      - generic [ref=e384]:
+        - region "全屏学习字幕参考" [ref=e385]:
+          - generic [ref=e386]:
+            - generic [ref=e387]: Subtitle reference
+            - generic [ref=e388]: 上一句
+          - paragraph [ref=e389]: forget
+          - paragraph [ref=e390]: 忘记
+        - generic "沉浸学习控制" [ref=e392]:
+          - button "上一句" [ref=e393]: ‹ 上一句
+          - button "播放" [ref=e394]
+          - button "重播" [ref=e395]
+          - button "下一句" [ref=e396]: 下一句 ›
+          - button "精听" [ref=e398]
+          - button "退出全屏" [pressed] [ref=e399]:
+            - img [ref=e400]
+            - text: 退出全屏
+          - generic [ref=e405]:
+            - generic [ref=e406]: 倍速
+            - generic [ref=e407]:
+              - textbox "播放倍速" [ref=e408]: "1"
+              - generic [ref=e409]:
+                - button "倍速增加 0.25" [ref=e410]:
+                  - img [ref=e411]
+                - button "倍速减少 0.25" [ref=e413]:
+                  - img [ref=e414]
+            - generic [ref=e416]: x
+          - button "重置" [ref=e417]
+          - button "固定" [ref=e418]
+      - textbox [active]
+  - region "Notifications alt+T"

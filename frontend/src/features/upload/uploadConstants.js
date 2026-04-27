@@ -1,6 +1,7 @@
 ﻿import { ASR_MODEL_KEYS, buildAsrModelCatalogMap } from "../../shared/lib/asrModels";
 
 export const QWEN_MODEL = "qwen3-asr-flash-filetrans";
+export const STEPFUN_MODEL = "stepaudio-2.5-asr";
 export const FASTER_WHISPER_MODEL = "faster-whisper-medium";
 export const MT_PRICE_MODEL = "qwen-mt-flash";
 export const ESTIMATED_MT_TOKENS_PER_MINUTE = 320;
@@ -56,20 +57,18 @@ export const LOCAL_MODEL_OPTIONS = [
 
 export const UPLOAD_MODEL_OPTIONS = [
   {
-    key: FASTER_WHISPER_MODEL,
-    title: "Bottle 1.0",
-    subtitle: "更注重字幕质量，需改用桌面端。",
-    mode: "fast",
-    note: "下载桌面端后处理。",
-    sourceModelId: "Systran/faster-distil-whisper-small.en",
-    deployPath: "D:\\3.3-19.01\\asr-test\\models\\faster-distil-small.en",
-  },
-  {
     key: QWEN_MODEL,
     title: "Bottle 2.0",
     subtitle: "网页端默认路径。",
     mode: "fast",
     note: "无需准备模型，选中文件后可直接开始。",
+  },
+  {
+    key: STEPFUN_MODEL,
+    title: "StepAudio 2.5 ASR",
+    subtitle: "英文素材默认识别路径。",
+    mode: "fast",
+    note: "使用 StepAudio 2.5 云端识别，默认英文与学习字幕格式。",
   },
 ];
 
@@ -102,10 +101,10 @@ export const BOTTLE2_CLOUD_DISPLAY_STAGES = [
   { key: "completed", label: "已完成" },
 ];
 
-export const SERVER_PREPARABLE_MODELS = new Set([FASTER_WHISPER_MODEL]);
+export const SERVER_PREPARABLE_MODELS = new Set([]);
 export const ACTIVE_SERVER_TASK_STATUSES = new Set(["pending", "running", "pausing", "terminating"]);
 export const STOPPABLE_SERVER_TASK_STATUSES = new Set(["pending", "running"]);
-export const RECOVERABLE_SERVER_TASK_STATUSES = new Set(["paused", "terminated"]);
+export const RECOVERABLE_SERVER_TASK_STATUSES = new Set([]);
 export const RESTORE_BANNER_MODES = {
   NONE: "none",
   VERIFYING: "verifying",

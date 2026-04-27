@@ -319,11 +319,11 @@ def _build_runtime_readiness_issues(runtime_status: RuntimeStatus) -> list[str]:
         issues.append(runtime_status.export_guard_error or "export guard policy is not satisfied")
     if not runtime_status.db_ready:
         issues.append(runtime_status.db_error or "database is not ready")
-    if not runtime_status.dashscope_configured:
+    if runtime_status.production_mode and not runtime_status.dashscope_configured:
         issues.append("DASHSCOPE_API_KEY is not configured")
     if not runtime_status.ffmpeg_ready or not runtime_status.ffprobe_ready:
         issues.append(runtime_status.media_detail or "ffmpeg / ffprobe are not ready")
-    if not runtime_status.upload_asr_ready:
+    if runtime_status.production_mode and not runtime_status.upload_asr_ready:
         issues.append(runtime_status.upload_asr_detail or "no upload-capable ASR model is ready")
     return issues
 

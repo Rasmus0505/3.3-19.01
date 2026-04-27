@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal, ROUND_CEILING
 from math import ceil
 from typing import Iterable
@@ -320,6 +321,20 @@ def settle_reserved_points(
     )
 
 
+def _coerce_datetime(value: object) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    text = str(value or "").strip()
+    if not text:
+        return now_local()
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return now_local()
+
+
 def append_translation_request_logs(
     db: Session,
     *,
@@ -354,9 +369,9 @@ def append_translation_request_logs(
             raw_request_text=str(item.get("raw_request_text") or ""),
             raw_response_text=str(item.get("raw_response_text") or ""),
             raw_error_text=str(item.get("raw_error_text") or ""),
-            started_at=item.get("started_at") or now_local(),
-            finished_at=item.get("finished_at") or now_local(),
-            created_at=item.get("created_at") or item.get("finished_at") or now_local(),
+            started_at=_coerce_datetime(item.get("started_at")),
+            finished_at=_coerce_datetime(item.get("finished_at")),
+            created_at=_coerce_datetime(item.get("created_at") or item.get("finished_at")),
         )
         db.add(row)
         inserted += 1

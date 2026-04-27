@@ -1,0 +1,12 @@
+[     641ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/static/node_modules/.vite/deps/chunk-LPF6KSF2.js?v=2e1ff3d1:21608
+[     688ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5174/favicon.ico:0
+[     688ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5174/favicon.ico:0
+[  105633ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/static/node_modules/.vite/deps/chunk-LPF6KSF2.js?v=2e1ff3d1:21608
+[  119419ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/static/node_modules/.vite/deps/chunk-LPF6KSF2.js?v=2e1ff3d1:21608
+[  136545ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/static/node_modules/.vite/deps/chunk-LPF6KSF2.js?v=2e1ff3d1:21608
+[  136675ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5174/api/lessons/catalog?page=1&page_size=20:0
+[  136675ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:5174/api/wallet/me:0
+[  202798ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/static/node_modules/.vite/deps/chunk-LPF6KSF2.js?v=2e1ff3d1:21608
+[  253271ms] [INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://127.0.0.1:5174/static/node_modules/.vite/deps/chunk-LPF6KSF2.js?v=2e1ff3d1:21608
+[  269974ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5174/favicon.ico:0
+[  395200ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5174/immersive/7:0

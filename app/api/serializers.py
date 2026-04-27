@@ -200,12 +200,18 @@ def to_lesson_detail_response(lesson: Lesson, sentences: list[LessonSentence]) -
 
 # System-fixed cost rates (cents per 1k tokens), keyed by model_name.
 # These are read-only; the UI never sends cost updates.
-SYSTEM_FIXED_COST_RATES: dict[str, dict[str, int]] = {
+SYSTEM_FIXED_COST_RATES: dict[str, dict[str, object]] = {
     # ASR models — cost in cents per minute
     "qwen3-asr-flash-filetrans": {
         "cost_per_1k_tokens_input_cents": 0,
         "cost_per_1k_tokens_output_cents": 0,
         "cost_per_minute_cents": 14,  # 0.14 yuan/min
+    },
+    "stepaudio-2.5-asr": {
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
+        "cost_per_minute_cents": 1,
+        "cost_per_minute_yuan": Decimal("0.0025"),
     },
     # MT model — input/output cost in cents per 1k tokens
     "qwen-mt-flash": {
@@ -222,7 +228,7 @@ SYSTEM_FIXED_COST_RATES: dict[str, dict[str, int]] = {
 }
 
 
-def _get_system_cost_for_model(model_name: str) -> dict[str, int]:
+def _get_system_cost_for_model(model_name: str) -> dict[str, object]:
     return SYSTEM_FIXED_COST_RATES.get(str(model_name or "").strip().lower(), {
         "cost_per_1k_tokens_input_cents": 0,
         "cost_per_1k_tokens_output_cents": 0,
@@ -237,8 +243,9 @@ def to_rate_item(rate: BillingModelRate) -> BillingRateItem:
         getattr(rate, "price_per_minute_yuan", None),
         fallback_cents=int(getattr(rate, "price_per_minute_cents", 0) or getattr(rate, "points_per_minute", 0) or 0),
     )
-    cost_per_minute_cents = fixed["cost_per_minute_cents"]
-    cost_per_minute_yuan = Decimal(cost_per_minute_cents) / Decimal("100")
+    cost_per_minute_yuan = normalize_rate_yuan(fixed.get("cost_per_minute_yuan"))
+    if cost_per_minute_yuan <= 0:
+        cost_per_minute_yuan = Decimal(int(fixed["cost_per_minute_cents"])) / Decimal("100")
     gross_profit_per_minute_yuan = normalize_rate_yuan(price_per_minute_yuan - cost_per_minute_yuan)
     price_per_minute_cents = _compat_cents_from_yuan(price_per_minute_yuan)
     cost_per_minute_cents_out = _compat_cents_from_yuan(cost_per_minute_yuan)

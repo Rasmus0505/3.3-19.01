@@ -4,9 +4,15 @@ chcp 65001 >nul
 set SCRIPT_DIR=%~dp0
 cd /d %SCRIPT_DIR%
 
+echo This script is for frontend dev-server debugging only.
+echo For the normal one-click local site, run start-local.bat.
+echo.
+
 echo Starting Backend on http://localhost:18080 ...
-set PYTHON_PATH=%USERPROFILE%\AppData\Local\Programs\Python\Python312\python.exe
-start "Bottle-Backend" cmd /k "title Bottle Backend && cd /d %SCRIPT_DIR% && set PYTHONPATH=%SCRIPT_DIR% && set APP_ENV=development && set PORT=18080 && set DATABASE_URL=postgresql://root:QHcfk10XdZ7MwWFP82ipnm3VO469r5bY@47.108.142.28:30835/zeabur && set JWT_SECRET=dev-secret && set DASHSCOPE_API_KEY=sk-7de9fe2fdc9d4241a0c445a7d48165a2 && \"%PYTHON_PATH%\" -m uvicorn app.main:app --host 0.0.0.0 --port 18080 --reload"
+set LOCAL_DB_PATH=%SCRIPT_DIR%app.local.db
+set LOCAL_DATA_DIR=%SCRIPT_DIR%.local-data
+if not exist "%LOCAL_DATA_DIR%" mkdir "%LOCAL_DATA_DIR%"
+start "Bottle-Backend" cmd /k "title Bottle Backend && cd /d %SCRIPT_DIR% && set PYTHONPATH=%SCRIPT_DIR% && set APP_ENV=development && set PORT=18080 && set DATABASE_URL=sqlite:///%LOCAL_DB_PATH:\=/% && set JWT_SECRET=local-dev-secret-change-before-sharing && set PERSISTENT_DATA_DIR=%LOCAL_DATA_DIR% && python -m alembic -c alembic.ini upgrade head && python -m uvicorn app.main:app --host 127.0.0.1 --port 18080 --reload"
 
 timeout /t 3 /nobreak >nul
 
@@ -25,5 +31,6 @@ echo ============================================
 echo  Done!
 echo  Frontend: http://localhost:5173
 echo  Backend:  http://localhost:18080
+echo  Local DB: %LOCAL_DB_PATH%
 echo ============================================
 pause

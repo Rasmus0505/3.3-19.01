@@ -136,7 +136,6 @@ export function useUploadWorkflow(deps) {
       generation_mode: nextMode === "fast" ? "fast" : "balanced",
       upload_percent: Number(overrides.uploadPercent ?? uploadPercent ?? 0),
       status_text: restorableStatus,
-      semantic_split_enabled: false,
       binding_completed: Boolean(overrides.bindingCompleted ?? bindingCompleted),
     });
   }

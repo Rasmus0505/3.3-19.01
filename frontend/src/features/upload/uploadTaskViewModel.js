@@ -190,7 +190,23 @@ export function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnap
 
 export function getStageItems(taskSnapshot) {
   const map = Object.fromEntries((Array.isArray(taskSnapshot?.stages) ? taskSnapshot.stages : []).map((item) => [item.key, item.status || "pending"]));
-  return DISPLAY_STAGES.map((item) => ({ ...item, status: map[item.key] || "pending" }));
+  let terminalFailureSeen = false;
+  let runningSeen = false;
+  return DISPLAY_STAGES.map((item) => {
+    let status = map[item.key] || "pending";
+    if (terminalFailureSeen) {
+      status = "pending";
+    } else if (status === "failed") {
+      terminalFailureSeen = true;
+    } else if (status === "running") {
+      if (runningSeen) {
+        status = "pending";
+      } else {
+        runningSeen = true;
+      }
+    }
+    return { ...item, status };
+  });
 }
 
 export function getCurrentTaskStageKey(taskSnapshot) {

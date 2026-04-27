@@ -182,6 +182,7 @@ class LessonTaskResponse(BaseModel):
     status: Literal["pending", "running", "pausing", "paused", "terminating", "terminated", "succeeded", "failed"]
     overall_percent: int
     current_text: str
+    lesson_id: int | None = None
     stages: list[LessonTaskStageResponse]
     counters: LessonTaskCountersResponse
     requested_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)

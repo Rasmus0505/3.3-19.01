@@ -6138,16 +6138,11 @@ def test_regenerate_lesson_subtitle_variant_endpoint(test_client, monkeypatch):
             "semantic_split_enabled": True,
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 410
     body = resp.json()
-    assert body["ok"] is True
-    assert body["lesson_id"] == lesson_id
-    assert body["semantic_split_enabled"] is True
-    assert body["split_mode"] == "word_level_split+semantic"
-    assert body["source_word_count"] == 3
-    assert body["sentences"][0]["text_en"] == "hello world again"
-    assert captured["semantic_split_enabled"] is True
-    assert captured["asr_payload"]["transcripts"][0]["words"][0]["text"] == "hello"
+    assert body["ok"] is False
+    assert body["error_code"] == "SUBTITLE_VARIANTS_DISABLED"
+    assert captured == {}
 
 
 def test_regenerate_lesson_subtitle_variant_returns_asr_sentences_when_semantic_disabled(test_client, monkeypatch):
@@ -6205,14 +6200,10 @@ def test_regenerate_lesson_subtitle_variant_returns_asr_sentences_when_semantic_
             "semantic_split_enabled": False,
         },
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 410
     body = resp.json()
-    assert body["ok"] is True
-    assert body["semantic_split_enabled"] is False
-    assert body["split_mode"] == "asr_sentences"
-    assert body["strategy_version"] == 2
-    assert [item["text_en"] for item in body["sentences"]] == ["Hello there", "General Kenobi"]
-    assert [item["text_zh"] for item in body["sentences"]] == ["中:Hello there", "中:General Kenobi"]
+    assert body["ok"] is False
+    assert body["error_code"] == "SUBTITLE_VARIANTS_DISABLED"
 
 
 def test_build_subtitle_variant_sanitizes_translation_inputs(test_client, monkeypatch):
@@ -6380,16 +6371,10 @@ def test_regenerate_lesson_subtitle_variant_stream_endpoint(test_client, monkeyp
             "semantic_split_enabled": True,
         },
     ) as resp:
-        assert resp.status_code == 200
-        payload = "".join(resp.iter_text())
-
-    events = _parse_sse_events(payload)
-    assert [event for event, _ in events[:-1]] == ["progress", "progress"]
-    assert events[-1][0] == "result"
-    assert events[-1][1]["ok"] is True
-    assert events[-1][1]["lesson_id"] == lesson_id
-    assert events[-1][1]["semantic_split_enabled"] is True
-    assert events[-1][1]["sentences"][0]["text_en"] == "hello world again"
+        assert resp.status_code == 410
+        body = resp.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "SUBTITLE_VARIANTS_DISABLED"
 
 
 def test_regenerate_lesson_subtitle_variant_stream_endpoint_emits_error(test_client, monkeypatch):
@@ -6432,14 +6417,10 @@ def test_regenerate_lesson_subtitle_variant_stream_endpoint_emits_error(test_cli
             "semantic_split_enabled": False,
         },
     ) as resp:
-        assert resp.status_code == 200
-        payload = "".join(resp.iter_text())
-
-    events = _parse_sse_events(payload)
-    assert len(events) == 1
-    assert events[0][0] == "error"
-    assert events[0][1]["error_code"] == "INTERNAL_ERROR"
-    assert events[0][1]["message"] == "重新生成字幕失败"
+        assert resp.status_code == 410
+        body = resp.json()
+    assert body["ok"] is False
+    assert body["error_code"] == "SUBTITLE_VARIANTS_DISABLED"
 def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
 

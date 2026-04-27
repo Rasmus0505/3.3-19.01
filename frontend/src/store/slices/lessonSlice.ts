@@ -1,6 +1,6 @@
 ﻿import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { deleteLessonMedia } from "../../shared/media/localMediaStore";
-import { deleteLessonSubtitleCache, getActiveLessonSubtitleVariant, getLessonSubtitleAvailability, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore.js";
+import { deleteLessonSubtitleCache, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore.js";
 
 type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
 type Getter = () => any;
@@ -36,32 +36,6 @@ function getSentenceCount(detailData: any, fallbackLesson: any) {
     return fallbackLesson.sentences.length;
   }
   return 0;
-}
-
-function mergeLessonWithSubtitleVariant(lesson: any, variant: any) {
-  if (!lesson || !variant || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
-    return lesson;
-  }
-  return {
-    ...lesson,
-    sentences: variant.sentences,
-    subtitle_variant_state: {
-      semantic_split_enabled: false,
-      split_mode: String(variant.split_mode || ""),
-      source_word_count: Number(variant.source_word_count || 0),
-      local_only: true,
-    },
-  };
-}
-
-async function applyLocalSubtitleVariant(lesson: any) {
-  if (!lesson?.id) return lesson;
-  try {
-    const activeVariant = await getActiveLessonSubtitleVariant(lesson.id);
-    return mergeLessonWithSubtitleVariant(lesson, activeVariant);
-  } catch (_) {
-    return lesson;
-  }
 }
 
 function normalizeDeletedLessonIds(lessonIds: unknown[] = []) {
@@ -111,7 +85,7 @@ export const lessonInitialState = {
   currentLesson: null,
   walletBalance: 0,
   billingRates: [],
-  subtitleSettings: { semantic_split_default_enabled: false, default_asr_model: "" },
+  subtitleSettings: { default_asr_model: "" },
   lessonCardMetaMap: {},
   subtitleCacheMetaMap: {},
 };
@@ -139,41 +113,14 @@ export function createLessonSlice(set: Setter, get: Getter) {
     setSubtitleSettings: (subtitleSettings: any) =>
       set({
         subtitleSettings: {
-          semantic_split_default_enabled: Boolean(subtitleSettings?.semantic_split_default_enabled),
           default_asr_model: String(subtitleSettings?.default_asr_model || ""),
         },
       }),
     async refreshSubtitleCacheMeta(lessonList: any, options: any = {}) {
-      const sourceLessons = Array.isArray(lessonList) ? lessonList : get().lessons;
-      if (!sourceLessons.length) {
-        set({ subtitleCacheMetaMap: {} });
-        return {};
-      }
-      const entries = await Promise.all(
-        sourceLessons.map(async (lesson: any) => {
-          try {
-            return [lesson.id, await getLessonSubtitleAvailability(lesson.id)];
-          } catch (_) {
-            return [
-              lesson.id,
-              {
-                lessonId: lesson.id,
-                hasSource: false,
-                canRegenerate: false,
-                currentVariantKey: "",
-                currentSemanticSplitEnabled: null,
-                hasPlainVariant: false,
-                hasSemanticVariant: false,
-              },
-            ];
-          }
-        }),
-      );
-      const nextMap = Object.fromEntries(entries);
-      set((state) => ({
-        subtitleCacheMetaMap: options.merge ? { ...state.subtitleCacheMetaMap, ...nextMap } : nextMap,
-      }));
-      return nextMap;
+      void lessonList;
+      void options;
+      set({ subtitleCacheMetaMap: {} });
+      return {};
     },
     async loadLessonDetail(lessonId: number, options: any = {}) {
       if (!lessonId || !get().accessToken) return null;
@@ -209,7 +156,7 @@ export function createLessonSlice(set: Setter, get: Getter) {
             // Ignore local subtitle cache write failures.
           }
         }
-        const merged = await applyLocalSubtitleVariant({ ...detailData, progress });
+        const merged = { ...detailData, progress };
         set((state) => ({
           currentLesson: merged,
           lessonCardMetaMap: {
@@ -339,7 +286,7 @@ export function createLessonSlice(set: Setter, get: Getter) {
       if (!get().accessToken) {
         set({
           billingRates: [],
-          subtitleSettings: { semantic_split_default_enabled: false, default_asr_model: "" },
+          subtitleSettings: { default_asr_model: "" },
         });
         return [];
       }
@@ -350,7 +297,6 @@ export function createLessonSlice(set: Setter, get: Getter) {
           set({
             billingRates: Array.isArray(data.rates) ? data.rates : [],
             subtitleSettings: {
-              semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
               default_asr_model: String(data.subtitle_settings?.default_asr_model || ""),
             },
           });

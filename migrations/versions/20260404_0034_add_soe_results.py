@@ -42,6 +42,9 @@ def upgrade() -> None:
         sa.Column("voice_id", sa.String(length=64), nullable=False),
         sa.Column("raw_response_json", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], [f"{APP_SCHEMA}.users.id" if schema else "users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["lesson_id"], [f"{APP_SCHEMA}.lessons.id" if schema else "lessons.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["sentence_id"], [f"{APP_SCHEMA}.lesson_sentences.id" if schema else "lesson_sentences.id"], ondelete="SET NULL"),
         schema=schema,
     )
     op.create_index("ix_soe_results_user_id", "soe_results", ["user_id"], unique=False, schema=schema)
@@ -49,37 +52,10 @@ def upgrade() -> None:
     op.create_index("ix_soe_results_sentence_id", "soe_results", ["sentence_id"], unique=False, schema=schema)
     op.create_index("ix_soe_results_voice_id", "soe_results", ["voice_id"], unique=False, schema=schema)
     op.create_index("ix_soe_results_created_at", "soe_results", ["created_at"], unique=False, schema=schema)
-    op.create_foreign_key(
-        "fk_soe_results_user_id",
-        "soe_results", "users",
-        ["user_id"], ["id"],
-        ondelete="CASCADE",
-        source_schema=schema,
-        referent_schema=schema,
-    )
-    op.create_foreign_key(
-        "fk_soe_results_lesson_id",
-        "soe_results", "lessons",
-        ["lesson_id"], ["id"],
-        ondelete="SET NULL",
-        source_schema=schema,
-        referent_schema=schema,
-    )
-    op.create_foreign_key(
-        "fk_soe_results_sentence_id",
-        "soe_results", "lesson_sentences",
-        ["sentence_id"], ["id"],
-        ondelete="SET NULL",
-        source_schema=schema,
-        referent_schema=schema,
-    )
 
 
 def downgrade() -> None:
     schema = _schema_name()
-    op.drop_constraint("fk_soe_results_sentence_id", "soe_results", schema=schema)
-    op.drop_constraint("fk_soe_results_lesson_id", "soe_results", schema=schema)
-    op.drop_constraint("fk_soe_results_user_id", "soe_results", schema=schema)
     op.drop_index("ix_soe_results_created_at", table_name="soe_results", schema=schema)
     op.drop_index("ix_soe_results_voice_id", table_name="soe_results", schema=schema)
     op.drop_index("ix_soe_results_sentence_id", table_name="soe_results", schema=schema)

@@ -31,11 +31,7 @@ def _get_qwen_model() -> str:
 
 def _init_supported_models() -> None:
     global SUPPORTED_MODELS
-    try:
-        from app.services.asr_model_registry import get_supported_transcribe_asr_model_keys
-        SUPPORTED_MODELS = set(get_supported_transcribe_asr_model_keys())
-    except Exception:
-        SUPPORTED_MODELS = {"qwen-audio"}
+    SUPPORTED_MODELS = {_get_qwen_model()}
 
 
 # 重新导出异常（从 app.exceptions.asr）

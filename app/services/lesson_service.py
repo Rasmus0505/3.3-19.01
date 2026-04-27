@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -21,10 +22,11 @@ from sqlalchemy.orm import Session
 from app.core.config import (
     ASR_SEGMENT_SEARCH_WINDOW_SECONDS,
     ASR_SEGMENT_TARGET_SECONDS,
+    BASE_DATA_DIR,
     DASHSCOPE_API_KEY,
     UPLOAD_MAX_BYTES,
 )
-from app.models import Lesson, LessonSentence, TranslationRequestLog
+from app.models import Lesson, LessonSentence, MediaAsset, TranslationRequestLog
 from app.models.billing import BillingModelRate
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import AsrError, transcribe_audio_file, transcribe_signed_url
@@ -1782,6 +1784,7 @@ class LessonService:
         db: Session,
         progress_callback: ProgressCallback | None = None,
         task_id: str | None = None,
+        media_storage: str = "client_indexeddb",
 
     ) -> Lesson:
         opus_path = req_dir / "lesson_input.opus"
@@ -1863,6 +1866,7 @@ class LessonService:
         reserve_ledger_id: int | None = None
         translation_trace_id = uuid4().hex
         normalized_generation_options = normalize_generation_options(generation_options)
+        normalized_media_storage = "server" if str(media_storage or "").strip().lower() == "server" else "client_indexeddb"
 
         try:
             reserved_duration_ms = probe_audio_duration_ms(opus_path)
@@ -2090,7 +2094,7 @@ class LessonService:
                 source_filename=source_filename,
                 asr_model=asr_model,
                 duration_ms=duration_ms,
-                media_storage="client_indexeddb",
+                media_storage=normalized_media_storage,
                 source_duration_ms=reserved_duration_ms,
                 status=lesson_status,
             )
@@ -2100,8 +2104,24 @@ class LessonService:
             lesson.effective_generation_options_json = normalized_generation_options
             db.add(lesson)
             db.flush()
+            if normalized_media_storage == "server":
+                lesson_dir = BASE_DATA_DIR / f"lesson_{lesson.id}"
+                lesson_dir.mkdir(parents=True, exist_ok=True)
+                source_suffix = Path(source_filename or "").suffix.lower() or Path(source_path).suffix.lower() or ".bin"
+                stored_source_path = lesson_dir / f"source{source_suffix}"
+                stored_opus_path = lesson_dir / "lesson_input.opus"
+                shutil.copy2(source_path, stored_source_path)
+                shutil.copy2(opus_path, stored_opus_path)
+                db.add(
+                    MediaAsset(
+                        lesson_id=lesson.id,
+                        original_path=str(stored_source_path),
+                        opus_path=str(stored_opus_path),
+                    )
+                )
             logger.info(
-                "[DEBUG] lesson.generate mode=client_indexeddb lesson_id=%s source_duration_ms=%s",
+                "[DEBUG] lesson.generate mode=%s lesson_id=%s source_duration_ms=%s",
+                normalized_media_storage,
                 lesson.id,
                 reserved_duration_ms,
             )

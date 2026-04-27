@@ -156,6 +156,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     isTouchDevice,
     shouldKeepControlFocus,
     onStartPostLesson,
+    sessionControlsContent,
   },
   ref,
 ) {
@@ -164,7 +165,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     : "immersive-hidden-input";
   const typingPanelClassName = cn(
     "immersive-typing immersive-typing--dock",
-    fullscreenStudyMode ? "immersive-typing--fullscreen-overlay" : "",
+    fullscreenStudyMode ? "immersive-typing--fullscreen-dock" : "",
   );
 
   return (
@@ -188,18 +189,25 @@ const TypingPanel = forwardRef(function TypingPanel(
       </div>
 
       {fullscreenStudyMode ? (
-        <section className="immersive-typing__fullscreen-context" aria-label="全屏学习字幕参考">
-          <div className="immersive-typing__fullscreen-context-head">
-            <span className="immersive-typing__fullscreen-context-kicker">Subtitle reference</span>
-            <span className="immersive-typing__fullscreen-context-badge">{fullscreenSentenceHeading || "上一句"}</span>
-          </div>
-          <p className="immersive-typing__fullscreen-context-en">
-            {fullscreenSentenceEn || "(暂无英文字幕)"}
-          </p>
-          <p className="immersive-typing__fullscreen-context-zh">
-            {fullscreenSentenceZh || "(暂无中文翻译)"}
-          </p>
-        </section>
+        <div className="immersive-typing__dock-row">
+          <section className="immersive-typing__fullscreen-context" aria-label="全屏学习字幕参考">
+            <div className="immersive-typing__fullscreen-context-head">
+              <span className="immersive-typing__fullscreen-context-kicker">Subtitle reference</span>
+              <span className="immersive-typing__fullscreen-context-badge">{fullscreenSentenceHeading || "上一句"}</span>
+            </div>
+            <p className="immersive-typing__fullscreen-context-en">
+              {fullscreenSentenceEn || "(暂无英文字幕)"}
+            </p>
+            <p className="immersive-typing__fullscreen-context-zh">
+              {fullscreenSentenceZh || "(暂无中文翻译)"}
+            </p>
+          </section>
+          {sessionControlsContent ? (
+            <div className="immersive-typing__dock-controls">
+              {sessionControlsContent}
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {phase === "lesson_completed" ? (

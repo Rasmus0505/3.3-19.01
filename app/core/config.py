@@ -12,7 +12,7 @@ PRODUCTION_ENV_NAMES = {"prod", "production"}
 WEAK_CONFIRM_TEXTS = {"EXPORT", "CONFIRM", "YES", "OK", "123456", "123123"}
 APP_DIR = Path(__file__).resolve().parent.parent
 PROJECT_DIR = APP_DIR.parent
-STATIC_DIR = APP_DIR / "static"
+STATIC_DIR = Path(os.getenv("APP_STATIC_DIR", str(APP_DIR / "static")).strip() or str(APP_DIR / "static"))
 
 BASE_TMP_DIR = Path(os.getenv("TMP_WORK_DIR", "/tmp/zeabur3.3"))
 BASE_DATA_DIR = BASE_TMP_DIR / "data"
@@ -70,6 +70,16 @@ def _get_env_text(*names: str, default: str = "") -> str:
         if text:
             return text
     return str(default or "").strip()
+
+
+STEPFUN_API_KEY = _get_env_text("STEPFUN_API_KEY", "STEP_API_KEY", default="")
+STEPFUN_ASR_BASE_URL = _get_env_text(
+    "STEPFUN_ASR_BASE_URL",
+    "STEP_API_BASE_URL",
+    default="https://api.stepfun.com/v1",
+).rstrip("/")
+STEPFUN_ASR_LANGUAGE = _get_env_text("STEPFUN_ASR_LANGUAGE", default="en") or "en"
+STEPFUN_ASR_ENABLE_ITN = _get_env_bool("STEPFUN_ASR_ENABLE_ITN", False)
 
 
 def _is_sqlite_url_text(database_url: str) -> bool:

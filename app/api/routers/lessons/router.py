@@ -3,12 +3,10 @@
 import asyncio
 import json
 import logging
-import queue
-import threading
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -32,10 +30,6 @@ from app.schemas import (
     LessonGenerationOptions,
     LessonItemResponse,
     LessonRenameRequest,
-    LessonSubtitleVariantErrorEvent,
-    LessonSubtitleVariantProgressEvent,
-    LessonSubtitleVariantRequest,
-    LessonSubtitleVariantResponse,
     LessonTaskCreateResponse,
     LessonTaskDebugReportResponse,
     LessonTaskControlResponse,
@@ -53,8 +47,10 @@ from app.services.asr_dashscope import AsrError
 from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
     LessonTaskAdmissionError,
+    LessonTaskConfigurationError,
     create_completed_lesson_from_local_generation,
     create_lesson_task_from_dashscope_file,
+    create_lesson_task_from_upload_file,
     create_lesson_task_from_local_asr,
     bulk_delete_lessons_for_user,
     delete_lesson_for_user,
@@ -80,21 +76,6 @@ from app.services.media import MediaError, cleanup_dir, create_request_dir, extr
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 logger = logging.getLogger(__name__)
-
-
-def _to_lesson_subtitle_variant_response(lesson_id: int, variant: dict) -> LessonSubtitleVariantResponse:
-    return LessonSubtitleVariantResponse(
-        ok=True,
-        lesson_id=lesson_id,
-        split_mode=str(variant.get("split_mode") or ""),
-        source_word_count=int(variant.get("source_word_count", 0)),
-        strategy_version=int(variant.get("strategy_version", 1)),
-        sentences=list(variant.get("sentences") or []),
-    )
-
-
-def _format_sse_event(event: str, payload: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _parse_generation_options_form_value(value: str) -> dict[str, bool]:
@@ -147,6 +128,7 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         status=task["status"],
         overall_percent=int(task.get("overall_percent", 0)),
         current_text=str(task.get("current_text", "")),
+        lesson_id=int(task.get("lesson_id") or 0) or None,
         stages=list(task.get("stages", [])),
         counters=dict(task.get("counters", {})),
         requested_generation_options=LessonGenerationOptions.model_validate(task.get("requested_generation_options") or {}),
@@ -236,6 +218,9 @@ async def create_lesson_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ = (db, current_user, asr_model, generation_options_json, dashscope_file_id, dashscope_file_url, source_filename)
+    return error_response(410, "LEGACY_GENERATION_DISABLED", "旧直传生成入口已停用，请通过云端上传生成课程")
+
     selected_model = (asr_model or "").strip() or get_default_asr_model(db)
     if selected_model not in set(get_supported_upload_asr_model_keys()):
         return error_response(
@@ -284,12 +269,78 @@ async def create_lesson_task(
         return error_response(503, exc.code, exc.message, exc.detail)
     except LessonTaskAdmissionError as exc:
         return error_response(429, exc.code, exc.message, exc.detail)
+    except LessonTaskConfigurationError as exc:
+        return error_response(400, exc.code, exc.message, exc.detail)
     except BillingError as exc:
         return map_billing_error(exc)
     except ValueError as exc:
         return error_response(400, "DASHSCOPE_FILE_ID_REQUIRED", "缺少 DashScope 文件 ID", str(exc)[:1200])
     except Exception as exc:
         return error_response(500, "INTERNAL_ERROR", "任务创建失败", str(exc)[:1200])
+
+
+@router.post(
+    "/tasks/upload",
+    response_model=LessonTaskCreateResponse,
+    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 500: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
+)
+async def create_lesson_task_from_upload(
+    video_file: UploadFile = File(...),
+    asr_model: str = Form(""),
+    generation_options_json: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    selected_model = (asr_model or "").strip() or get_default_asr_model(db)
+    if selected_model not in set(get_supported_upload_asr_model_keys()):
+        await video_file.close()
+        return error_response(
+            400,
+            "INVALID_MODEL",
+            "不支持的模型",
+            {"supported_models": sorted(get_supported_upload_asr_model_keys()), "input_model": selected_model},
+        )
+    try:
+        payload = create_lesson_task_from_upload_file(
+            upload_file=video_file,
+            owner_user_id=current_user.id,
+            asr_model=selected_model,
+            generation_options=_parse_generation_options_form_value(generation_options_json),
+            db=db,
+        )
+        response_payload = LessonTaskCreateResponse(
+            ok=True,
+            task_id=str(payload["task_id"]),
+            requested_asr_model=str(payload.get("requested_asr_model") or ""),
+            effective_asr_model=str(payload.get("effective_asr_model") or ""),
+            model_fallback_applied=bool(payload.get("model_fallback_applied")),
+            model_fallback_reason=str(payload.get("model_fallback_reason") or ""),
+            requested_generation_options=LessonGenerationOptions.model_validate(payload.get("requested_generation_options") or {}),
+            effective_generation_options=LessonGenerationOptions.model_validate(payload.get("effective_generation_options") or {}),
+        ).model_dump(mode="json")
+        admission = dict(payload.get("admission") or {})
+        if admission:
+            response_payload["admission"] = admission
+            response_payload["queued"] = str(admission.get("state") or "") == "queued"
+            response_payload["status"] = "pending"
+        task_snapshot = get_task(str(payload["task_id"]), db=db)
+        if task_snapshot and task_snapshot.get("workspace"):
+            response_payload["workspace"] = task_snapshot["workspace"]
+        return JSONResponse(status_code=200, content=response_payload)
+    except MediaError as exc:
+        return map_media_error(exc)
+    except LessonTaskStorageNotReadyError as exc:
+        return error_response(503, exc.code, exc.message, exc.detail)
+    except LessonTaskAdmissionError as exc:
+        return error_response(429, exc.code, exc.message, exc.detail)
+    except LessonTaskConfigurationError as exc:
+        return error_response(400, exc.code, exc.message, exc.detail)
+    except BillingError as exc:
+        return map_billing_error(exc)
+    except Exception as exc:
+        return error_response(500, "INTERNAL_ERROR", "上传任务创建失败", str(exc)[:1200])
+    finally:
+        await video_file.close()
 
 
 @router.post(
@@ -301,6 +352,10 @@ async def extract_local_asr_audio(
     video_file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
+    _ = (background_tasks, current_user)
+    await video_file.close()
+    return error_response(410, "LOCAL_ASR_DISABLED", "本地 ASR 生成入口已删除")
+
     _ = current_user
     req_dir = create_request_dir(BASE_TMP_DIR)
     source_suffix = Path(video_file.filename or "").suffix or ".bin"
@@ -333,6 +388,9 @@ def create_local_asr_lesson_task(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ = (payload, db, current_user)
+    return error_response(410, "LOCAL_ASR_DISABLED", "本地 ASR 生成入口已删除")
+
     selected_model = str(payload.asr_model or "").strip()
     supported_local_models = set(get_supported_local_browser_asr_model_keys()) | set(get_supported_local_desktop_asr_model_keys())
     if selected_model not in supported_local_models:
@@ -376,6 +434,8 @@ def create_local_asr_lesson_task(
         return error_response(503, exc.code, exc.message, exc.detail)
     except LessonTaskAdmissionError as exc:
         return error_response(429, exc.code, exc.message, exc.detail)
+    except LessonTaskConfigurationError as exc:
+        return error_response(400, exc.code, exc.message, exc.detail)
     except BillingError as exc:
         return map_billing_error(exc)
     except Exception as exc:
@@ -392,6 +452,9 @@ def create_local_generated_lesson(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _ = (payload, db, current_user)
+    return error_response(410, "LOCAL_ASR_DISABLED", "本地 ASR 生成入口已删除")
+
     selected_model = str(payload.asr_model or "").strip()
     supported_local_models = set(get_supported_local_browser_asr_model_keys()) | set(get_supported_local_desktop_asr_model_keys())
     if selected_model not in supported_local_models:
@@ -527,6 +590,9 @@ def terminate_active_lesson_tasks(db: Session = Depends(get_db), current_user: U
     responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _ = (task_id, db, current_user)
+    return error_response(410, "TASK_RESUME_DISABLED", "旧任务恢复已停用，请重新上传生成")
+
     try:
         payload = resume_lesson_task_for_user(task_id=task_id, user_id=current_user.id, db=db)
     except LessonTaskStorageNotReadyError as exc:
@@ -644,96 +710,37 @@ def generate_missing_lesson_content(
 
 @router.post(
     "/{lesson_id}/subtitle-variants",
-    response_model=LessonSubtitleVariantResponse,
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={401: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
 )
 def regenerate_lesson_subtitle_variant(
     lesson_id: int,
-    payload: LessonSubtitleVariantRequest,
+    payload: dict | None = Body(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    lesson = require_lesson_owner(db, lesson_id, current_user.id)
-    try:
-        variant = LessonService.build_subtitle_variant(
-            asr_payload=payload.asr_payload,
-            db=db,
-        )
-        logger.info(
-            "[DEBUG] lessons.subtitle_variant.success lesson_id=%s user_id=%s split_mode=%s",
-            lesson.id,
-            current_user.id,
-            str(variant.get("split_mode") or ""),
-        )
-        return _to_lesson_subtitle_variant_response(lesson.id, variant)
-    except MediaError as exc:
-        return map_media_error(exc)
-    except Exception as exc:
-        return error_response(500, "INTERNAL_ERROR", "重新生成字幕失败", str(exc)[:1200])
+    _ = (lesson_id, payload, db, current_user)
+    return error_response(
+        410,
+        "SUBTITLE_VARIANTS_DISABLED",
+        "字幕重生成入口已删除；课程句子只使用 ASR 模型返回的官方句子和时间戳",
+    )
 
 
 @router.post(
     "/{lesson_id}/subtitle-variants/stream",
-    responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 500: {"model": ErrorResponse}},
+    responses={401: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
 )
 def regenerate_lesson_subtitle_variant_stream(
     lesson_id: int,
-    payload: LessonSubtitleVariantRequest,
+    payload: dict | None = Body(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    lesson = require_lesson_owner(db, lesson_id, current_user.id)
-    bind = db.get_bind()
-    event_queue: queue.Queue[tuple[str, dict] | None] = queue.Queue()
-
-    def _worker() -> None:
-        worker_db = Session(bind=bind, future=True)
-        try:
-            def _progress(progress_payload: dict) -> None:
-                event = LessonSubtitleVariantProgressEvent(
-                    stage=str(progress_payload.get("stage") or ""),
-                    message=str(progress_payload.get("message") or ""),
-                    translate_done=int(progress_payload.get("translate_done", 0) or 0),
-                    translate_total=int(progress_payload.get("translate_total", 0) or 0),
-                )
-                event_queue.put(("progress", event.model_dump()))
-
-            variant = LessonService.build_subtitle_variant(
-                asr_payload=payload.asr_payload,
-                db=worker_db,
-                progress_callback=_progress,
-            )
-            logger.info(
-                "[DEBUG] lessons.subtitle_variant.stream.success lesson_id=%s user_id=%s split_mode=%s",
-                lesson.id,
-                current_user.id,
-                str(variant.get("split_mode") or ""),
-            )
-            event_queue.put(("result", _to_lesson_subtitle_variant_response(lesson.id, variant).model_dump()))
-        except MediaError as exc:
-            event = LessonSubtitleVariantErrorEvent(error_code=exc.code, message=exc.message, detail=exc.detail or "")
-            event_queue.put(("error", event.model_dump()))
-        except Exception as exc:
-            logger.exception("[DEBUG] lessons.subtitle_variant.stream.failed lesson_id=%s detail=%s", lesson.id, str(exc)[:400])
-            event = LessonSubtitleVariantErrorEvent(error_code="INTERNAL_ERROR", message="重新生成字幕失败", detail=str(exc)[:1200])
-            event_queue.put(("error", event.model_dump()))
-        finally:
-            worker_db.close()
-            event_queue.put(None)
-
-    def _stream():
-        while True:
-            item = event_queue.get()
-            if item is None:
-                break
-            event_name, event_payload = item
-            yield _format_sse_event(event_name, event_payload)
-
-    threading.Thread(target=_worker, daemon=True).start()
-    return StreamingResponse(
-        _stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    _ = (lesson_id, payload, db, current_user)
+    return error_response(
+        410,
+        "SUBTITLE_VARIANTS_DISABLED",
+        "字幕重生成流式入口已删除；课程句子只使用 ASR 模型返回的官方句子和时间戳",
     )
 
 

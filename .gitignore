@@ -17,6 +17,9 @@ modelscope_whisper/
 asr_test_results.json
 asr_filetrans_via_dashscope_files_results.json
 test_app.db
+app.local.db
+app.local.db-*
+.local-data/
 
 app/static/index.html
 app/static/assets/

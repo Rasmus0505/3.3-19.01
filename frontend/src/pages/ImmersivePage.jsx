@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ImmersiveLessonPage } from "../features/immersive/ImmersiveLessonPage";
 import { api, parseResponse } from "../shared/api/client";
 import { TOKEN_KEY } from "../app/authStorage";
+import { getPanelPath } from "../app/learning-shell/panelRoutes";
 
 export default function ImmersivePage() {
   const { lessonId } = useParams();
@@ -14,7 +15,7 @@ export default function ImmersivePage() {
   const accessToken = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) || "" : "";
 
   const handleBack = useCallback(() => {
-    navigate(-1);
+    navigate(getPanelPath("history"), { replace: true });
   }, [navigate]);
 
   const loadLessonDetail = useCallback(async () => {

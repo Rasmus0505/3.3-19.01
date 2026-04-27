@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from app.core.config import LESSON_DEFAULT_ASR_MODEL
 from app.services.asr_model_registry import QWEN_ASR_MODEL as FAST_CLOUD_MODEL
+from app.services.asr_model_registry import STEPFUN_ASR_MODEL
 
 
 EVENT_RESERVE = "reserve"
@@ -39,11 +40,13 @@ MT_MODEL_PREFIX = "qwen-mt-"
 
 ADMIN_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
+    STEPFUN_ASR_MODEL,
     MT_FLASH_MODEL,
     "deepseek-v3.2",
 )
 PUBLIC_BILLING_MODEL_ORDER: tuple[str, ...] = (
     FAST_CLOUD_MODEL,
+    STEPFUN_ASR_MODEL,
 )
 LOCAL_BROWSER_ASR_MODELS: tuple[str, ...] = ()
 
@@ -62,6 +65,21 @@ DEFAULT_MODEL_RATES: tuple[dict[str, object], ...] = (
         "parallel_threshold_seconds": 600,
         "segment_seconds": 300,
         "max_concurrency": 4,
+    },
+    {
+        "model_name": STEPFUN_ASR_MODEL,
+        "points_per_minute": 30,
+        "price_per_minute_yuan": Decimal("0.3000"),
+        "points_per_1k_tokens": 0,
+        "cost_per_minute_cents": 1,
+        "cost_per_minute_yuan": Decimal("0.0025"),
+        "cost_per_1k_tokens_input_cents": 0,
+        "cost_per_1k_tokens_output_cents": 0,
+        "billing_unit": "minute",
+        "parallel_enabled": False,
+        "parallel_threshold_seconds": 600,
+        "segment_seconds": 300,
+        "max_concurrency": 1,
     },
     {
         "model_name": MT_FLASH_MODEL,

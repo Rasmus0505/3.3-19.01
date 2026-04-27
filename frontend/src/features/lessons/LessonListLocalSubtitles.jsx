@@ -1,4 +1,4 @@
-﻿import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+﻿import { Clock3, History, MoreVertical, Pencil, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -64,13 +64,11 @@ export function LessonListLocalSubtitles({
   currentLessonNeedsBinding = false,
   lessonCardMetaMap = {},
   lessonMediaMetaMap = {},
-  subtitleCacheMetaMap = {},
   onSelect,
   onStartLesson,
   onRename,
   onDelete,
   onRestoreMedia,
-  onRegenerateSubtitles,
   onSwitchToUpload,
   loading = false,
 }) {
@@ -81,9 +79,6 @@ export function LessonListLocalSubtitles({
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [menuLessonId, setMenuLessonId] = useState(null);
   const [restoringLessonId, setRestoringLessonId] = useState(null);
-  const [subtitleLesson, setSubtitleLesson] = useState(null);
-  const [subtitleMode, setSubtitleMode] = useState("plain");
-  const [subtitleBusy, setSubtitleBusy] = useState(false);
   const [status, setStatus] = useState("");
   const restoreInputRef = useRef(null);
   const restoreTargetRef = useRef(null);
@@ -93,21 +88,19 @@ export function LessonListLocalSubtitles({
       lessons.map((lesson) => {
         const meta = lessonCardMetaMap[lesson.id] || {};
         const mediaMeta = lessonMediaMetaMap[lesson.id] || {};
-        const subtitleMeta = subtitleCacheMetaMap[lesson.id] || {};
         const sentenceCount = Number(meta.sentenceCount || lesson.sentences?.length || 0);
         const actionLabel = hasProgressSnapshot(meta.progress) ? "继续学习" : "开始学习";
         const needsBinding = lesson.media_storage === "client_indexeddb" && !mediaMeta.hasMedia;
         return {
           lesson,
           mediaMeta,
-          subtitleMeta,
           sentenceCount,
           actionLabel,
           needsBinding,
           createdAtLabel: formatCreatedAt(lesson.created_at),
         };
       }),
-    [lessonCardMetaMap, lessonMediaMetaMap, lessons, subtitleCacheMetaMap],
+    [lessonCardMetaMap, lessonMediaMetaMap, lessons],
   );
 
   useEffect(() => {
@@ -125,11 +118,7 @@ export function LessonListLocalSubtitles({
       setRestoringLessonId(null);
       restoreTargetRef.current = null;
     }
-    if (subtitleLesson && !lessons.some((item) => item.id === subtitleLesson.id)) {
-      setSubtitleLesson(null);
-      setSubtitleMode("plain");
-    }
-  }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId, subtitleLesson]);
+  }, [deletingLesson, lessons, menuLessonId, renamingLesson, restoringLessonId]);
 
   function openRenameDialog(lesson) {
     setRenamingLesson(lesson);
@@ -201,28 +190,6 @@ export function LessonListLocalSubtitles({
     }
   }
 
-  function openSubtitleDialog(lesson, subtitleMeta) {
-    setSubtitleLesson(lesson);
-    setSubtitleMode(subtitleMeta?.currentSemanticSplitEnabled ? "semantic" : "plain");
-    setStatus("");
-  }
-
-  async function submitRegenerate() {
-    if (!subtitleLesson || !onRegenerateSubtitles) return;
-    setSubtitleBusy(true);
-    try {
-      const result = await onRegenerateSubtitles(subtitleLesson, subtitleMode === "semantic");
-      if (result?.ok) {
-        setSubtitleLesson(null);
-        setStatus(result?.message || "字幕已切换");
-      } else {
-        setStatus(result?.message || "重新生成字幕失败");
-      }
-    } finally {
-      setSubtitleBusy(false);
-    }
-  }
-
   return (
     <Card>
       <CardHeader>
@@ -254,17 +221,8 @@ export function LessonListLocalSubtitles({
 
         {!loading ? (
           <div className="space-y-3">
-            {cards.map(({ lesson, mediaMeta, subtitleMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
+            {cards.map(({ lesson, mediaMeta, sentenceCount, actionLabel, needsBinding, createdAtLabel }) => {
               const selected = currentLessonId === lesson.id;
-              const currentVariantLabel =
-                subtitleMeta.currentSemanticSplitEnabled === true
-                  ? "语义分句"
-                  : subtitleMeta.currentSemanticSplitEnabled === false
-                    ? "原始字幕"
-                    : "服务器字幕";
-              const subtitleVariantHint = subtitleMeta.canRegenerate
-                ? `已缓存${subtitleMeta.hasPlainVariant && subtitleMeta.hasSemanticVariant ? "双模式字幕" : "当前模式字幕"}`
-                : "仅改造后新上传课程支持";
               return (
                 <div
                   key={lesson.id}
@@ -293,14 +251,12 @@ export function LessonListLocalSubtitles({
                             {selected ? <Badge variant="outline">当前课程</Badge> : null}
                             {needsBinding ? <Badge variant="secondary">待恢复视频</Badge> : null}
                             {selected && currentLessonNeedsBinding ? <Badge variant="secondary">播放受限</Badge> : null}
-                            <Badge variant="outline">{currentVariantLabel}</Badge>
                           </div>
                           <p className="line-clamp-2 text-sm text-muted-foreground">{lesson.source_filename || "未命名素材"}</p>
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                           <span>{sentenceCount} 句</span>
-                          <span>{subtitleVariantHint}</span>
                           <span className="inline-flex items-center gap-1">
                             <Clock3 className="size-4" />
                             {createdAtLabel}
@@ -327,7 +283,7 @@ export function LessonListLocalSubtitles({
                         className="self-end"
                         aria-label="open-lesson-menu"
                         onClick={() => setMenuLessonId((prev) => (prev === lesson.id ? null : lesson.id))}
-                        disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                        disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                       >
                         <MoreVertical className="size-4" />
                       </Button>
@@ -356,22 +312,8 @@ export function LessonListLocalSubtitles({
                           size="sm"
                           variant="ghost"
                           className="justify-start"
-                          onClick={() => {
-                            openSubtitleDialog(lesson, subtitleMeta);
-                            setMenuLessonId(null);
-                          }}
-                          disabled={renameBusy || deleteBusy || subtitleBusy || !subtitleMeta.canRegenerate}
-                        >
-                          <Sparkles className="size-4" />
-                          {subtitleMeta.canRegenerate ? "重新生成字幕" : "重新生成字幕（仅新上传）"}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="justify-start"
                           onClick={() => openRestorePicker(lesson)}
-                          disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                          disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                         >
                           <RotateCcw className="size-4" />
                           恢复视频
@@ -385,7 +327,7 @@ export function LessonListLocalSubtitles({
                             setDeletingLesson(lesson);
                             setMenuLessonId(null);
                           }}
-                          disabled={renameBusy || deleteBusy || subtitleBusy || Boolean(restoringLessonId)}
+                          disabled={renameBusy || deleteBusy || Boolean(restoringLessonId)}
                         >
                           <Trash2 className="size-4" />
                           删除
@@ -433,63 +375,6 @@ export function LessonListLocalSubtitles({
               </Button>
               <Button onClick={() => void submitRename()} disabled={renameBusy}>
                 {renameBusy ? "保存中..." : "保存"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={Boolean(subtitleLesson)}
-          onOpenChange={(open) => {
-            if (!open && !subtitleBusy) {
-              setSubtitleLesson(null);
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>重新生成字幕</DialogTitle>
-              <DialogDescription>
-                仅重新加载字幕，不会重新跑 ASR。切到原始字幕会回到 ASR 原句，切到语义分句会按新的英文分句重翻中文字幕。
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button
-                  type="button"
-                  variant={subtitleMode === "plain" ? "default" : "outline"}
-                  onClick={() => setSubtitleMode("plain")}
-                  disabled={subtitleBusy}
-                >
-                  原始字幕
-                </Button>
-                <Button
-                  type="button"
-                  variant={subtitleMode === "semantic" ? "default" : "outline"}
-                  onClick={() => setSubtitleMode("semantic")}
-                  disabled={subtitleBusy}
-                >
-                  语义分句
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {subtitleMode === "semantic"
-                  ? "适合长句重新细分，阅读更轻松。"
-                  : "直接回到 ASR 原始分句结果。"}
-              </p>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (subtitleBusy) return;
-                  setSubtitleLesson(null);
-                }}
-              >
-                取消
-              </Button>
-              <Button onClick={() => void submitRegenerate()} disabled={subtitleBusy}>
-                {subtitleBusy ? "处理中..." : "确认切换"}
               </Button>
             </DialogFooter>
           </DialogContent>

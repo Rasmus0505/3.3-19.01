@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,7 @@ TASK_ACTIVE_CONTROL_STATUSES = {
     TASK_STATUS_TERMINATING,
 }
 ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
+SILENT_RUNNING_TASK_RECOVERY_AFTER = timedelta(minutes=3)
 
 
 def _copy_dict(value: dict | None) -> dict:
@@ -153,9 +155,13 @@ def _should_recover_orphaned_task(task: LessonGenerationTask) -> bool:
     if status == TASK_STATUS_PENDING and _normalize_admission_state(task.artifacts_json) != TASK_ADMISSION_STATE_ADMITTED:
         return False
     updated_at = task.updated_at
-    if updated_at is None or updated_at >= get_process_started_at():
+    if updated_at is None:
         return False
-    return not is_task_active_in_current_process(task.task_id)
+    if is_task_active_in_current_process(task.task_id):
+        return False
+    if updated_at < get_process_started_at():
+        return True
+    return now_shanghai_naive() - updated_at >= SILENT_RUNNING_TASK_RECOVERY_AFTER
 
 
 def _recover_orphaned_task(task: LessonGenerationTask) -> None:

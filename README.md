@@ -1,55 +1,130 @@
 # English Sentence Spelling Trainer
 
-这是一个部署在 Zeabur 上的英语句子练习应用，当前阶段以“先跑通、再稳定、最后再扩展”为原则。
+英语句子练习应用，支持两种运行路径：
 
-## 部署原则
+- 本地一键站点：在本机用 SQLite 和浏览器运行，不依赖线上网站部署。
+- Zeabur 生产部署：线上环境继续使用 `web + postgresql`，按根目录 `Dockerfile` 构建。
 
-- 默认部署路径：`GitHub 仓库 -> Zeabur -> 按仓库根目录 Dockerfile 构建`
-- 对外服务端口统一使用 `8080`
-- 首轮只部署两个服务：`web` 和 `postgresql`
-- 不要求你自己维护 `Nginx`、`PM2` 或 Linux 运维脚本
-- 生产环境不要使用 SQLite
-
-核心接口保持不变：
+核心接口：
 
 - `POST /api/transcribe/file`
 - `GET /health`
 - `GET /health/ready`
 
-当前生产支持两条上传转写线路：
+当前上传转写线路：
 
-- `Bottle 1.0`：服务端本地 `faster-whisper-medium` 模型包
-- `Bottle 2.0`：DashScope 云端 `qwen3-asr-flash-filetrans`
+- `Bottle 1.0`：服务端本地 `faster-whisper` 模型包。
+- `Bottle 2.0`：DashScope 云端 `qwen3-asr-flash-filetrans`。
 
-`/health` 只表示进程活着。  
-`/health/ready` 表示数据库、关键表结构和启动安全策略都已经就绪。
+`/health` 只表示进程存活；`/health/ready` 表示数据库、关键表结构和启动安全策略就绪。
+
+## 本地一键运行
+
+本地模式会启动一套完整站点：
+
+- 访问地址：`http://127.0.0.1:18080`
+- 数据库：`app.local.db`
+- 本地数据目录：`.local-data/`
+- 前端：构建后同步到 `.local-data/static`，由 FastAPI 同源承载
+- AI：不依赖线上网站；如配置 `DASHSCOPE_API_KEY`，仍可调用 DashScope 云端模型
+
+首次准备：
+
+```powershell
+cd D:\3.3-19.01
+python -m venv .venv
+. .\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+npm --prefix frontend install
+```
+
+日常启动：
+
+```powershell
+.\start-local.bat
+```
+
+脚本会自动：
+
+1. 设置本地开发环境变量。
+2. 构建前端并同步到 `.local-data/static`。
+3. 对 `app.local.db` 执行 Alembic 迁移。
+4. 启动 `uvicorn app.main:app --host 127.0.0.1 --port 18080`。
+5. 打开浏览器访问本地站点。
+
+如果需要云端 AI 能力，可以在当前 shell 设置：
+
+```powershell
+$env:DASHSCOPE_API_KEY="你的 DashScope Key"
+.\start-local.bat
+```
+
+也可以把本地可用配置写入 `.env.local`。推荐只保留：
+
+```env
+DASHSCOPE_API_KEY=你的本地 DashScope Key
+MT_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+MT_MODEL=qwen-mt-flash
+```
+
+如果本地要测试腾讯口语评测，再追加：
+
+```env
+APP_TENCENT_SOE_APP_ID=你的腾讯 AppId
+APP_TENCENT_SECRET_ID=你的腾讯 SecretId
+APP_TENCENT_SECRET_KEY=你的腾讯 SecretKey
+```
+
+不要把线上 `DATABASE_URL`、Zeabur 内网 `POSTGRESQL_HOST`、线上 `JWT_SECRET`、`/data` 路径或 `PORT=8080` 放进本地 `.env.local`。本地脚本会强制使用 `app.local.db`、`.local-data/` 和端口 `18080`。
+
+常见问题：
+
+- `frontend\node_modules was not found`：先运行 `npm --prefix frontend install`。
+- `Python was not found on PATH`：确认已安装 Python，并激活 `.venv` 后再运行脚本。
+- AI 上传、翻译或视觉能力不可用：确认 `DASHSCOPE_API_KEY` 已设置；未设置时本地站点仍可启动，但相关云端能力会受限。
+
+## 本地开发调试
+
+普通本地使用优先运行：
+
+```powershell
+.\start-local.bat
+```
+
+如果需要 Vite 热更新调试，可以运行：
+
+```powershell
+.\preview-local-dev.bat
+```
+
+该脚本会：
+
+- 后端：`http://127.0.0.1:18080`
+- 前端 dev server：`http://127.0.0.1:5173`
+- 数据库：同样使用本地 `app.local.db`
+
+`frontend/vite.config.js` 已将 `/api`、`/health`、`/data` 代理到 `http://127.0.0.1:18080`。
 
 ## Zeabur 生产部署
 
-### 1. 创建服务
+生产部署保持现有路径不变：
 
-在 Zeabur 中连接这个 GitHub 仓库，按仓库根目录的 `Dockerfile` 构建。
-
-首轮只需要：
-
-- `web`
-- `postgresql`
-
-暂时不要先接 `metabase`。
-
-### 2. 挂载持久卷
+- GitHub 仓库连接 Zeabur。
+- Zeabur 按仓库根目录 `Dockerfile` 构建。
+- 只需要维护 `web` 和 `postgresql` 两个服务。
+- 生产环境不要使用 SQLite。
 
 给 `web` 服务挂载持久卷到 `/data`。
 
-如果你要启用服务端 `Bottle 1.0`，还需要把模型目录上传到：
+如果启用服务端 `Bottle 1.0`，模型目录放到：
 
-- `/data/asr-models/faster-distil-small.en`
+```text
+/data/asr-models/faster-distil-small.en
+```
 
 `Bottle 2.0` 走 DashScope 云端接口，不需要本地模型目录。
 
-### 3. 必填环境变量
-
-生产环境至少要填写这些变量：
+生产环境至少配置：
 
 - `APP_ENV=production`
 - `PORT=8080`
@@ -80,359 +155,84 @@
 - `ASR_SEGMENT_TARGET_SECONDS=300`
 - `ASR_SEGMENT_SEARCH_WINDOW_SECONDS=45`
 
-## 这次安全加固后的管理员模型
-
-- 运行时管理员权限现在依赖数据库里的 `users.is_admin`
-- `ADMIN_EMAILS` 只用于首次引导或补齐管理员，不再作为运行时鉴权依据
-- 如果配置了 `ADMIN_EMAILS`，首次部署还必须同时配置强 `ADMIN_BOOTSTRAP_PASSWORD`
-- 新用户注册默认不是管理员
-- 生产环境下，如果 `REDEEM_CODE_EXPORT_CONFIRM_TEXT` 太弱，应用会拒绝启动危险导出能力
-
 ## 生产迁移
 
-生产环境默认建议：
+生产环境建议关闭启动时自动迁移：
 
 - `AUTO_MIGRATE_ON_START=0`
 - 在本地或受控机器手动执行迁移
-- 迁移完成后再回到 Zeabur 重启 `web`
+- 迁移完成后再重启 Zeabur `web`
 
-固定使用：
+执行迁移：
 
 ```bash
 python scripts/run_prod_migration.py
 ```
 
-如果只想检查是否已经到最新 revision：
+只检查 revision：
 
 ```bash
 python scripts/run_prod_migration.py --check-only
 ```
 
-脚本优先读取 `PROD_DATABASE_URL`，没有时才回退到 `DATABASE_URL`。
+脚本优先读取 `PROD_DATABASE_URL`，没有时回退到 `DATABASE_URL`。
 
-如果 `users.is_admin` 这类新列还没有迁移到位，`/health/ready` 会返回失败。
+## 管理员和安全模型
 
-更多说明见 [migrations/README.md](./migrations/README.md)。
+- 运行时管理员权限依赖数据库里的 `users.is_admin`。
+- `ADMIN_EMAILS` 只用于首次引导或补齐管理员，不再作为运行时鉴权依据。
+- 如果配置了 `ADMIN_EMAILS`，首次部署还必须同时配置强 `ADMIN_BOOTSTRAP_PASSWORD`。
+- 新用户注册默认不是管理员。
+- 生产环境下，如果 `REDEEM_CODE_EXPORT_CONFIRM_TEXT` 太弱，应用会拒绝启动危险导出能力。
 
-## 部署后怎么验收
+## 验收
 
-按这个顺序检查：
+按顺序检查：
 
-### 1. 进程存活
-
-```text
-GET /health
-```
-
-预期：
-
-- HTTP 200
-- `ok=true`
-
-### 2. 数据库与关键表结构就绪
-
-```text
-GET /health/ready
-```
-
-预期：
-
-- HTTP 200
-- `ok=true`
-
-### 3. 核心业务链路
-
-至少验证：
-
-1. 注册或登录成功
-2. `GET /api/wallet/me` 返回 `200`
-3. `GET /api/admin/security/status` 返回 `200`
-4. 上传一个媒体文件到 `POST /api/transcribe/file` 成功
+1. `GET /health`
+   - 预期：HTTP 200，`ok=true`
+2. `GET /health/ready`
+   - 预期：HTTP 200，`ok=true`
+3. 核心业务链路
+   - 注册或登录成功
+   - `GET /api/wallet/me` 返回 `200`
+   - `GET /api/admin/security/status` 返回 `200`
+   - 上传媒体文件到 `POST /api/transcribe/file` 成功
 
 ## 常见排查
 
-### `/health` 正常，但 `/health/ready` 返回 `503`
+`/health` 正常，但 `/health/ready` 返回 `503`：
 
-优先检查：
+- 检查 `APP_ENV`。
+- 生产环境确认 `DATABASE_URL` 指向 PostgreSQL/MySQL，而不是 SQLite。
+- 确认 Alembic 迁移已执行。
+- 确认 `REDEEM_CODE_EXPORT_CONFIRM_TEXT` 不是弱默认值。
 
-- `APP_ENV` 是否真的是 `production`
-- `DATABASE_URL` 是否指向 PostgreSQL / MySQL，而不是 SQLite
-- 是否已经执行了 Alembic 迁移
-- `REDEEM_CODE_EXPORT_CONFIRM_TEXT` 是否仍然是弱默认值
+没有管理员能进后台：
 
-### 没有管理员能进后台
+- 检查 `ADMIN_EMAILS` 是否配置正确。
+- 检查 `ADMIN_BOOTSTRAP_PASSWORD` 是否存在且足够强。
+- 检查数据库是否已迁移到包含 `users.is_admin`。
 
-优先检查：
+上传转写失败：
 
-- `ADMIN_EMAILS` 是否配置正确
-- `ADMIN_BOOTSTRAP_PASSWORD` 是否存在且足够强
-- 数据库是否已迁移到包含 `users.is_admin`
+- 检查 `DASHSCOPE_API_KEY`。
+- 如果启用 `Bottle 1.0`，检查模型目录是否完整。
+- 查看服务日志里的具体错误信息。
 
-### 上传转写失败
+## Qwen3-VL Flash 基础接入
 
-优先检查：
+仓库提供通用图像理解基础能力，默认模型为 `qwen3-vl-flash`。
 
-- `DASHSCOPE_API_KEY` 是否正确
-- 如果启用了 `Bottle 1.0`，`/data/asr-models/faster-distil-small.en` 是否完整
-- 服务日志里的具体错误信息
+默认配置：
 
-## 本地开发
-
-```powershell
-cd D:\3.3-19.01
-python -m venv .venv
-. .\.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-```
-
-其中 `requirements.txt` 只用于 Zeabur 运行时镜像，`requirements-dev.txt` 额外补齐本地测试依赖。
-
-本地 SQLite：
-
-```powershell
-$env:APP_ENV="development"
-$env:PORT="8080"
-$env:DATABASE_URL="sqlite:///./app.db"
-$env:JWT_SECRET="change-me"
-python -m alembic -c alembic.ini upgrade head
-uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-
-本地 PostgreSQL：
-
-```powershell
-$env:APP_ENV="development"
-$env:PORT="8080"
-$env:DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/app_test"
-$env:JWT_SECRET="change-me"
-python -m alembic -c alembic.ini upgrade head
-uvicorn app.main:app --host 0.0.0.0 --port 8080
-```
-
-### Qwen3-VL Flash 基础接入
-
-仓库现在额外提供了一套独立的通用图像理解基础能力，默认模型为 `qwen3-vl-flash`。
-
-- 这次接入只提供后端基础封装与 smoke test，不会替换当前生产 OCR 流程
-- 默认配置：
-  - `QWEN_VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
-  - `QWEN_VISION_MODEL=qwen3-vl-flash`
-  - `QWEN_VISION_TIMEOUT_SECONDS=45`
+- `QWEN_VISION_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `QWEN_VISION_MODEL=qwen3-vl-flash`
+- `QWEN_VISION_TIMEOUT_SECONDS=45`
 
 本地联通验证：
 
 ```powershell
-$env:DASHSCOPE_API_KEY=((Get-Content .env.local | Select-String '^DASHSCOPE_API_KEY=').ToString().Split('=',2)[1])
+$env:DASHSCOPE_API_KEY="你的 DashScope Key"
 python scripts/smoke_test_qwen3_vl_flash.py
 ```
-
-如果你已经在当前 shell 显式设置过 `DASHSCOPE_API_KEY`，可以直接运行 smoke test 脚本，无需再从 `.env.local` 加载。
-
-### 本地网站 Bottle 1.0 运行时
-
-`preview-local.bat` 现在会同时拉起两部分：
-
-- 本机 Python runtime：默认 `http://127.0.0.1:18080`
-- 本地网站前端：默认 `http://127.0.0.1:4173`
-
-其中：
-
-- `服务器跑` 继续走 `VITE_API_BASE_URL` 指向的云端或本地业务后端
-- `本地网站跑` 会把素材交给 `VITE_LOCAL_RUNTIME_BASE_URL` 对应的本机 runtime，在本机完成抽音频、ASR 和课程结构生成，再把已完成结果回传云端保存
-- 手机和平板会自动禁用 `本地网站跑`，避免误选到不可用路径
-
-常用启动方式：
-
-```powershell
-$env:BOTTLE_CLOUD_API_BASE_URL="https://your-web.example.com"
-.\preview-local.bat
-```
-
-如果你本地也跑了一套业务后端，可以直接把 `BOTTLE_CLOUD_API_BASE_URL` 指到本机：
-
-```powershell
-$env:BOTTLE_CLOUD_API_BASE_URL="http://127.0.0.1:8080"
-.\preview-local.bat
-```
-
-可选变量：
-
-- `BOTTLE_LOCAL_RUNTIME_PORT`：本机 runtime 端口，默认 `18080`
-- `BOTTLE_LOCAL_RUNTIME_BASE_URL`：覆盖本机 runtime 地址，默认 `http://127.0.0.1:%BOTTLE_LOCAL_RUNTIME_PORT%`
-
-如果本机设置了 `DASHSCOPE_API_KEY`，本地网站 / 本地电脑运行位点会尝试在本机完成翻译；如果没有，仍会生成保留原文字幕的 `partial_ready` 课程并继续入库。
-
-## Windows Electron 正式版客户端
-
-桌面客户端现在采用“云端主系统 + 本地轻量助手”的正式版架构：
-
-- Electron 窗口直接加载你配置的云端站点地址
-- 账号、鉴权、课程、订单、管理后台等业务数据全部走现有 Zeabur `web`
-- 本地 Python 进程只保留健康检查、模型目录、缓存目录、日志目录和本地资源接口
-- Zeabur 侧仍然只有 `web` 和 `postgresql`，不新增独立 desktop 服务
-
-### 1. Zeabur 边界不变
-
-- Zeabur 继续只使用仓库根目录 `Dockerfile`
-- 网站前端继续通过 `frontend` 构建后同步到 `app/static`
-- `desktop-client/` 仍然通过 `.dockerignore` 排除在 Docker / Zeabur 构建上下文之外
-- 不要把 Electron 打包脚本接到 Zeabur 构建命令里，也不要为客户端新建单独的 Zeabur 服务
-
-### 2. 首次本地灰度测试
-
-首次准备：
-
-```powershell
-cd D:\3.3-19.01
-npm --prefix frontend install
-npm --prefix frontend run build
-npm --prefix frontend run build:app-static
-npm --prefix desktop-client install
-```
-
-开发态如果要连接指定云端环境，可先写入目标地址：
-
-```powershell
-$env:DESKTOP_CLOUD_APP_URL="https://your-web.example.com"
-$env:DESKTOP_CLOUD_API_BASE_URL="https://your-web.example.com"
-```
-
-然后启动桌面端：
-
-```powershell
-cd D:\3.3-19.01
-npm --prefix desktop-client run dev
-```
-
-启动后 Electron 会在用户目录写出本地配置文件：
-
-- 配置文件：`%APPDATA%\Bottle\desktop-runtime.json`
-- 默认保存项：云端站点地址、云端 API 基址、模型目录、缓存目录、日志目录、临时目录
-- 这些配置只作用于当前 Windows 客户端，不会写回仓库，也不会改动 Zeabur 环境变量
-
-说明：
-
-- 开发态如果机器上的 Python 3.11 不在默认路径，可先设置 `DESKTOP_PYTHON_EXECUTABLE`
-- 本地助手不再创建 `app.db`，也不会自动迁移数据库
-- 本地助手不再要求 `ADMIN_EMAILS`、`JWT_SECRET`、`DASHSCOPE_API_KEY` 这类服务端业务变量
-- 灰度测试时，桌面端会连接你在配置文件里指定的 Zeabur `web` 域名，网站原有部署拓扑保持不变
-
-### 3. 打包 Windows 客户端
-
-正式打包前，先给安装版写入默认云端目标，并确保当前 Python 环境已经安装 `requirements-dev.txt`（其中包含 PyInstaller，用于生成自带的本地 helper 运行时）：
-
-```powershell
-cd D:\3.3-19.01
-pip install -r requirements-dev.txt
-$env:DESKTOP_CLOUD_APP_URL="https://your-web.example.com/app"
-$env:DESKTOP_CLOUD_API_BASE_URL="https://your-web.example.com"
-```
-
-然后执行：
-
-```powershell
-cd D:\3.3-19.01
-npm --prefix desktop-client run build
-npm --prefix desktop-client run package:win
-```
-
-日常迭代后的行为：
-
-- 默认输出解包版 `desktop-client/dist/win-unpacked`，方便直接替换和调试，不生成安装器
-- 解包版仍然会先生成并带上本地 helper 运行时；终端用户运行 `win-unpacked/Bottle.exe` 时不需要本机再装 Python 3.11
-- 客户端继续读取用户目录里的 `%APPDATA%\Bottle\desktop-runtime.json`，并直接使用打包时写入的云端站点地址打开登录页
-
-正式发布安装器时，再执行：
-
-```powershell
-cd D:\3.3-19.01
-npm --prefix desktop-client run package:release
-```
-
-安装版行为：
-
-- 输出标准 Windows NSIS 安装向导到 `desktop-client/dist`
-- 安装向导支持安装目录选择、桌面快捷方式、开始菜单入口，以及安装完成后立即启动
-- 安装包会先生成并打入自带的本地 helper 运行时；终端用户安装后不需要再单独安装 Python 3.11
-- 默认安装路径为当前用户的 `%LOCALAPPDATA%\Programs\Bottle`
-- 安装后的客户端继续读取用户目录里的 `%APPDATA%\Bottle\desktop-runtime.json`，并直接使用打包时写入的云端站点地址打开登录页
-- 安装器提供 `Bottle 1.0` 可选预装项，默认勾选：勾选时客户端会直接把安装目录下的 `resources\preinstalled-models\faster-distil-small.en` 识别为已预装；取消勾选时客户端仍可登录，并会显示该本机资源未预装、可后续准备
-
-推荐正式版回归路径：
-
-1. 在 Zeabur 维持现有 `web + postgresql` 不变
-2. 日常联调用 `npm --prefix desktop-client run package:win` 只产出 `win-unpacked`
-3. 在打包机上设置 `DESKTOP_CLOUD_APP_URL` 与 `DESKTOP_CLOUD_API_BASE_URL` 后，发布前运行 `npm --prefix desktop-client run package:release`
-4. 运行安装器，保留或取消 `Bottle 1.0` 预装勾选项
-5. 安装完成后直接启动客户端，验证登录、鉴权、上传转写、课程读写和后台访问都落到同一套 Zeabur `web`
-
-### 4. Zeabur 侧只需要维护什么
-
-正式发布时继续维护现有 `web` 服务环境变量与 PostgreSQL 即可，重点核对：
-
-- `APP_ENV`
-- `PORT`
-- `DATABASE_URL`
-- `DASHSCOPE_API_KEY`
-- `JWT_SECRET`
-- `ADMIN_EMAILS`
-- `ADMIN_BOOTSTRAP_PASSWORD`
-- `REDEEM_CODE_EXPORT_CONFIRM_TEXT`
-- `AUTO_MIGRATE_ON_START`
-- `AUTO_MIGRATE_CONTINUE_ON_FAILURE`
-- `AUTO_MIGRATE_LOCK_TIMEOUT_SECONDS`
-- `TMP_WORK_DIR`
-- `PERSISTENT_DATA_DIR`
-- `ASR_BUNDLE_ROOT_DIR`
-- `FASTER_WHISPER_MODELSCOPE_MODEL_ID`
-- `FASTER_WHISPER_MODEL_DIR`
-- `FASTER_WHISPER_PREFETCH_ON_START`
-- `FASTER_WHISPER_COMPUTE_TYPE`
-- `FASTER_WHISPER_CPU_THREADS`
-- `MT_BASE_URL`
-- `MT_MODEL`
-- `ASR_SEGMENT_TARGET_SECONDS`
-- `ASR_SEGMENT_SEARCH_WINDOW_SECONDS`
-
-不需要做的事：
-
-- 不需要新建 Zeabur desktop 服务
-- 不需要为客户端额外屏蔽 GitHub 自动部署
-- 不需要把客户端域名、模型路径、日志路径写进 Zeabur 环境变量
-
-### 5. 网站继续正常部署
-
-网站部署流程不变：
-
-- 正常提交网站代码
-- 由 GitHub 触发 Zeabur 按根目录 `Dockerfile` 重新构建
-- 客户端代码即使合并到仓库，只要不修改 Dockerfile 和 Zeabur 构建命令，就不会参与线上部署
-## Windows Installer Addendum
-
-This repository now uses `win-unpacked` as the default desktop build artifact for daily iteration. The `NSIS` installer is reserved for release packaging.
-
-Build steps:
-
-```powershell
-cd D:\3.3-19.01
-pip install -r requirements-dev.txt
-$env:DESKTOP_CLOUD_APP_URL="https://your-web.example.com/app"
-$env:DESKTOP_CLOUD_API_BASE_URL="https://your-web.example.com"
-npm --prefix desktop-client run build
-npm --prefix desktop-client run package:win
-```
-
-Delivery contract:
-
-- `npm --prefix desktop-client run package:win` produces `desktop-client/dist/win-unpacked`.
-- `npm --prefix desktop-client run package:release` produces an installer `.exe` in `desktop-client/dist`.
-- The installer is an assisted `NSIS` flow with install directory selection, desktop shortcut, start menu entry, and run-after-finish.
-- The installer bundles a frozen local helper runtime built with `PyInstaller`. End users do not need to install Python 3.11.
-- Default per-user install path: `%LOCALAPPDATA%\Programs\Bottle`
-- Default runtime config path: `%APPDATA%\Bottle\desktop-runtime.json`
-- Default logs path: `%APPDATA%\Bottle\logs`
-- Installer state file: `%LOCALAPPDATA%\Programs\Bottle\resources\desktop-install-state.json`
-- Bundled `Bottle 1.0` payload path: `%LOCALAPPDATA%\Programs\Bottle\resources\preinstalled-models\faster-distil-small.en`
-- If the `Bottle 1.0` checkbox stays enabled, the desktop client detects the bundled local model as ready on first launch.
-- If the checkbox is cleared, install and login still work, and the desktop client shows that `Bottle 1.0` is not preinstalled and can be prepared later.
-- Zeabur still keeps only the existing `web` and `postgresql` services. Do not create a separate desktop service.

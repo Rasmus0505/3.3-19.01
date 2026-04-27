@@ -169,7 +169,6 @@ function normalizeSnapshotPayload(payload = {}) {
     generation_mode: String(payload.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast",
     upload_percent: normalizeNonNegativeNumber(payload.upload_percent),
     status_text: String(payload.status_text || ""),
-    semantic_split_enabled: Boolean(payload.semantic_split_enabled),
     binding_completed: Boolean(payload.binding_completed),
   };
 }

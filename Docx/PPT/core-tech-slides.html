@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Unlock Anything · 核心技术答辩页</title>
+  <style>
+    :root {
+      --bg: #efe5da;
+      --bg-2: #e4d8ca;
+      --panel: rgba(236, 227, 216, 0.9);
+      --panel-2: rgba(245, 239, 231, 0.96);
+      --line: rgba(30, 52, 96, 0.14);
+      --text: #243659;
+      --muted: #5f6f8c;
+      --blue: #24477e;
+      --cyan: #355f9a;
+      --violet: #4d5f95;
+      --emerald: #3f6f62;
+      --amber: #8f6841;
+      --rose: #8f4c58;
+      --shadow: 0 18px 48px rgba(55, 42, 31, 0.14);
+      --slide-width: min(92vw, 1440px);
+      --slide-height: min(82vh, calc(var(--slide-width) * 9 / 16));
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      height: 100%;
+      background:
+        radial-gradient(circle at top center, rgba(36, 71, 126, 0.08), transparent 20%),
+        radial-gradient(circle at bottom center, rgba(36, 71, 126, 0.06), transparent 26%),
+        linear-gradient(180deg, #efe3d7 0%, #eadfd3 54%, #e7dbcf 100%);
+      color: var(--text);
+      overflow: hidden;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .deck {
+      width: var(--slide-width);
+      position: relative;
+    }
+
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: var(--slide-height);
+      border-radius: 28px;
+      overflow: hidden;
+      border: 1px solid rgba(36, 71, 126, 0.12);
+      background:
+        radial-gradient(circle at top center, rgba(36, 71, 126, 0.08), transparent 18%),
+        linear-gradient(180deg, #ece0d3 0%, #e6d9cc 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .viewport::before,
+    .viewport::after {
+      content: "";
+      position: absolute;
+      border: 6px solid rgba(36, 71, 126, 0.95);
+      border-radius: 999px;
+      opacity: 0.95;
+      pointer-events: none;
+    }
+
+    .viewport::before {
+      width: 84px;
+      height: 84px;
+      top: -40px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+
+    .viewport::after {
+      width: 132px;
+      height: 14px;
+      border-width: 0 0 5px 0;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 50%;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 34px 38px 76px;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 18px;
+      opacity: 0;
+      transform: translateX(42px) scale(0.985);
+      pointer-events: none;
+      transition: opacity 320ms ease, transform 320ms ease;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+    }
+
+    .slide::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(36, 71, 126, 0.03), transparent 22%, transparent 78%, rgba(36, 71, 126, 0.03)),
+        linear-gradient(rgba(36, 71, 126, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(36, 71, 126, 0.04) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 28px, 28px 100%;
+      pointer-events: none;
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      gap: 12px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--blue);
+      font-weight: 700;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 42px;
+      height: 1px;
+      background: linear-gradient(90deg, rgba(36, 71, 126, 0), rgba(36, 71, 126, 0.92));
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(26px, 2.2vw, 40px);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      color: #26385e;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 980px;
+      color: #425372;
+      font-size: clamp(14px, 1.05vw, 18px);
+      line-height: 1.45;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: 18px;
+      align-items: stretch;
+      overflow: hidden;
+    }
+
+    .card {
+      border: 1px solid rgba(36, 71, 126, 0.18);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(182, 166, 147, 0.4), rgba(241, 235, 227, 0.84));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
+    .diagram-card {
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .notes-card {
+      padding: 18px 20px;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+      min-height: 0;
+      overflow: auto;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 14px;
+      color: #2c4169;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .bullet-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 10px;
+      font-size: 14px;
+      line-height: 1.52;
+      color: #33476f;
+    }
+
+    .bullet-list strong {
+      color: #20355b;
+    }
+
+    .code-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .code-chip {
+      padding: 8px 11px;
+      border-radius: 12px;
+      border: 1px solid rgba(36, 71, 126, 0.14);
+      background: rgba(247, 243, 238, 0.92);
+      color: #35517f;
+      font-size: 12px;
+      font-family: Consolas, "SFMono-Regular", monospace;
+      line-height: 1.45;
+    }
+
+    .footer {
+      position: absolute;
+      left: 48px;
+      right: 48px;
+      bottom: 28px;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #586984;
+      letter-spacing: 0.03em;
+    }
+
+    .page-indicator {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 999px;
+      border: none;
+      cursor: pointer;
+      background: rgba(36, 71, 126, 0.24);
+      transition: transform 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+
+    .dot.active {
+      background: linear-gradient(135deg, #355f9a, #263f72);
+      box-shadow: 0 0 0 4px rgba(36, 71, 126, 0.1);
+      transform: scale(1.08);
+    }
+
+    .counter {
+      min-width: 54px;
+      text-align: right;
+      font-size: 13px;
+      color: #31486f;
+      font-weight: 700;
+    }
+
+    .slide.active .animate-up {
+      animation: rise 520ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+    }
+
+    .slide.active .animate-up.delay-1 { animation-delay: 60ms; }
+    .slide.active .animate-up.delay-2 { animation-delay: 120ms; }
+    .slide.active .animate-up.delay-3 { animation-delay: 180ms; }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(18px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .lane-stack {
+      display: grid;
+      grid-template-rows: 1fr 1fr 1fr;
+      gap: 10px;
+      min-height: 100%;
+    }
+
+    .lane {
+      border-radius: 20px;
+      border: 1px solid rgba(36, 71, 126, 0.14);
+      padding: 12px;
+      background: linear-gradient(180deg, rgba(179, 164, 146, 0.42), rgba(244, 239, 233, 0.78));
+      display: grid;
+      gap: 8px;
+      min-height: 0;
+    }
+
+    .lane-label {
+      display: inline-flex;
+      width: fit-content;
+      padding: 5px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: rgba(36, 71, 126, 0.08);
+      color: #314a73;
+    }
+
+    .action-seq {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-pill {
+      position: relative;
+      padding: 8px 10px;
+      border-radius: 14px;
+      background: rgba(53, 95, 154, 0.1);
+      border: 1px solid rgba(53, 95, 154, 0.28);
+      color: #284979;
+      font-size: 12px;
+      font-weight: 700;
+      min-width: 68px;
+      text-align: center;
+    }
+
+    .action-pill.pause { background: rgba(77, 95, 149, 0.1); border-color: rgba(77, 95, 149, 0.28); }
+    .action-pill.spotlight { background: rgba(63, 111, 98, 0.1); border-color: rgba(63, 111, 98, 0.28); }
+
+    .arrow {
+      color: rgba(49, 72, 111, 0.72);
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .phase-ring-wrap {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      gap: 18px;
+      align-items: center;
+      min-height: 0;
+    }
+
+    .phase-ring {
+      position: relative;
+      width: 210px;
+      height: 210px;
+      margin: 0 auto;
+      border-radius: 50%;
+      border: 1px dashed rgba(36, 71, 126, 0.22);
+      background:
+        radial-gradient(circle at center, rgba(53, 95, 154, 0.08), transparent 54%);
+    }
+
+    .phase-node {
+      position: absolute;
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      border: 1px solid rgba(36, 71, 126, 0.16);
+      background: rgba(247, 241, 233, 0.95);
+      box-shadow: inset 0 0 18px rgba(36, 71, 126, 0.04);
+    }
+
+    .phase-node.read { top: -2px; left: 50%; transform: translateX(-50%); color: #355f9a; }
+    .phase-node.explain { right: -2px; top: 50%; transform: translateY(-50%); color: #4d5f95; }
+    .phase-node.quiz { bottom: -2px; left: 50%; transform: translateX(-50%); color: #3f6f62; }
+    .phase-node.discuss { left: -2px; top: 50%; transform: translateY(-50%); color: #8f6841; }
+
+    .ring-center {
+      position: absolute;
+      inset: 50%;
+      width: 86px;
+      height: 86px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(36, 71, 126, 0.2);
+      background: linear-gradient(180deg, rgba(224, 213, 199, 0.95), rgba(238, 229, 218, 0.98));
+      color: #31486f;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .phase-text {
+      display: grid;
+      gap: 8px;
+      align-content: center;
+    }
+
+    .mini-note {
+      padding: 8px 10px;
+      border-radius: 14px;
+      background: rgba(248, 243, 238, 0.92);
+      border: 1px solid rgba(36, 71, 126, 0.12);
+      color: #4d607d;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .multimodal-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .modality {
+      padding: 10px 8px;
+      border-radius: 16px;
+      border: 1px solid rgba(36, 71, 126, 0.12);
+      background: rgba(248, 244, 238, 0.92);
+      text-align: center;
+      font-size: 11px;
+      line-height: 1.5;
+      color: #33486f;
+    }
+
+    .modality .icon {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 22px;
+    }
+
+    .pipeline {
+      display: grid;
+      gap: 10px;
+      min-height: 100%;
+      align-content: start;
+    }
+
+    .pipe-level {
+      display: grid;
+      grid-template-columns: 88px 1fr 72px;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .level-tag,
+    .level-tech,
+    .level-body {
+      border-radius: 18px;
+      border: 1px solid rgba(36, 71, 126, 0.12);
+      padding: 10px;
+    }
+
+    .level-tag {
+      display: grid;
+      place-items: center;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.84);
+      color: #f8fbff;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .level-body {
+      background: linear-gradient(180deg, rgba(245, 239, 232, 0.96), rgba(233, 225, 216, 0.9));
+      display: grid;
+      gap: 6px;
+    }
+
+    .level-body strong {
+      font-size: 13px;
+      color: #22355a;
+    }
+
+    .level-body span {
+      font-size: 12px;
+      color: #4a5c78;
+      line-height: 1.55;
+    }
+
+    .level-tech {
+      display: grid;
+      place-items: center;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .algo { background: rgba(53, 95, 154, 0.08); color: #35517f; border-color: rgba(53, 95, 154, 0.2); }
+    .llm { background: rgba(143, 104, 65, 0.1); color: #805832; border-color: rgba(143, 104, 65, 0.22); }
+    .classify { background: rgba(63, 111, 98, 0.09); color: #3a675d; border-color: rgba(63, 111, 98, 0.2); }
+
+    .pipe-arrow {
+      height: 12px;
+      margin: -2px auto 0;
+      width: 4px;
+      background: linear-gradient(180deg, rgba(36, 71, 126, 0.15), rgba(36, 71, 126, 0.6));
+      position: relative;
+    }
+
+    .pipe-arrow::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      bottom: -6px;
+      transform: translateX(-50%);
+      border-left: 6px solid transparent;
+      border-right: 6px solid transparent;
+      border-top: 7px solid rgba(36, 71, 126, 0.68);
+    }
+
+    .stage-top {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .stage-box {
+      padding: 10px;
+      border-radius: 18px;
+      border: 1px solid rgba(36, 71, 126, 0.12);
+      background: rgba(247, 242, 236, 0.92);
+      text-align: center;
+      font-size: 12px;
+      line-height: 1.55;
+      color: #33476f;
+      position: relative;
+    }
+
+    .stage-box::after {
+      content: "→";
+      position: absolute;
+      right: -11px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: rgba(49, 72, 111, 0.72);
+      font-weight: 700;
+      font-size: 20px;
+    }
+
+    .stage-box:last-child::after {
+      display: none;
+    }
+
+    .gates {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      align-items: center;
+    }
+
+    .gate {
+      position: relative;
+      padding: 14px 10px 12px;
+      border-radius: 20px;
+      border: 1px solid rgba(36, 71, 126, 0.14);
+      background: linear-gradient(180deg, rgba(245, 239, 232, 0.95), rgba(231, 223, 213, 0.9));
+      text-align: center;
+    }
+
+    .gate::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: -16px;
+      width: 52px;
+      height: 52px;
+      transform: translateX(-50%);
+      border-radius: 50%;
+      border: 2px solid rgba(63, 111, 98, 0.48);
+      background: radial-gradient(circle at center, rgba(63, 111, 98, 0.22), rgba(63, 111, 98, 0.06));
+      box-shadow: 0 0 0 8px rgba(63, 111, 98, 0.05);
+    }
+
+    .gate .tick {
+      position: relative;
+      display: block;
+      margin-bottom: 8px;
+      font-size: 18px;
+      color: #3f6f62;
+      font-weight: 800;
+    }
+
+    .gate h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+    }
+
+    .gate p {
+      margin: 0;
+      color: #4f617e;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+
+    .gate-line {
+      position: relative;
+      height: 2px;
+      background: linear-gradient(90deg, rgba(63, 111, 98, 0.16), rgba(63, 111, 98, 0.72));
+      margin-top: 6px;
+    }
+
+    .char-grid {
+      display: grid;
+      grid-template-columns: repeat(10, minmax(0, 1fr));
+      gap: 8px;
+      align-content: start;
+    }
+
+    .char-cell {
+      aspect-ratio: 1 / 1;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 800;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      color: #f8fbff;
+    }
+
+    .empty { background: rgba(148, 163, 184, 0.1); }
+    .correct { background: rgba(52, 211, 153, 0.18); border-color: rgba(52, 211, 153, 0.4); }
+    .wrong { background: rgba(251, 113, 133, 0.16); border-color: rgba(251, 113, 133, 0.36); }
+    .revealed { background: rgba(56, 189, 248, 0.16); border-color: rgba(56, 189, 248, 0.36); }
+    .fixed { background: rgba(245, 158, 11, 0.18); border-color: rgba(245, 158, 11, 0.38); }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      color: #4f627e;
+    }
+
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 5px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+    }
+
+    .post-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .post-card {
+      padding: 8px 10px;
+      border-radius: 16px;
+      border: 1px solid rgba(36, 71, 126, 0.12);
+      background: rgba(247, 242, 236, 0.92);
+      font-size: 11px;
+      line-height: 1.5;
+      color: #33476f;
+      text-align: center;
+    }
+
+    .post-card strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #22355a;
+      font-size: 12px;
+    }
+
+    @media (max-width: 860px) {
+      .slide {
+        padding: 26px 24px 70px;
+      }
+
+      .content {
+        grid-template-columns: 1fr;
+      }
+
+      .phase-ring-wrap {
+        grid-template-columns: 1fr;
+      }
+
+      .footer {
+        left: 24px;
+        right: 24px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck">
+    <div class="viewport">
+      <section class="slide active" data-index="0">
+        <div class="header">
+          <div class="eyebrow">Unlock Anything · Core Tech</div>
+          <h1>多智能体沉浸式课堂 — Action Protocol 驱动的 AI 教学引擎</h1>
+          <p class="subtitle">“LLM 输出的不是文本，是可执行的教学指令序列”</p>
+        </div>
+        <div class="content">
+          <div class="card diagram-card animate-up">
+            <h2 class="section-title">架构图 / Horizontal Swimlanes</h2>
+            <div class="lane-stack">
+              <div class="lane animate-up delay-1">
+                <span class="lane-label">LLM Structured Actions</span>
+                <div class="action-seq">
+                  <div class="action-pill">speech</div>
+                  <div class="arrow">→</div>
+                  <div class="action-pill pause">pause</div>
+                  <div class="arrow">→</div>
+                  <div class="action-pill spotlight">spotlight</div>
+                  <div class="arrow">→</div>
+                  <div class="action-pill">speech</div>
+                  <div class="arrow">→</div>
+                  <div class="action-pill pause">pause</div>
+                </div>
+              </div>
+              <div class="lane animate-up delay-2">
+                <span class="lane-label">Four-Phase Session Loop</span>
+                <div class="phase-ring-wrap">
+                  <div class="phase-ring">
+                    <div class="phase-node read">read</div>
+                    <div class="phase-node explain">explain</div>
+                    <div class="phase-node quiz">quiz</div>
+                    <div class="phase-node discuss">discuss</div>
+                    <div class="ring-center">state<br />machine</div>
+                  </div>
+                  <div class="phase-text">
+                    <div class="mini-note">用户在 <strong>read</strong> 阶段标记困惑词，直接写回后续 <strong>explain / discuss</strong> 的提示词上下文。</div>
+                    <div class="mini-note">课堂不是静态脚本，而是由运行时状态驱动的 <strong>instruction orchestration</strong>。</div>
+                  </div>
+                </div>
+              </div>
+              <div class="lane animate-up delay-3">
+                <span class="lane-label">Embodied Multimodal Output</span>
+                <div class="multimodal-grid">
+                  <div class="modality"><span class="icon">🔊</span>TTS 语音</div>
+                  <div class="modality"><span class="icon">🧑‍🏫</span>头像动画</div>
+                  <div class="modality"><span class="icon">✨</span>词汇高亮</div>
+                  <div class="modality"><span class="icon">⏱</span>节奏控制</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card notes-card animate-up delay-1">
+            <div>
+              <h2 class="section-title">关键技术要点</h2>
+            </div>
+            <ol class="bullet-list">
+              <li><strong>Action Protocol 结构化输出</strong>：LLM 生成 <code>speech / pause / spotlight</code> 动作序列，前端状态机逐帧消费执行，非自由文本直呈。</li>
+              <li><strong>四阶段教学闭环</strong>：每段内容经历 <code>read → explain → quiz → discuss</code>，前一阶段用户行为写回后续 Agent 提示词。</li>
+              <li><strong>Agent 人格工程</strong>：Teacher 使用 i+1 级话语并对新词做括号定义；Student 按 CEFR 等级程序化制造典型错误，创造 <em>teachable moments</em>。</li>
+              <li><strong>多模态具身化</strong>：独立 TTS 音色、视觉化身、spotlight 文本高亮与 pause 节奏控制协同执行，构成 AI-augmented classroom。</li>
+            </ol>
+            <div class="code-list">
+              <div class="code-chip">app/api/routers/llm_reading_course.py · Action Protocol / V3 课程生成</div>
+              <div class="code-chip">frontend/src/features/reading/classroom/V3Classroom.jsx · 四阶段状态机</div>
+              <div class="code-chip">frontend/src/features/reading/classroom/sections/DiscussSection.jsx · Action 消费引擎</div>
+              <div class="code-chip">app/prompts/discussion/teacher.md / student.md · Agent 人格定义</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-index="1">
+        <div class="header">
+          <div class="eyebrow">Unlock Anything · Core Tech</div>
+          <h1>五级词汇分析流水线 — 将 Krashen i+1 假说工程化</h1>
+          <p class="subtitle">“LLM 只在第四级出场，前三级全部是确定性算法”</p>
+        </div>
+        <div class="content">
+          <div class="card diagram-card animate-up">
+            <h2 class="section-title">架构图 / Five-Level Pipeline</h2>
+            <div class="pipeline">
+              <div class="pipe-level animate-up delay-1">
+                <div class="level-tag">Level 1</div>
+                <div class="level-body">
+                  <strong>词典直查</strong>
+                  <span>130KB CEFR 词典常驻内存，<code>O(1)</code> Map 查表，覆盖高频词与标准词形。</span>
+                </div>
+                <div class="level-tech algo">纯算法</div>
+              </div>
+              <div class="pipe-arrow"></div>
+              <div class="pipe-level animate-up delay-1">
+                <div class="level-tag">Level 2</div>
+                <div class="level-body">
+                  <strong>后缀规则还原</strong>
+                  <span>9 条后缀规则处理 <code>ies→y</code>、<code>ed→""</code>、<code>ing→""</code> 等常见词形变化。</span>
+                </div>
+                <div class="level-tech algo">纯算法</div>
+              </div>
+              <div class="pipe-arrow"></div>
+              <div class="pipe-level animate-up delay-2">
+                <div class="level-tag">Level 3</div>
+                <div class="level-body">
+                  <strong>不规则词形 + 缩写还原</strong>
+                  <span>20+ 不规则 lemma 与 80+ ASR 非标缩写映射，专门修正常见转写噪声。</span>
+                </div>
+                <div class="level-tech algo">纯算法</div>
+              </div>
+              <div class="pipe-arrow"></div>
+              <div class="pipe-level animate-up delay-2">
+                <div class="level-tag">Level 4</div>
+                <div class="level-body">
+                  <strong>LLM 批量词形还原</strong>
+                  <span>仅对未命中词触发批量调用，减少无效请求，显著压缩调用量与 token 成本。</span>
+                </div>
+                <div class="level-tech llm">LLM</div>
+              </div>
+              <div class="pipe-arrow"></div>
+              <div class="pipe-level animate-up delay-3">
+                <div class="level-tag">Level 5</div>
+                <div class="level-body">
+                  <strong>三路分类输出</strong>
+                  <span><code>≤target</code> 过滤 / <code>=target+1</code> i+1 保留 / <code>≥target+2</code> 降级替换，形成 rewrite planning。</span>
+                </div>
+                <div class="level-tech classify">分类输出</div>
+              </div>
+            </div>
+          </div>
+          <div class="card notes-card animate-up delay-1">
+            <div>
+              <h2 class="section-title">关键技术要点</h2>
+            </div>
+            <ol class="bullet-list">
+              <li><strong>前三级零延迟</strong>：词典直查 + 后缀规则 + 缩写还原覆盖 85%+ 词汇，前端 <code>vocabAnalyzer</code> 单例缓存实现实时 CEFR 标注。</li>
+              <li><strong>80+ 条 ASR 缩写适配</strong>：如 <code>gonna→go</code>、<code>dont→do</code> 等非标输出专项修正，避免转写文本误判等级。</li>
+              <li><strong>LLM 精准降级</strong>：超纲词替换精确对齐目标 CEFR 等级，如 <code>eschew(C1) → avoid(B1)</code>，禁止过度简化。</li>
+              <li><strong>批量优化</strong>：多句合并批量生成讲解，长课文把原本逐句调用压缩为少量 LLM 请求，形成低成本 i+1 pipeline。</li>
+            </ol>
+            <div class="code-list">
+              <div class="code-chip">app/services/cefr_explain_service.py · 五级流水线核心实现</div>
+              <div class="code-chip">frontend/src/utils/vocabAnalyzer.js · 前端实时分析（后缀规则 + 缩写映射）</div>
+              <div class="code-chip">app/api/routers/llm_vocabulary.py · LLM 降级替换 + 批量讲解</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="slide" data-index="2">
+        <div class="header">
+          <div class="eyebrow">Unlock Anything · Core Tech</div>
+          <h1>门控状态机听写引擎 — 亚秒级交互的确定性控制</h1>
+          <p class="subtitle">“18 种事件 × 3 道门控 × 5 种字符状态 = 零 LLM 延迟的实时交互”</p>
+        </div>
+        <div class="content">
+          <div class="card diagram-card animate-up">
+            <h2 class="section-title">架构图 / Deterministic Dictation Engine</h2>
+            <div class="stage-top animate-up delay-1">
+              <div class="stage-box">FFmpeg<br />静默检测</div>
+              <div class="stage-box">智能分段</div>
+              <div class="stage-box">并行 ASR</div>
+            </div>
+            <div class="gates animate-up delay-2">
+              <div class="gate">
+                <span class="tick">✓</span>
+                <h3>播放完成</h3>
+                <p>音频先过门，禁止跳读</p>
+              </div>
+              <div class="gate">
+                <span class="tick">✓</span>
+                <h3>听写正确</h3>
+                <p>字符状态全部校验通过</p>
+              </div>
+              <div class="gate">
+                <span class="tick">✓</span>
+                <h3>回放确认</h3>
+                <p>二次确认后才推进下一句</p>
+              </div>
+            </div>
+            <div class="gate-line"></div>
+            <div class="legend animate-up delay-2">
+              <div class="legend-item"><span class="legend-swatch empty"></span>empty</div>
+              <div class="legend-item"><span class="legend-swatch correct"></span>correct</div>
+              <div class="legend-item"><span class="legend-swatch wrong"></span>wrong</div>
+              <div class="legend-item"><span class="legend-swatch revealed"></span>revealed</div>
+              <div class="legend-item"><span class="legend-swatch fixed"></span>fixed</div>
+            </div>
+            <div class="char-grid animate-up delay-3">
+              <div class="char-cell correct">T</div>
+              <div class="char-cell correct">h</div>
+              <div class="char-cell correct">e</div>
+              <div class="char-cell empty">_</div>
+              <div class="char-cell wrong">p</div>
+              <div class="char-cell revealed">l</div>
+              <div class="char-cell fixed">a</div>
+              <div class="char-cell correct">n</div>
+              <div class="char-cell correct">e</div>
+              <div class="char-cell empty">_</div>
+              <div class="char-cell correct">w</div>
+              <div class="char-cell correct">a</div>
+              <div class="char-cell correct">s</div>
+              <div class="char-cell empty">_</div>
+              <div class="char-cell revealed">l</div>
+              <div class="char-cell fixed">a</div>
+              <div class="char-cell correct">t</div>
+              <div class="char-cell correct">e</div>
+              <div class="char-cell wrong">r</div>
+              <div class="char-cell empty">.</div>
+            </div>
+            <div class="post-strip animate-up delay-3">
+              <div class="post-card"><strong>词汇复习</strong>提取本课重点词汇，进入课后巩固</div>
+              <div class="post-card"><strong>AI 测验</strong>基于课程上下文自动生成理解检查</div>
+              <div class="post-card"><strong>SOE 跟读评分</strong>对接口语评测形成输出闭环</div>
+            </div>
+          </div>
+          <div class="card notes-card animate-up delay-1">
+            <div>
+              <h2 class="section-title">关键技术要点</h2>
+            </div>
+            <ol class="bullet-list">
+              <li><strong>静默感知分段</strong>：FFmpeg <code>silencedetect</code> 以 <code>-30dB</code> 阈值搜索自然停顿点，降低单词被切断的风险，并支持长音频并行 ASR。</li>
+              <li><strong>三道门控</strong>：18 种事件驱动状态机，每句设置 3 道门（播放完成 + 听写正确 + 回放确认），全部通过才可进入下一句。</li>
+              <li><strong>字符级 5 状态反馈</strong>：撇号自动填充、<code>$→口语化</code> 转换、2 字符容错等规则均在前端本地完成，实现亚秒级反馈。</li>
+              <li><strong>渐进式辅助</strong>：根据重播次数驱动提示从“无提示 → 首字母 → 前两字母 → 完整单词”逐级升级，区分独立回忆与辅助回忆。</li>
+            </ol>
+            <div class="code-list">
+              <div class="code-chip">app/services/lessons/asr_handler.py · 静默检测 + 智能分段</div>
+              <div class="code-chip">frontend/src/features/immersive/immersiveSessionMachine.js · 门控状态机</div>
+              <div class="code-chip">frontend/src/features/immersive/immersivePageHelpers.js · 字符级听写算法</div>
+              <div class="code-chip">frontend/src/features/immersive/post-lesson/ · 课后三场景</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="footer">
+        <div class="hint">左右方向键切换 · 单文件 HTML · 16:9 投屏友好</div>
+        <div class="page-indicator">
+          <button class="dot active" data-go="0" aria-label="第 1 页"></button>
+          <button class="dot" data-go="1" aria-label="第 2 页"></button>
+          <button class="dot" data-go="2" aria-label="第 3 页"></button>
+          <div class="counter" id="pageCounter">1 / 3</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    const dots = Array.from(document.querySelectorAll(".dot"));
+    const counter = document.getElementById("pageCounter");
+    let current = 0;
+
+    function renderSlide(index) {
+      current = (index + slides.length) % slides.length;
+      slides.forEach((slide, i) => {
+        slide.classList.toggle("active", i === current);
+      });
+      dots.forEach((dot, i) => {
+        dot.classList.toggle("active", i === current);
+      });
+      counter.textContent = `${current + 1} / ${slides.length}`;
+    }
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+        event.preventDefault();
+        renderSlide(current + 1);
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        event.preventDefault();
+        renderSlide(current - 1);
+      }
+      if (event.key === "Home") {
+        renderSlide(0);
+      }
+      if (event.key === "End") {
+        renderSlide(slides.length - 1);
+      }
+    });
+
+    dots.forEach((dot) => {
+      dot.addEventListener("click", () => {
+        renderSlide(Number(dot.dataset.go || 0));
+      });
+    });
+
+    renderSlide(0);
+  </script>
+</body>
+</html>

@@ -40,8 +40,11 @@ def _build_test_client(tmp_path):
     return TestClient(app), engine
 
 
-def _register_and_login(client: TestClient, *, email: str, password: str = "123456") -> str:
-    register_resp = client.post("/api/auth/register", json={"email": email, "password": password})
+def _register_and_login(client: TestClient, *, email: str, password: str = "Passw0rd!123") -> str:
+    register_resp = client.post(
+        "/api/auth/register",
+        json={"username": email.split("@")[0], "email": email, "password": password},
+    )
     assert register_resp.status_code == 200
     login_resp = client.post("/api/auth/login", json={"email": email, "password": password})
     assert login_resp.status_code == 200
@@ -240,7 +243,7 @@ def test_request_url_upstream_error(tmp_path, monkeypatch):
         engine.dispose()
 
 
-def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkeypatch):
+def test_legacy_dashscope_file_task_endpoint_is_disabled(tmp_path, monkeypatch):
     client, engine = _build_test_client(tmp_path)
     try:
         token = _register_and_login(client, email="dashscope-upload-full-flow@example.com")
@@ -263,35 +266,7 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
 
         monkeypatch.setattr(dashscope_upload_router.requests, "get", fake_get)
 
-        recorded: dict[str, object] = {}
-
-        def fake_create_lesson_task_from_dashscope_file(
-            *,
-            owner_user_id,
-            asr_model,
-            semantic_split_enabled,
-            dashscope_file_id,
-            dashscope_file_url=None,
-            source_filename=None,
-            db,
-        ):
-            recorded["owner_user_id"] = int(owner_user_id)
-            recorded["asr_model"] = str(asr_model)
-            recorded["semantic_split_enabled"] = semantic_split_enabled
-            recorded["dashscope_file_id"] = str(dashscope_file_id or "")
-            recorded["dashscope_file_url"] = str(dashscope_file_url or "")
-            recorded["source_filename"] = str(source_filename or "")
-            return {
-                "task_id": "task-b1-flow-001",
-                "requested_asr_model": asr_model,
-                "effective_asr_model": asr_model,
-                "model_fallback_applied": False,
-                "model_fallback_reason": "",
-            }
-
-        monkeypatch.setattr(lessons_router, "create_lesson_task_from_dashscope_file", fake_create_lesson_task_from_dashscope_file)
         monkeypatch.setattr(lessons_router, "get_supported_upload_asr_model_keys", lambda: ("qwen3-asr-flash-filetrans",))
-        monkeypatch.setattr(lessons_router, "get_task", lambda *args, **kwargs: None)
 
         request_url_resp = client.post(
             "/api/dashscope-upload/request-url",
@@ -307,25 +282,22 @@ def test_b1_request_url_then_create_task_with_dashscope_file_id(tmp_path, monkey
             headers=headers,
             data={
                 "asr_model": "qwen3-asr-flash-filetrans",
-                "semantic_split_enabled": "false",
+                "generation_options_json": "{}",
                 "dashscope_file_id": file_id,
                 "dashscope_file_url": file_url,
                 "source_filename": "full-flow.mp4",
             },
         )
-        assert create_task_resp.status_code == 200
+        assert create_task_resp.status_code == 410
         payload = create_task_resp.json()
-        assert payload["ok"] is True
-        assert payload["task_id"] == "task-b1-flow-001"
-        assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
-        assert recorded["dashscope_file_url"] == "oss://uploads/20260326/full-flow.mp4"
-        assert recorded["source_filename"] == "full-flow.mp4"
+        assert payload["ok"] is False
+        assert payload["error_code"] == "LEGACY_GENERATION_DISABLED"
     finally:
         client.close()
         engine.dispose()
 
 
-def test_create_task_requires_dashscope_file_id(tmp_path, monkeypatch):
+def test_legacy_create_task_endpoint_is_disabled_before_dashscope_validation(tmp_path, monkeypatch):
     client, engine = _build_test_client(tmp_path)
     try:
         token = _register_and_login(client, email="dashscope-upload-requires-file-id@example.com")
@@ -336,69 +308,101 @@ def test_create_task_requires_dashscope_file_id(tmp_path, monkeypatch):
             headers={"Authorization": f"Bearer {token}"},
             data={
                 "asr_model": "qwen3-asr-flash-filetrans",
-                "semantic_split_enabled": "false",
                 "dashscope_file_id": "",
             },
         )
 
-        assert resp.status_code == 400
+        assert resp.status_code == 410
         payload = resp.json()
         assert payload["ok"] is False
-        assert payload["error_code"] == "DASHSCOPE_FILE_ID_REQUIRED"
+        assert payload["error_code"] == "LEGACY_GENERATION_DISABLED"
     finally:
         client.close()
         engine.dispose()
 
 
-def test_create_task_accepts_optional_dashscope_file_url(tmp_path, monkeypatch):
+def test_subtitle_variant_endpoints_are_disabled(tmp_path, monkeypatch):
+    client, engine = _build_test_client(tmp_path)
+    try:
+        token = _register_and_login(client, email="subtitle-variants-disabled@example.com")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        def fail_if_called(*args, **kwargs):
+            raise AssertionError("build_subtitle_variant must not be called")
+
+        monkeypatch.setattr(lessons_router.LessonService, "build_subtitle_variant", fail_if_called)
+
+        resp = client.post(
+            "/api/lessons/999999/subtitle-variants",
+            headers=headers,
+            json={"unexpected": "body"},
+        )
+        assert resp.status_code == 410
+        payload = resp.json()
+        assert payload["ok"] is False
+        assert payload["error_code"] == "SUBTITLE_VARIANTS_DISABLED"
+
+        stream_resp = client.post(
+            "/api/lessons/999999/subtitle-variants/stream",
+            headers=headers,
+            json={"unexpected": "body"},
+        )
+        assert stream_resp.status_code == 410
+        stream_payload = stream_resp.json()
+        assert stream_payload["ok"] is False
+        assert stream_payload["error_code"] == "SUBTITLE_VARIANTS_DISABLED"
+    finally:
+        client.close()
+        engine.dispose()
+
+
+def test_upload_task_endpoint_accepts_media_file(tmp_path, monkeypatch):
     client, engine = _build_test_client(tmp_path)
     try:
         token = _register_and_login(client, email="dashscope-upload-file-url@example.com")
         headers = {"Authorization": f"Bearer {token}"}
-        recorded: dict[str, str] = {}
+        recorded: dict[str, object] = {}
 
-        def fake_create_lesson_task_from_dashscope_file(
+        def fake_create_lesson_task_from_upload_file(
             *,
+            upload_file,
             owner_user_id,
             asr_model,
-            semantic_split_enabled,
-            dashscope_file_id,
-            dashscope_file_url=None,
-            source_filename=None,
+            generation_options=None,
             db,
         ):
-            _ = (owner_user_id, asr_model, semantic_split_enabled, db)
-            recorded["dashscope_file_id"] = str(dashscope_file_id or "")
-            recorded["dashscope_file_url"] = str(dashscope_file_url or "")
-            recorded["source_filename"] = str(source_filename or "")
+            _ = (owner_user_id, db)
+            recorded["filename"] = str(upload_file.filename or "")
+            recorded["asr_model"] = str(asr_model or "")
+            recorded["generation_options"] = dict(generation_options or {})
             return {
                 "task_id": "task-b1-flow-002",
                 "requested_asr_model": asr_model,
                 "effective_asr_model": asr_model,
                 "model_fallback_applied": False,
                 "model_fallback_reason": "",
+                "requested_generation_options": dict(generation_options or {}),
+                "effective_generation_options": dict(generation_options or {}),
             }
 
-        monkeypatch.setattr(lessons_router, "create_lesson_task_from_dashscope_file", fake_create_lesson_task_from_dashscope_file)
+        monkeypatch.setattr(lessons_router, "create_lesson_task_from_upload_file", fake_create_lesson_task_from_upload_file)
         monkeypatch.setattr(lessons_router, "get_supported_upload_asr_model_keys", lambda: ("qwen3-asr-flash-filetrans",))
         monkeypatch.setattr(lessons_router, "get_task", lambda *args, **kwargs: None)
 
         create_task_resp = client.post(
-            "/api/lessons/tasks",
+            "/api/lessons/tasks/upload",
             headers=headers,
             data={
                 "asr_model": "qwen3-asr-flash-filetrans",
-                "semantic_split_enabled": "false",
-                "dashscope_file_id": "uploads/20260326/full-flow.mp4",
-                "dashscope_file_url": "https://oss.example.com/uploads/20260326/full-flow.mp4",
-                "source_filename": "full-flow.mp4",
+                "generation_options_json": '{"zh_translation": false, "vocabulary_annotation": false, "word_explanation": false}',
             },
+            files={"video_file": ("full-flow.mp4", b"fake video bytes", "video/mp4")},
         )
         assert create_task_resp.status_code == 200
         assert create_task_resp.json()["task_id"] == "task-b1-flow-002"
-        assert recorded["dashscope_file_id"] == "uploads/20260326/full-flow.mp4"
-        assert recorded["dashscope_file_url"] == "https://oss.example.com/uploads/20260326/full-flow.mp4"
-        assert recorded["source_filename"] == "full-flow.mp4"
+        assert recorded["filename"] == "full-flow.mp4"
+        assert recorded["asr_model"] == "qwen3-asr-flash-filetrans"
+        assert recorded["generation_options"]["zh_translation"] is False
     finally:
         client.close()
         engine.dispose()

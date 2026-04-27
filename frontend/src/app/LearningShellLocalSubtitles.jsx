@@ -19,13 +19,7 @@ import {
 } from "../shared/media/localMediaStore";
 import {
   deleteLessonSubtitleCache,
-  getActiveLessonSubtitleVariant,
-  getCachedLessonSubtitleVariant,
-  getLessonSubtitleCache,
-  getLessonSubtitleAvailability,
   saveLessonSubtitleCacheSeed,
-  saveLessonSubtitleVariant,
-  setActiveLessonSubtitleVariant,
 } from "../shared/media/localSubtitleStore.js";
 import { getShortcutCompleteness, readLearningSettings } from "../features/immersive/learningSettings";
 import {
@@ -55,38 +49,6 @@ import {
 } from "../shared/ui";
 import { clearAuthStorage, REFRESH_KEY, restoreCachedAuthSession, TOKEN_KEY } from "./authStorage";
 
-function toAsrSentenceOnlyPayload(asrPayload) {
-  if (!asrPayload || typeof asrPayload !== "object") {
-    return null;
-  }
-  const transcripts = Array.isArray(asrPayload.transcripts)
-    ? asrPayload.transcripts.map((transcript) => {
-        if (!transcript || typeof transcript !== "object") {
-          return transcript;
-        }
-        const nextTranscript = { ...transcript };
-        if (Array.isArray(nextTranscript.sentences)) {
-          delete nextTranscript.words;
-          return nextTranscript;
-        }
-        return transcript;
-      })
-    : [];
-  return {
-    ...asrPayload,
-    transcripts,
-  };
-}
-
-function toOriginalSubtitleVariant(data) {
-  return {
-    ...data,
-    semantic_split_enabled: false,
-    split_mode: "asr_sentences",
-    strategy_version: 2,
-  };
-}
-
 export function LearningShellLocalSubtitles() {
   const navigate = useNavigate();
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem(TOKEN_KEY) || "");
@@ -96,7 +58,7 @@ export function LearningShellLocalSubtitles() {
   const [globalStatus, setGlobalStatus] = useState("");
   const [walletBalance, setWalletBalance] = useState(0);
   const [billingRates, setBillingRates] = useState([]);
-  const [subtitleSettings, setSubtitleSettings] = useState({ semantic_split_default_enabled: false });
+  const [subtitleSettings, setSubtitleSettings] = useState({ default_asr_model: "" });
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
@@ -104,7 +66,6 @@ export function LearningShellLocalSubtitles() {
   const [currentLessonNeedsBinding, setCurrentLessonNeedsBinding] = useState(false);
   const [immersiveActive, setImmersiveActive] = useState(false);
   const [mediaRestoreTick, setMediaRestoreTick] = useState(0);
-  const [subtitleCacheMetaMap, setSubtitleCacheMetaMap] = useState({});
 
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
 
@@ -114,73 +75,10 @@ export function LearningShellLocalSubtitles() {
     return lessons.filter((item) => `${item.title || ""} ${item.asr_model || ""}`.toLowerCase().includes(keyword));
   }, [commandQuery, lessons]);
 
-  function mergeLessonWithSubtitleVariant(lesson, variant) {
-    if (!lesson || !variant || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
-      return lesson;
-    }
-    return {
-      ...lesson,
-      sentences: variant.sentences,
-      subtitle_variant_state: {
-        semantic_split_enabled: Boolean(variant.semantic_split_enabled),
-        split_mode: String(variant.split_mode || ""),
-        source_word_count: Number(variant.source_word_count || 0),
-        local_only: true,
-      },
-    };
-  }
-
-  async function applyLocalSubtitleVariant(lesson) {
-    if (!lesson?.id) return lesson;
-    try {
-      const activeVariant = await getActiveLessonSubtitleVariant(lesson.id);
-      return mergeLessonWithSubtitleVariant(lesson, activeVariant);
-    } catch (_) {
-      return lesson;
-    }
-  }
-
-  async function refreshSubtitleCacheMeta(lessonList, options = {}) {
-    const sourceLessons = Array.isArray(lessonList) ? lessonList : lessons;
-    if (!sourceLessons.length) {
-      setSubtitleCacheMetaMap({});
-      return;
-    }
-
-    const entries = await Promise.all(
-      sourceLessons.map(async (lesson) => {
-        try {
-          const meta = await getLessonSubtitleAvailability(lesson.id);
-          return [lesson.id, meta];
-        } catch (_) {
-          return [
-            lesson.id,
-            {
-              lessonId: lesson.id,
-              hasSource: false,
-              canRegenerate: false,
-              currentVariantKey: "",
-              currentSemanticSplitEnabled: null,
-              hasPlainVariant: false,
-              hasSemanticVariant: false,
-            },
-          ];
-        }
-      }),
-    );
-    const nextMap = Object.fromEntries(entries);
-    if (options.merge) {
-      setSubtitleCacheMetaMap((prev) => ({ ...prev, ...nextMap }));
-      return;
-    }
-    setSubtitleCacheMetaMap(nextMap);
-  }
-
   async function persistLessonSubtitleCacheSeed(lesson) {
     if (!lesson?.id || !lesson?.subtitle_cache_seed) return;
     try {
       await saveLessonSubtitleCacheSeed(lesson.id, lesson.subtitle_cache_seed);
-      await refreshSubtitleCacheMeta([{ id: lesson.id }], { merge: true });
     } catch (_) {
       // Ignore local subtitle cache write failures.
     }
@@ -191,7 +89,6 @@ export function LearningShellLocalSubtitles() {
       setLessons([]);
       setCurrentLesson(null);
       setImmersiveActive(false);
-      setSubtitleCacheMetaMap({});
       return;
     }
 
@@ -206,7 +103,6 @@ export function LearningShellLocalSubtitles() {
 
       const nextLessons = Array.isArray(listData) ? listData : [];
       setLessons(nextLessons);
-      await refreshSubtitleCacheMeta(nextLessons);
       if (!nextLessons.length) {
         setCurrentLesson(null);
         setImmersiveActive(false);
@@ -252,8 +148,7 @@ export function LearningShellLocalSubtitles() {
               last_played_at_ms: 0,
             },
       };
-      const mergedWithLocalVariant = await applyLocalSubtitleVariant(merged);
-      setCurrentLesson(mergedWithLocalVariant);
+      setCurrentLesson(merged);
       console.debug("[DEBUG] loadLessonDetail immersive policy", {
         lessonId,
         autoEnterImmersive,
@@ -280,7 +175,7 @@ export function LearningShellLocalSubtitles() {
   async function loadBillingRates() {
     if (!accessToken) {
       setBillingRates([]);
-      setSubtitleSettings({ semantic_split_default_enabled: false });
+      setSubtitleSettings({ default_asr_model: "" });
       return;
     }
     const resp = await api("/api/billing/rates", {}, accessToken);
@@ -288,7 +183,7 @@ export function LearningShellLocalSubtitles() {
     if (resp.ok) {
       setBillingRates(Array.isArray(data.rates) ? data.rates : []);
       setSubtitleSettings({
-        semantic_split_default_enabled: Boolean(data.subtitle_settings?.semantic_split_default_enabled),
+        default_asr_model: String(data.subtitle_settings?.default_asr_model || ""),
       });
     }
   }
@@ -388,7 +283,6 @@ export function LearningShellLocalSubtitles() {
     setMobileNavOpen(false);
     setCommandOpen(false);
     setImmersiveActive(false);
-    setSubtitleCacheMetaMap({});
   }
 
   function handleExitImmersive(_source = "button") {
@@ -402,9 +296,6 @@ export function LearningShellLocalSubtitles() {
     await persistLessonSubtitleCacheSeed(lesson);
     await loadLessons();
     await loadLessonDetail(lesson.id, { autoEnterImmersive: false });
-    if (lesson?.subtitle_cache_seed?.semantic_split_enabled === false) {
-      await handleRegenerateSubtitles(lesson, false, { silent: true });
-    }
     await loadWallet();
   }
 
@@ -494,12 +385,6 @@ export function LearningShellLocalSubtitles() {
       const deletingCurrentLesson = currentLesson?.id === lessonId;
       const keepImmersiveAfterFallback = immersiveActive;
       setLessons(nextLessons);
-      setSubtitleCacheMetaMap((prev) => {
-        const next = { ...prev };
-        delete next[lessonId];
-        return next;
-      });
-
       void deleteLessonMedia(lessonId).catch(() => {
         // Ignore local cache cleanup errors.
       });
@@ -525,72 +410,6 @@ export function LearningShellLocalSubtitles() {
       setGlobalStatus("");
       toast.success("删除历史成功");
       return { ok: true, message: "删除历史成功" };
-    } catch (error) {
-      const message = `网络错误: ${String(error)}`;
-      setGlobalStatus(message);
-      return { ok: false, message };
-    }
-  }
-
-  async function handleRegenerateSubtitles(lesson, semanticSplitEnabled, options = {}) {
-    const lessonId = Number(lesson?.id || 0);
-    if (!lessonId || !accessToken) {
-      return { ok: false, message: "请先登录" };
-    }
-
-    try {
-      const cachedVariant = await getCachedLessonSubtitleVariant(lessonId, semanticSplitEnabled);
-      let activeVariant = cachedVariant;
-      if (cachedVariant) {
-        await setActiveLessonSubtitleVariant(lessonId, semanticSplitEnabled);
-      } else {
-        const subtitleCacheMeta = await getLessonSubtitleAvailability(lessonId);
-        if (!subtitleCacheMeta?.hasSource) {
-          return { ok: false, message: "当前浏览器缺少原始 ASR 缓存，仅改造后新上传课程支持重新生成字幕" };
-        }
-        const rawCache = await getLessonSubtitleCache(lessonId);
-        const asrPayload = rawCache?.asr_payload || lesson?.subtitle_cache_seed?.asr_payload || null;
-        if (!asrPayload || typeof asrPayload !== "object") {
-          return { ok: false, message: "当前浏览器缺少原始 ASR 缓存，仅改造后新上传课程支持重新生成字幕" };
-        }
-        const requestPayload = semanticSplitEnabled ? asrPayload : toAsrSentenceOnlyPayload(asrPayload);
-        const resp = await api(
-          `/api/lessons/${lessonId}/subtitle-variants`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              asr_payload: requestPayload,
-              semantic_split_enabled: Boolean(semanticSplitEnabled),
-            }),
-          },
-          accessToken,
-        );
-        const data = await parseResponse(resp);
-        if (!resp.ok) {
-          const message = toErrorText(data, "重新生成字幕失败");
-          setGlobalStatus(message);
-          return { ok: false, message };
-        }
-        const normalizedVariant = semanticSplitEnabled ? data : toOriginalSubtitleVariant(data);
-        activeVariant = await saveLessonSubtitleVariant(lessonId, normalizedVariant);
-      }
-
-      if (!activeVariant) {
-        return { ok: false, message: "未找到可切换的字幕版本" };
-      }
-
-      setCurrentLesson((prev) => {
-        if (!prev || prev.id !== lessonId) return prev;
-        return mergeLessonWithSubtitleVariant(prev, activeVariant);
-      });
-      await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
-      setGlobalStatus("");
-      const message = semanticSplitEnabled ? "已切换为语义分句" : "已切换为原始字幕";
-      if (!options.silent) {
-        toast.success(message);
-      }
-      return { ok: true, message };
     } catch (error) {
       const message = `网络错误: ${String(error)}`;
       setGlobalStatus(message);
@@ -735,13 +554,11 @@ export function LearningShellLocalSubtitles() {
                 lessons={lessons}
                 currentLessonId={currentLesson?.id}
                 currentLessonNeedsBinding={currentLessonNeedsBinding}
-                subtitleCacheMetaMap={subtitleCacheMetaMap}
                 onSelect={loadLessonDetail}
                 onStartLesson={handleStartLesson}
                 onRename={handleRenameLesson}
                 onDelete={handleDeleteLesson}
                 onRestoreMedia={handleRestoreLessonMedia}
-                onRegenerateSubtitles={handleRegenerateSubtitles}
                 loading={loadingLessons}
               />
               <Card size="sm">

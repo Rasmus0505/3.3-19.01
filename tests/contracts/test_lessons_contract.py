@@ -104,15 +104,15 @@ def test_lesson_task_response_schema_contract_for_partial_result():
         "model_fallback_applied": False,
         "model_fallback_reason": "",
         "completion_kind": "partial",
-        "result_kind": "asr_only",
-        "result_label": "仅原文字幕",
-        "result_message": "课程已生成，翻译失败，可先使用原文字幕学习。",
+        "result_kind": "",
+        "result_label": "",
+        "result_message": "",
         "partial_failure_stage": "translate_zh",
         "partial_failure_code": "TRANSLATION_PARTIAL",
         "partial_failure_message": "第2句失败：REQUEST_FAILED rate limit",
-        "status": "succeeded",
-        "overall_percent": 100,
-        "current_text": "课程已生成，翻译失败，可先使用原文字幕学习。",
+        "status": "failed",
+        "overall_percent": 85,
+        "current_text": "第2句失败：REQUEST_FAILED rate limit",
         "stages": [
             {"key": "asr_transcribe", "label": "ASR转写字幕", "status": "completed"},
             {"key": "translate_zh", "label": "翻译中文", "status": "failed"},
@@ -129,10 +129,10 @@ def test_lesson_task_response_schema_contract_for_partial_result():
         "subtitle_cache_seed": None,
         "translation_debug": None,
         "failure_debug": None,
-        "error_code": "",
-        "message": "课程已生成，翻译失败，可先使用原文字幕学习。",
-        "resume_available": False,
-        "resume_stage": "",
+        "error_code": "TRANSLATION_PARTIAL",
+        "message": "第2句失败：REQUEST_FAILED rate limit",
+        "resume_available": True,
+        "resume_stage": "translate_zh",
         "artifact_expires_at": None,
         "control_action": "",
         "paused_at": None,
@@ -142,5 +142,5 @@ def test_lesson_task_response_schema_contract_for_partial_result():
     }
     parsed = LessonTaskResponse.model_validate(payload)
     assert parsed.completion_kind == "partial"
-    assert parsed.result_kind == "asr_only"
+    assert parsed.result_kind == ""
     assert parsed.partial_failure_stage == "translate_zh"

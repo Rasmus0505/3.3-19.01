@@ -74,6 +74,15 @@ TASK_RESULT_ASR_ONLY = "asr_only"
 TASK_ACTIVE_CONTROL_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 TASK_TERMINATE_REQUESTABLE_STATUSES = {TASK_STATUS_PENDING, TASK_STATUS_RUNNING, TASK_STATUS_PAUSING, TASK_STATUS_TERMINATING}
 ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
+_STAGE_END_PERCENT = {
+    "convert_audio": 15,
+    "asr_transcribe": 45,
+    "build_lesson": 60,
+    "translate_zh": 85,
+    "vocabulary_annotation": 90,
+    "word_explanation": 95,
+    "write_lesson": 100,
+}
 
 
 logger = logging.getLogger(__name__)
@@ -189,6 +198,12 @@ def _default_artifacts(
         "max_queued_tasks": 0,
         "queued_at": "",
     }
+
+
+def _trim_text(value: object, limit: int) -> str:
+    text = str(value or "")
+    max_len = max(0, int(limit or 0))
+    return text[:max_len] if max_len > 0 else ""
 
 
 def _copy_dict(value: dict | None) -> dict:
@@ -347,7 +362,8 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
     generated_content_status = normalize_generated_content_status(artifacts.get("generated_content_status"))
     status = str(task.status or "")
     control_action = _get_control_action(artifacts)
-    if status == TASK_STATUS_SUCCEEDED:
+    has_partial_failure = bool(str(artifacts.get("partial_failure_stage") or "").strip())
+    if status == TASK_STATUS_SUCCEEDED or has_partial_failure:
         result_kind = _normalize_result_kind(artifacts.get("result_kind"))
         result_label = _build_result_label(result_kind)
         result_message = _build_result_message(result_kind, artifacts.get("result_message"))
@@ -761,20 +777,55 @@ def mark_task_succeeded(
         normalized_result_kind = _normalize_result_kind(result_kind)
         normalized_partial_stage = str(partial_failure_stage or "").strip()
         normalized_dashscope_recovery = _normalize_dashscope_recovery(dashscope_recovery)
+        partial_stage_seen = False
         for stage in stages:
-            stage["status"] = "failed" if normalized_partial_stage and stage.get("key") == normalized_partial_stage else "completed"
+            if normalized_partial_stage:
+                if stage.get("key") == normalized_partial_stage:
+                    stage["status"] = "failed"
+                    partial_stage_seen = True
+                elif partial_stage_seen:
+                    stage["status"] = "pending"
+                elif stage.get("status") != "failed":
+                    stage["status"] = "completed"
+            else:
+                stage["status"] = "completed"
+        if normalized_partial_stage and not partial_stage_seen:
+            for stage in stages:
+                stage["status"] = "completed"
         task.stages_json = stages
-        task.status = TASK_STATUS_SUCCEEDED
+        task.status = TASK_STATUS_FAILED if normalized_partial_stage else TASK_STATUS_SUCCEEDED
         task.lesson_id = int(lesson_id)
-        task.overall_percent = 100
-        task.current_text = _build_result_message(normalized_result_kind, result_message)
+        task.overall_percent = (
+            min(99, int(_STAGE_END_PERCENT.get(normalized_partial_stage, int(task.overall_percent or 0) or 99)))
+            if normalized_partial_stage
+            else 100
+        )
+        task.current_text = (
+            str(partial_failure_message or result_message or "课程生成失败").strip() or "课程生成失败"
+            if normalized_partial_stage
+            else _build_result_message(normalized_result_kind, result_message)
+        )
         task.failure_debug_json = None
         task.translation_debug_json = dict(translation_debug) if isinstance(translation_debug, dict) else task.translation_debug_json
         task.subtitle_cache_seed_json = dict(subtitle_cache_seed) if isinstance(subtitle_cache_seed, dict) else None
-        task.resume_available = False
-        task.resume_stage = ""
+        task.error_code = str(partial_failure_code or "").strip() if normalized_partial_stage else ""
+        task.message = task.current_text if normalized_partial_stage else ""
+        task.resume_available = bool(normalized_partial_stage)
+        task.resume_stage = normalized_partial_stage if normalized_partial_stage else ""
         task.artifact_expires_at = now_shanghai_naive() + timedelta(hours=FAILURE_RETENTION_HOURS)
-        task.failed_at = None
+        task.failed_at = now_shanghai_naive() if normalized_partial_stage else None
+        if normalized_partial_stage:
+            task.failure_debug_json = {
+                "failed_stage": normalized_partial_stage,
+                "exception_type": "PartialTaskFailure",
+                "detail_excerpt": _trim_text(partial_failure_message or result_message, FAILURE_DETAIL_EXCERPT_LIMIT),
+                "traceback_excerpt": "",
+                "last_progress_text": _trim_text(str(task.current_text or ""), 255),
+                "stages": _copy_list(stages),
+                "counters": _copy_dict(task.counters_json),
+                "translation_debug": dict(translation_debug) if isinstance(translation_debug, dict) else None,
+                "failed_at": task.failed_at.isoformat() if task.failed_at is not None else "",
+            }
         next_artifacts = _clear_admission_fields(_clear_control_fields(task.artifacts_json))
         next_artifacts["result_kind"] = normalized_result_kind
         next_artifacts["result_label"] = _build_result_label(normalized_result_kind)
@@ -787,6 +838,8 @@ def mark_task_succeeded(
         task.artifacts_json = next_artifacts
         _sync_task_workspace_summary(task)
         flag_modified(task, "artifacts_json")
+        if normalized_partial_stage:
+            flag_modified(task, "failure_debug_json")
         session.commit()
     finally:
         if owns_session:

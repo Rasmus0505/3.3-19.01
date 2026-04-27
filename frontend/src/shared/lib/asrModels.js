@@ -1,5 +1,6 @@
 ﻿export const ASR_MODEL_KEYS = {
   qwen: "qwen3-asr-flash-filetrans",
+  stepfun: "stepaudio-2.5-asr",
 };
 
 export const LLM_MODEL_KEYS = {
@@ -20,6 +21,19 @@ export const FALLBACK_ASR_MODEL_CATALOG = {
     supports_preview: false,
     supports_transcribe_api: true,
     note: "Bottle 2.0 通过 DashScope 云端能力完成识别。",
+  },
+  [ASR_MODEL_KEYS.stepfun]: {
+    model_key: ASR_MODEL_KEYS.stepfun,
+    display_name: "StepAudio 2.5 ASR",
+    subtitle: "英文素材默认识别路径，使用 StepAudio 2.5 云端识别。",
+    runtime_kind: "cloud_api",
+    runtime_label: "Cloud API",
+    prepare_mode: "none",
+    cache_scope: "cloud",
+    supports_upload: true,
+    supports_preview: false,
+    supports_transcribe_api: true,
+    note: "默认识别英文，适合英语学习字幕。",
   },
 };
 

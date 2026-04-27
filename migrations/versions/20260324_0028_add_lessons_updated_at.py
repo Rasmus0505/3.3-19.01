@@ -45,7 +45,8 @@ def upgrade() -> None:
                 schema=schema,
             )
             op.execute(text("UPDATE lessons SET updated_at = created_at WHERE updated_at IS NULL"))
-            op.alter_column("lessons", "updated_at", nullable=False, existing_type=sa_.DateTime())
+            with op.batch_alter_table("lessons", schema=schema) as batch_op:
+                batch_op.alter_column("updated_at", nullable=False, existing_type=sa_.DateTime())
         else:
             op.add_column(
                 "lessons",

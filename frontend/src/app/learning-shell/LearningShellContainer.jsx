@@ -158,7 +158,6 @@ export function LearningShellContainer() {
     immersiveLayoutActive: controller.immersiveLayoutActive,
     lessons,
     prefetchLessonMediaMeta,
-    refreshSubtitleCacheMeta,
   });
   useCurrentLessonMediaBinding({
     currentLesson,
@@ -366,5 +365,3 @@ export function LearningShellContainer() {
     </SidebarProvider>
   );
 }
-
-

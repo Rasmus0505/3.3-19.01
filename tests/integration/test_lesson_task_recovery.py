@@ -28,8 +28,8 @@ from app.core.timezone import now_shanghai_naive
 ORPHANED_TASK_MESSAGE = "上次生成已中断，可继续生成或重新开始。"
 
 
-def _register_and_login(client: TestClient, *, email: str, password: str = "123456") -> str:
-    register_resp = client.post("/api/auth/register", json={"email": email, "password": password})
+def _register_and_login(client: TestClient, *, email: str, password: str = "Passw0rd!123") -> str:
+    register_resp = client.post("/api/auth/register", json={"username": email.split("@")[0], "email": email, "password": password})
     assert register_resp.status_code == 200
     admin_emails = {item.strip().lower() for item in os.getenv("ADMIN_EMAILS", "").split(",") if item.strip()}
     session_factory = getattr(client.app.state, "testing_session_factory", None)
@@ -73,7 +73,6 @@ def _create_stale_running_task(session_factory, *, tmp_path: Path, owner_user_id
             owner_user_id=owner_user_id,
             source_filename="source.mp4",
             asr_model="qwen3-asr-flash-filetrans",
-            semantic_split_enabled=False,
             work_dir=str(req_dir),
             source_path=str(source_path),
             db=session,
@@ -160,7 +159,7 @@ def test_orphaned_running_task_is_reconciled_on_first_get(test_client):
     assert payload["can_terminate"] is False
 
 
-def test_reconciled_task_resume_reuses_safe_point(test_client, monkeypatch):
+def test_reconciled_task_resume_endpoint_is_disabled(test_client, monkeypatch):
     client, session_factory, tmp_path = test_client
     token = _register_and_login(client, email="recovery-resume@example.com")
     user_id = _get_user_id(session_factory, email="recovery-resume@example.com")
@@ -182,23 +181,25 @@ def test_reconciled_task_resume_reuses_safe_point(test_client, monkeypatch):
 
     response = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 200
-    assert response.json()["ok"] is True
-    assert started_runs and started_runs[0]["task_id"] == task_id
+    assert response.status_code == 410
+    payload = response.json()
+    assert payload["ok"] is False
+    assert payload["error_code"] == "TASK_RESUME_DISABLED"
+    assert started_runs == []
 
     session = session_factory()
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         assert task is not None
-        assert task.status == "pending"
+        assert task.status == "running"
         assert task.resume_available is False
         assert task.resume_stage == "translate_zh"
-        assert task.current_text == "准备继续生成"
+        assert task.current_text == "翻译中"
     finally:
         session.close()
 
 
-def test_reconciled_task_resume_reports_missing_artifacts(test_client):
+def test_reconciled_task_resume_disabled_even_when_artifacts_missing(test_client):
     client, session_factory, tmp_path = test_client
     token = _register_and_login(client, email="recovery-missing@example.com")
     user_id = _get_user_id(session_factory, email="recovery-missing@example.com")
@@ -207,15 +208,15 @@ def test_reconciled_task_resume_reports_missing_artifacts(test_client):
 
     response = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 400
+    assert response.status_code == 410
     payload = response.json()
-    assert payload["error_code"] == "TASK_ARTIFACT_MISSING"
+    assert payload["error_code"] == "TASK_RESUME_DISABLED"
 
     task_response = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
     assert task_response.status_code == 200
     task_payload = task_response.json()
-    assert task_payload["status"] == "failed"
-    assert task_payload["resume_available"] is False
+    assert task_payload["status"] == "paused"
+    assert task_payload["resume_available"] is True
 
 
 def test_active_task_probe_prevents_orphan_recovery(test_client):
@@ -253,7 +254,6 @@ def test_failed_task_ignores_late_progress_updates(test_client, tmp_path):
             owner_user_id=user_id,
             source_filename="source.mp4",
             asr_model="faster-whisper-medium",
-            semantic_split_enabled=False,
             work_dir=str(req_dir),
             source_path=str(source_path),
             db=session,
@@ -318,7 +318,6 @@ def test_partial_success_task_exposes_canonical_partial_result_fields(test_clien
             owner_user_id=user_id,
             source_filename="source.mp4",
             asr_model="qwen3-asr-flash-filetrans",
-            semantic_split_enabled=False,
             work_dir=str(req_dir),
             source_path=str(source_path),
             db=session,
@@ -358,9 +357,11 @@ def test_partial_success_task_exposes_canonical_partial_result_fields(test_clien
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "succeeded"
+    assert payload["status"] == "failed"
     assert payload["completion_kind"] == "partial"
-    assert payload["result_kind"] == "asr_only"
+    assert payload["result_kind"] == ""
     assert payload["partial_failure_stage"] == "translate_zh"
     assert payload["partial_failure_code"] == "TRANSLATION_PARTIAL"
     assert payload["partial_failure_message"] == "第2句失败：REQUEST_FAILED rate limit"
+    assert payload["error_code"] == "TRANSLATION_PARTIAL"
+    assert payload["failure_debug"]["failed_stage"] == "translate_zh"

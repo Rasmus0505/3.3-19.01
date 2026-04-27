@@ -6,9 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import LESSON_DEFAULT_ASR_MODEL
 from app.models import SubtitleSetting
+from app.services.asr_model_registry import get_supported_upload_asr_model_keys
 
 from .common import SubtitleSettingsSnapshot, logger, now_local
-from .constants import DEFAULT_SUBTITLE_SETTINGS, FAST_CLOUD_MODEL, SUBTITLE_SETTINGS_REQUIRED_COLUMN_SQL
+from .constants import DEFAULT_SUBTITLE_SETTINGS, SUBTITLE_SETTINGS_REQUIRED_COLUMN_SQL
 
 
 def ensure_default_subtitle_settings(db: Session) -> SubtitleSetting:
@@ -212,9 +213,10 @@ def backfill_subtitle_settings_values(db: Session) -> bool:
             update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": int(default_value) if dialect_name == "sqlite" else bool(default_value)}
         elif column_name == "default_asr_model":
+            supported_asr_sql = "', '".join(str(item).replace("'", "''") for item in get_supported_upload_asr_model_keys())
             where_sql = (
                 f"{column_name} IS NULL OR TRIM({column_name}) = '' "
-                f"OR TRIM({column_name}) NOT IN ('{FAST_CLOUD_MODEL}')"
+                f"OR TRIM({column_name}) NOT IN ('{supported_asr_sql}')"
             )
             update_sql = text(f"UPDATE {table_name} SET {column_name} = :default_value WHERE {where_sql}")
             params = {"default_value": str(default_value or LESSON_DEFAULT_ASR_MODEL)}
@@ -255,7 +257,7 @@ def normalize_subtitle_settings_row(row: SubtitleSetting) -> bool:
             continue
         if key == "default_asr_model":
             normalized_value = str(current or "").strip() or str(value or LESSON_DEFAULT_ASR_MODEL)
-            if normalized_value not in {FAST_CLOUD_MODEL}:
+            if normalized_value not in set(get_supported_upload_asr_model_keys()):
                 normalized_value = str(value or LESSON_DEFAULT_ASR_MODEL)
             if normalized_value != current:
                 setattr(row, key, normalized_value)

@@ -28,7 +28,7 @@ def upgrade() -> None:
     schema = _schema_name()
     op.create_table(
         "llm_usage_logs",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True, nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("trace_id", sa.String(length=64), nullable=False),
         sa.Column("category", sa.String(length=16), nullable=False),
@@ -44,6 +44,8 @@ def upgrade() -> None:
         sa.Column("input_text_preview", sa.String(length=300), nullable=False, server_default="''"),
         sa.Column("lesson_id", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], [f"{APP_SCHEMA}.users.id" if schema else "users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["lesson_id"], [f"{APP_SCHEMA}.lessons.id" if schema else "lessons.id"], ondelete="SET NULL"),
         schema=schema,
     )
     op.create_index("ix_llm_usage_user_id", "llm_usage_logs", ["user_id"], unique=False, schema=schema)
@@ -52,28 +54,18 @@ def upgrade() -> None:
     op.create_index("ix_llm_usage_model_name", "llm_usage_logs", ["model_name"], unique=False, schema=schema)
     op.create_index("ix_llm_usage_lesson_id", "llm_usage_logs", ["lesson_id"], unique=False, schema=schema)
     op.create_index("ix_llm_usage_created_at", "llm_usage_logs", ["created_at"], unique=False, schema=schema)
-    op.create_foreign_key(
-        "fk_llm_usage_user_id",
-        "llm_usage_logs", "users",
-        ["user_id"], ["id"],
-        ondelete="CASCADE",
-        source_schema=schema,
-        referent_schema=schema,
-    )
-    op.create_foreign_key(
-        "fk_llm_usage_lesson_id",
-        "llm_usage_logs", "lessons",
-        ["lesson_id"], ["id"],
-        ondelete="SET NULL",
-        source_schema=schema,
-        referent_schema=schema,
-    )
-
     if schema is None:
-        op.execute(
-            "ALTER TABLE wallet_ledger ADD COLUMN IF NOT EXISTS event_type VARCHAR(32) NOT NULL DEFAULT 'reserve' "
-            "CHECK(event_type IN ('reserve','consume','refund','manual_adjust','redeem_code','consume_translate','refund_translate','consume_llm'))"
-        )
+        existing_columns = {column["name"] for column in sa.inspect(op.get_bind()).get_columns("wallet_ledger")}
+        if "event_type" not in existing_columns:
+            with op.batch_alter_table("wallet_ledger", schema=None) as batch_op:
+                batch_op.add_column(
+                    sa.Column(
+                        "event_type",
+                        sa.String(length=32),
+                        nullable=False,
+                        server_default="reserve",
+                    )
+                )
     else:
         op.execute(
             f"ALTER TABLE {schema}.wallet_ledger ADD COLUMN IF NOT EXISTS event_type VARCHAR(32) NOT NULL DEFAULT 'reserve'"
@@ -82,8 +74,6 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     schema = _schema_name()
-    op.drop_constraint("fk_llm_usage_lesson_id", "llm_usage_logs", schema=schema)
-    op.drop_constraint("fk_llm_usage_user_id", "llm_usage_logs", schema=schema)
     op.drop_index("ix_llm_usage_created_at", table_name="llm_usage_logs", schema=schema)
     op.drop_index("ix_llm_usage_lesson_id", table_name="llm_usage_logs", schema=schema)
     op.drop_index("ix_llm_usage_model_name", table_name="llm_usage_logs", schema=schema)

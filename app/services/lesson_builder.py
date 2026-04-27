@@ -261,20 +261,22 @@ def extract_sentences(asr_payload: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         for sentence in sentences:
             if not isinstance(sentence, dict):
-                continue
+                raise ValueError("ASR provider sentence is not an object")
             text = str(sentence.get("text") or "").strip()
             begin_ms = int(sentence.get("begin_time") or 0)
             end_ms = int(sentence.get("end_time") or 0)
-            if not text or end_ms <= begin_ms:
-                continue
+            if not text:
+                raise ValueError("ASR provider sentence has empty text")
+            if end_ms <= begin_ms:
+                raise ValueError("ASR provider sentence has invalid official timestamps")
             items.append({"text": text, "begin_ms": begin_ms, "end_ms": end_ms})
     return items
 
 
 def build_lesson_sentences(asr_payload: dict[str, Any]) -> dict[str, Any]:
-    """直接返回 ASR 原始句子，不再进行任何智能分句。"""
+    """直接返回 ASR 模型提供的句子。"""
     raw_sentences = extract_sentences(asr_payload)
-    return {"sentences": raw_sentences, "chunks": [], "mode": "asr_sentences_raw"}
+    return {"sentences": raw_sentences, "chunks": [], "mode": "asr_provider_sentences"}
 
 
 def estimate_duration_ms(asr_payload: dict[str, Any], sentences: list[dict[str, Any]]) -> int:

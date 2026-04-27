@@ -69,6 +69,7 @@ def _append_translation_request_logs_safe(
 ) -> None:
     if not records:
         return
+    checkpoint = db.begin_nested()
     try:
         append_translation_request_logs(
             db,
@@ -78,7 +79,9 @@ def _append_translation_request_logs_safe(
             lesson_id=lesson_id,
             records=list(records),
         )
+        checkpoint.commit()
     except Exception as exc:
+        checkpoint.rollback()
         logger.warning(
             "[DEBUG] lesson.translation_logs.persist_failed task_id=%s lesson_id=%s detail=%s",
             task_id,

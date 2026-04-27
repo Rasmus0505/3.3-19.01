@@ -10,14 +10,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fastapi import UploadFile
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, LESSON_TASK_MAX_ACTIVE, LESSON_TASK_MAX_QUEUED, UPLOAD_MAX_BYTES
+from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, LESSON_TASK_MAX_ACTIVE, LESSON_TASK_MAX_QUEUED, UPLOAD_MAX_BYTES
 from app.core.timezone import now_shanghai_naive
 from app.models import Lesson, LessonGenerationTask, WalletLedger
 from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
 from app.repositories.lessons import update_lesson_title_for_user
+from app.services.course_generation.pipeline import CourseGenerationError, GenerationJobSpec, run_generation_job
 from app.services.asr_dashscope import AsrCancellationRequested, AsrError
 from app.services.billing_service import (
     BillingError,
@@ -85,6 +87,24 @@ class LessonTaskAdmissionError(RuntimeError):
     def __init__(self, detail: dict[str, object]):
         self.detail = dict(detail or {})
         super().__init__(self.message)
+
+
+class LessonTaskConfigurationError(RuntimeError):
+    def __init__(self, code: str, message: str, detail: str = ""):
+        self.code = str(code or "LESSON_TASK_CONFIG_INVALID").strip() or "LESSON_TASK_CONFIG_INVALID"
+        self.message = str(message or "任务配置无效").strip() or "任务配置无效"
+        self.detail = str(detail or "").strip()
+        super().__init__(self.message)
+
+
+def _ensure_generation_options_runtime_ready(generation_options: dict[str, Any]) -> None:
+    normalized = normalize_generation_options(generation_options)
+    if normalized["zh_translation"] and not str(DASHSCOPE_API_KEY or "").strip():
+        raise LessonTaskConfigurationError(
+            "TRANSLATION_API_KEY_MISSING",
+            "已开启中文翻译，但翻译模型 qwen-mt-flash 需要 DASHSCOPE_API_KEY",
+            "ASR 模型只负责英文字幕识别；中文翻译是独立阶段。请配置 DASHSCOPE_API_KEY，或关闭中文翻译后只生成原文字幕。",
+        )
 
 
 def _parse_dashscope_recovery_payload(value: Any) -> dict[str, Any] | None:
@@ -258,6 +278,7 @@ def _build_task_start_kwargs(task: LessonGenerationTask) -> dict[str, object]:
         ),
         "input_mode": str(artifacts.get("input_mode") or "upload").strip().lower() or "upload",
         "source_duration_ms": int(artifacts.get("source_duration_ms") or 0),
+        "media_storage": str(artifacts.get("media_storage") or "client_indexeddb").strip().lower() or "client_indexeddb",
     }
 
 
@@ -410,6 +431,7 @@ def run_lesson_generation_task(
     session_factory: sessionmaker[Session],
     input_mode: str = "upload",
     source_duration_ms: int | None = None,
+    media_storage: str = "client_indexeddb",
 ) -> None:
     db = session_factory()
     _register_active_task(task_id)
@@ -480,52 +502,30 @@ def run_lesson_generation_task(
                 )
             _raise_if_task_control_requested(task_id, session_factory=session_factory)
 
-        normalized_input_mode = str(input_mode or "upload").strip().lower()
         _raise_if_task_control_requested(task_id, session_factory=session_factory)
-        dashscope_file_id = str(artifacts.get("dashscope_file_id") or "").strip()
-        dashscope_file_url = str(artifacts.get("dashscope_file_url") or "").strip()
-        if dashscope_file_id:
-            dashscope_kwargs: dict[str, Any] = {
-                "dashscope_file_id": dashscope_file_id,
-                "source_filename": source_filename,
-                "req_dir": req_dir,
-                "owner_id": owner_id,
-                "asr_model": effective_asr_model,
-                "generation_options": normalize_generation_options(effective_generation_options),
-                "task_id": task_id,
-                "db": db,
-                "progress_callback": _progress,
-            }
-            if dashscope_file_url:
-                dashscope_kwargs["dashscope_file_url"] = dashscope_file_url
-            lesson = LessonService.generate_from_dashscope_file_id(**dashscope_kwargs)
-        elif normalized_input_mode == "local_asr":
-            local_payload = json.loads(Path(source_path).read_text(encoding="utf-8"))
-            lesson = LessonService.generate_from_local_asr_payload(
-                asr_payload=dict(local_payload.get("asr_payload") or {}),
-                source_filename=source_filename,
-                source_duration_ms=int(local_payload.get("source_duration_ms") or source_duration_ms or 0),
-                generation_options=normalize_generation_options(effective_generation_options),
-                runtime_kind=str(local_payload.get("runtime_kind") or artifacts.get("local_runtime_kind") or "local_browser"),
-                req_dir=req_dir,
-                owner_id=owner_id,
-                asr_model=effective_asr_model,
-                task_id=task_id,
-                db=db,
-                progress_callback=_progress,
+        normalized_input_mode = str(input_mode or "upload").strip().lower()
+        if normalized_input_mode != "upload" or str(artifacts.get("dashscope_file_id") or "").strip():
+            raise MediaError(
+                "LEGACY_GENERATION_DISABLED",
+                "旧生成入口已停用",
+                "请通过云端上传生成课程。",
             )
-        else:
-            lesson = LessonService.generate_from_saved_file(
-                source_path=source_path,
-                source_filename=source_filename,
-                req_dir=req_dir,
-                owner_id=owner_id,
-                asr_model=effective_asr_model,
-                generation_options=normalize_generation_options(effective_generation_options),
+        lesson = run_generation_job(
+            GenerationJobSpec(
                 task_id=task_id,
-                db=db,
-                progress_callback=_progress,
-            )
+                owner_id=owner_id,
+                source_filename=source_filename,
+                source_path=Path(source_path),
+                work_dir=Path(req_dir),
+                requested_asr_model=requested_asr_model,
+                effective_asr_model=effective_asr_model,
+                generation_options=normalize_generation_options(effective_generation_options),
+                media_storage="server",
+                source_duration_ms=int(source_duration_ms or 0),
+            ),
+            db=db,
+            progress_callback=_progress,
+        )
         _raise_if_task_control_requested(task_id, session_factory=session_factory)
         task_result_meta = dict(getattr(lesson, "task_result_meta", None) or {})
         dashscope_recovery = _parse_dashscope_recovery_payload(task_result_meta.get("dashscope_recovery"))
@@ -655,6 +655,18 @@ def run_lesson_generation_task(
             session_factory=session_factory,
         )
         logger.warning("[DEBUG] lessons.task.media_failed task_id=%s code=%s", task_id, exc.code)
+    except CourseGenerationError as exc:
+        db.rollback()
+        mark_task_failed(
+            task_id,
+            error_code=exc.code,
+            message=exc.message,
+            exception_type=exc.__class__.__name__,
+            detail_excerpt=exc.detail or exc.message,
+            traceback_excerpt=traceback.format_exc(),
+            session_factory=session_factory,
+        )
+        logger.warning("[DEBUG] lessons.task.course_generation_failed task_id=%s code=%s detail=%s", task_id, exc.code, exc.detail[:240])
     except TranslationError as exc:
         db.rollback()
         error_code = str(getattr(exc, "code", "") or "TRANSLATION_FAILED").strip() or "TRANSLATION_FAILED"
@@ -746,6 +758,7 @@ def create_lesson_task_from_dashscope_file(
             generation_options,
             defaults=normalized_requested_generation_options,
         )
+        _ensure_generation_options_runtime_ready(normalized_effective_generation_options)
 
         with _TASK_ADMISSION_LOCK:
             create_task(
@@ -802,6 +815,97 @@ def create_lesson_task_from_dashscope_file(
         raise
 
 
+def create_lesson_task_from_upload_file(
+    *,
+    upload_file: UploadFile,
+    owner_user_id: int,
+    asr_model: str,
+    generation_options: dict | None = None,
+    db: Session,
+) -> dict[str, object]:
+    task_id = build_task_id()
+    req_dir = BASE_TMP_DIR / task_id
+    req_dir.mkdir(parents=True, exist_ok=True)
+    task_session_factory = build_lesson_task_session_factory(db.get_bind())
+    try:
+        ensure_default_billing_rates(db)
+        ensure_lesson_task_storage_ready(db)
+        source_filename = (upload_file.filename or "unknown")[:255]
+        suffix = validate_suffix(source_filename)
+        source_path = req_dir / f"source{suffix}"
+        save_upload_file_stream(upload_file, source_path, max_bytes=UPLOAD_MAX_BYTES)
+        source_duration_ms = 0
+        try:
+            source_duration_ms = max(0, int(probe_audio_duration_ms(source_path) or 0))
+        except Exception:
+            logger.info("[DEBUG] lessons.task.upload.duration_probe_failed task_id=%s source=%s", task_id, source_filename)
+
+        model_resolution = _resolve_task_asr_models(asr_model)
+        effective_asr_model = str(model_resolution["effective_asr_model"])
+        normalized_requested_generation_options = normalize_generation_options(generation_options)
+        normalized_effective_generation_options = normalize_generation_options(
+            generation_options,
+            defaults=normalized_requested_generation_options,
+        )
+        _ensure_generation_options_runtime_ready(normalized_effective_generation_options)
+
+        with _TASK_ADMISSION_LOCK:
+            create_task(
+                task_id=task_id,
+                owner_user_id=owner_user_id,
+                source_filename=source_filename,
+                asr_model=asr_model,
+                requested_asr_model=str(model_resolution["requested_asr_model"]),
+                effective_asr_model=effective_asr_model,
+                model_fallback_applied=bool(model_resolution["model_fallback_applied"]),
+                model_fallback_reason=str(model_resolution["model_fallback_reason"]),
+                requested_generation_options=normalized_requested_generation_options,
+                effective_generation_options=normalized_effective_generation_options,
+                work_dir=str(req_dir),
+                source_path=str(source_path),
+                db=db,
+            )
+            patch_task_artifacts(
+                task_id,
+                artifacts_patch={
+                    "source_path": str(source_path),
+                    "source_duration_ms": source_duration_ms,
+                    "input_mode": "upload",
+                    "media_storage": "server",
+                    "requested_generation_options": normalized_requested_generation_options,
+                    "effective_generation_options": normalized_effective_generation_options,
+                    "generated_content_status": build_generated_content_status(
+                        effective_options=normalized_effective_generation_options,
+                    ),
+                },
+                db=db,
+            )
+            task = db.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
+            if task is None:
+                raise RuntimeError(f"lesson task missing after create: {task_id}")
+            try:
+                admission, start_kwargs = _admit_or_queue_task_locked(task=task, db=db)
+            except LessonTaskAdmissionError:
+                db.delete(task)
+                db.commit()
+                raise
+        if start_kwargs is not None:
+            _start_lesson_generation_thread(session_factory=task_session_factory, task_kwargs=start_kwargs)
+            logger.info("[DEBUG] lessons.task.upload.started task_id=%s user_id=%s", task_id, owner_user_id)
+        else:
+            logger.info("[DEBUG] lessons.task.upload.queued task_id=%s user_id=%s", task_id, owner_user_id)
+        return {
+            "task_id": task_id,
+            **model_resolution,
+            "admission": admission,
+            "requested_generation_options": normalized_requested_generation_options,
+            "effective_generation_options": normalized_effective_generation_options,
+        }
+    except Exception:
+        cleanup_dir(req_dir)
+        raise
+
+
 def create_lesson_task_from_local_asr(
     *,
     source_filename: str,
@@ -845,6 +949,7 @@ def create_lesson_task_from_local_asr(
             generation_options,
             defaults=normalized_requested_generation_options,
         )
+        _ensure_generation_options_runtime_ready(normalized_effective_generation_options)
 
         with _TASK_ADMISSION_LOCK:
             create_task(

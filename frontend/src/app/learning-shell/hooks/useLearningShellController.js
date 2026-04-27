@@ -2,7 +2,7 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
-import { api, parseResponse, toErrorText } from "../../../shared/api/client";
+import { api } from "../../../shared/api/client";
 import {
   getLessonMediaPreview,
   readMediaDurationSeconds,
@@ -10,12 +10,7 @@ import {
   saveLessonMedia,
 } from "../../../shared/media/localMediaStore";
 import {
-  getCachedLessonSubtitleVariant,
-  getLessonSubtitleAvailability,
-  getLessonSubtitleCache,
   saveLessonSubtitleCacheSeed,
-  saveLessonSubtitleVariant,
-  setActiveLessonSubtitleVariant,
 } from "../../../shared/media/localSubtitleStore.js";
 import { resolveAdminNavItem } from "../../../shared/lib/adminSearchParams";
 import { useAppStore } from "../../../store";
@@ -25,63 +20,6 @@ import { PANEL_ITEMS } from "../LearningShellSidebar";
 import { getPanelItemByPathname, getPanelPath } from "../panelRoutes";
 
 const MOBILE_MEDIA_QUERY = "(max-width: 767px)";
-
-async function requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload) {
-  const resp = await api(
-    `/api/lessons/${lessonId}/subtitle-variants`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        asr_payload: asrPayload,
-        semantic_split_enabled: false,
-      }),
-    },
-    accessToken,
-  );
-  const data = await parseResponse(resp);
-  if (!resp.ok) {
-    const message = toErrorText(data, "重新生成字幕失败");
-    const error = new Error(message);
-    error.userMessage = message;
-    throw error;
-  }
-  return data;
-}
-
-function mergeLessonWithSubtitleVariant(lesson, variant) {
-  if (!lesson || !variant || !Array.isArray(variant.sentences) || variant.sentences.length === 0) {
-    return lesson;
-  }
-  return {
-    ...lesson,
-    sentences: variant.sentences,
-    subtitle_variant_state: {
-      semantic_split_enabled: false,
-      split_mode: String(variant.split_mode || ""),
-      source_word_count: Number(variant.source_word_count || 0),
-      local_only: true,
-    },
-  };
-}
-
-function applyLessonSubtitleVariantToStore(lessonId, activeVariant) {
-  useAppStore.setState((state) => ({
-    currentLesson:
-      state.currentLesson?.id === lessonId
-        ? mergeLessonWithSubtitleVariant(state.currentLesson, activeVariant)
-        : state.currentLesson,
-    lessonCardMetaMap: {
-      ...state.lessonCardMetaMap,
-      [lessonId]: {
-        ...(state.lessonCardMetaMap[lessonId] || {}),
-        sentenceCount: Array.isArray(activeVariant?.sentences)
-          ? activeVariant.sentences.length
-          : Number(state.lessonCardMetaMap[lessonId]?.sentenceCount || 0),
-      },
-    },
-  }));
-}
 
 function buildCreatedLessonMediaPreview(lesson, mediaPreview, mediaPersisted) {
   const rawLessonId = lesson?.id ?? mediaPreview?.lessonId ?? null;
@@ -168,7 +106,6 @@ export function useLearningShellController({
   const activePanel = isAdminRoute ? null : getPanelItemByPathname(location.pathname).key;
   const immersiveLayoutActive = Boolean(accessToken && currentLesson?.id && immersiveActive);
   const lastNonImmersivePanelRef = useRef(getPanelItemByPathname(location.pathname).key);
-  const originalSubtitleRecoveryRef = useRef(new Map());
 
   useEffect(() => {
     if (desktopSync.conflicts.length > 0 && !conflictDialogOpen) {
@@ -256,69 +193,6 @@ export function useLearningShellController({
       // Ignore local subtitle cache write failures.
     }
   }
-
-  useEffect(() => {
-    const lessonId = Number(currentLesson?.id || 0);
-    if (!accessToken || lessonId <= 0) return;
-
-    const recoveryState = originalSubtitleRecoveryRef.current.get(lessonId);
-    if (recoveryState === "pending" || recoveryState === "done" || recoveryState === "missing") {
-      return;
-    }
-
-    let canceled = false;
-    originalSubtitleRecoveryRef.current.set(lessonId, "pending");
-
-    async function ensureOriginalAsrLesson() {
-      try {
-        if (currentLesson?.subtitle_cache_seed) {
-          await persistLessonSubtitleCacheSeed(currentLesson);
-        }
-
-        let activeVariant = await getCachedLessonSubtitleVariant(lessonId, false);
-        if (activeVariant) {
-          await setActiveLessonSubtitleVariant(lessonId, false);
-        } else {
-          const subtitleCacheMeta = await getLessonSubtitleAvailability(lessonId);
-          if (!subtitleCacheMeta?.hasSource) {
-            originalSubtitleRecoveryRef.current.set(lessonId, "missing");
-            return;
-          }
-          const rawCache = await getLessonSubtitleCache(lessonId);
-          const asrPayload = rawCache?.asr_payload || currentLesson?.subtitle_cache_seed?.asr_payload || null;
-          if (!asrPayload || typeof asrPayload !== "object") {
-            originalSubtitleRecoveryRef.current.set(lessonId, "missing");
-            return;
-          }
-          const data = await requestOriginalSubtitleVariant(accessToken, lessonId, asrPayload);
-          activeVariant = await saveLessonSubtitleVariant(lessonId, data);
-        }
-
-        if (!activeVariant) {
-          originalSubtitleRecoveryRef.current.set(lessonId, "missing");
-          return;
-        }
-
-        if (canceled) {
-          originalSubtitleRecoveryRef.current.delete(lessonId);
-          return;
-        }
-        applyLessonSubtitleVariantToStore(lessonId, activeVariant);
-        await refreshSubtitleCacheMeta([{ id: lessonId }], { merge: true });
-        originalSubtitleRecoveryRef.current.set(lessonId, "done");
-      } catch (_) {
-        originalSubtitleRecoveryRef.current.delete(lessonId);
-      }
-    }
-
-    void ensureOriginalAsrLesson();
-    return () => {
-      canceled = true;
-      if (originalSubtitleRecoveryRef.current.get(lessonId) === "pending") {
-        originalSubtitleRecoveryRef.current.delete(lessonId);
-      }
-    };
-  }, [accessToken, currentLesson, refreshSubtitleCacheMeta]);
 
   const filteredLessons = useMemo(() => lessons, [lessons]);
   const currentPanel = isAdminRoute

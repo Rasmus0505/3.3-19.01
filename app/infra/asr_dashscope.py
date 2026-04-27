@@ -10,6 +10,7 @@ from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
+from app.infra.asr_stepfun import STEPFUN_ASR_MODEL, transcribe_audio_file as _transcribe_audio_file_with_stepfun
 from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
 from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
 from app.exceptions.asr import AsrError, AsrCancellationRequested
@@ -18,23 +19,6 @@ from app.exceptions.asr import AsrError, AsrCancellationRequested
 DEFAULT_MODEL = QWEN_ASR_MODEL
 QWEN_DEFAULT_MODEL = QWEN_ASR_MODEL
 SUPPORTED_MODELS = set(get_supported_transcribe_asr_model_keys())
-
-
-# AsrError 和 AsrCancellationRequested 现在从 app.exceptions.asr 导入
-# 为了向后兼容，保留本地定义（与 app.exceptions.asr 中的类兼容）
-class AsrError(RuntimeError):
-    """ASR 错误（向后兼容）。请使用 app.exceptions.asr.AsrError"""
-    def __init__(self, code: str, message: str, detail: str = ""):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.detail = detail
-
-
-class AsrCancellationRequested(RuntimeError):
-    """ASR 取消请求（向后兼容）。请使用 app.exceptions.asr.AsrCancellationRequested"""
-    pass
-
 
 def setup_dashscope(api_key: str) -> None:
     dashscope.api_key = (api_key or "").strip()
@@ -382,6 +366,14 @@ def transcribe_audio_file(
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
+    if model_name == STEPFUN_ASR_MODEL:
+        return _transcribe_audio_file_with_stepfun(
+            audio_path,
+            model=model_name,
+            requests_timeout=requests_timeout,
+            known_duration_ms=known_duration_ms,
+            progress_callback=progress_callback,
+        )
     return _transcribe_audio_file_with_qwen(audio_path, model=model_name, requests_timeout=requests_timeout, progress_callback=progress_callback)
 
 
@@ -422,6 +414,8 @@ def transcribe_signed_url(
     model_name = (model or "").strip()
     if model_name not in SUPPORTED_MODELS:
         raise AsrError("INVALID_MODEL", "不支持的模型", model_name)
+    if model_name == STEPFUN_ASR_MODEL:
+        raise AsrError("INVALID_MODEL", "StepAudio 2.5 ASR 不支持 DashScope 预签名 URL 转写", model_name)
 
     _ensure_dashscope_api_key()
     request_timeout = max(5, int(requests_timeout or 120))

@@ -2,20 +2,23 @@ from __future__ import annotations
 
 import os
 
-from app.core.config import DASHSCOPE_API_KEY
+from app.core.config import DASHSCOPE_API_KEY, STEPFUN_API_KEY
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
+STEPFUN_ASR_MODEL = "stepaudio-2.5-asr"
 
 UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,
+    STEPFUN_ASR_MODEL,
 )
 TRANSCRIBE_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,
+    STEPFUN_ASR_MODEL,
 )
 LOCAL_BROWSER_ASR_MODEL_KEYS: tuple[str, ...] = ()
 LOCAL_DESKTOP_ASR_MODEL_KEYS: tuple[str, ...] = ()
 LOCAL_TASK_ASR_MODEL_KEYS: tuple[str, ...] = ()
-ALL_ASR_MODEL_KEYS: tuple[str, ...] = (QWEN_ASR_MODEL,)
+ALL_ASR_MODEL_KEYS: tuple[str, ...] = (QWEN_ASR_MODEL, STEPFUN_ASR_MODEL)
 
 STATUS_READY = "ready"
 STATUS_PREPARING = "preparing"
@@ -137,13 +140,64 @@ def _get_qwen_status() -> dict[str, object]:
     }
 
 
+def _get_stepfun_status() -> dict[str, object]:
+    base = {
+        "model_key": STEPFUN_ASR_MODEL,
+        "display_name": "StepAudio 2.5 ASR",
+        "subtitle": "英文素材默认识别路径，使用 StepAudio 2.5 云端识别。",
+        "note": "默认 language=en，enable_itn=false，适合英语学习字幕。",
+        "runtime_kind": "cloud_api",
+        "runtime_label": "Cloud API",
+        "prepare_mode": "none",
+        "cache_scope": "cloud",
+        "supports_upload": True,
+        "supports_preview": False,
+        "supports_transcribe_api": True,
+        "source_model_id": "",
+        "deploy_path": "",
+        "download_required": False,
+        "preparing": False,
+        "cached": False,
+        "model_dir": "",
+        "missing_files": [],
+    }
+    if str(os.getenv("STEPFUN_ASR_ENABLED", "1") or "1").strip().lower() in _FALSEY_ENV_VALUES:
+        return {
+            **base,
+            "status": STATUS_ERROR,
+            "available": False,
+            "message": "StepAudio 2.5 ASR is disabled for this deployment.",
+            "last_error": "stepfun_asr_disabled",
+            "actions": [{"key": "verify", "label": "Verify", "enabled": False, "primary": False}],
+        }
+    if not str(STEPFUN_API_KEY or "").strip():
+        return {
+            **base,
+            "status": STATUS_MISSING,
+            "available": False,
+            "message": "STEPFUN_API_KEY is missing.",
+            "last_error": "STEPFUN_API_KEY is missing.",
+            "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
+        }
+    return {
+        **base,
+        "status": STATUS_READY,
+        "available": True,
+        "message": "StepAudio 2.5 ASR is ready.",
+        "last_error": "",
+        "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
+    }
+
+
 def list_asr_model_descriptors() -> list[dict[str, object]]:
-    return [_get_qwen_status()]
+    return [_get_qwen_status(), _get_stepfun_status()]
 
 
 def get_asr_model_status(model_key: str) -> dict[str, object]:
     if model_key == QWEN_ASR_MODEL:
         return _get_qwen_status()
+    if model_key == STEPFUN_ASR_MODEL:
+        return _get_stepfun_status()
     return {
         "model_key": str(model_key or "").strip() or "unknown",
         "status": STATUS_UNSUPPORTED,
@@ -155,15 +209,19 @@ def get_asr_model_status(model_key: str) -> dict[str, object]:
 
 
 def prepare_asr_model(model_key: str, *, force_refresh: bool = False) -> dict[str, object]:
+    if model_key == STEPFUN_ASR_MODEL:
+        return _get_stepfun_status()
     return _get_qwen_status()
 
 
 def verify_asr_model(model_key: str) -> dict[str, object]:
+    if model_key == STEPFUN_ASR_MODEL:
+        return _get_stepfun_status()
     return _get_qwen_status()
 
 
 def list_asr_models_with_status() -> list[dict[str, object]]:
-    return [_get_qwen_status()]
+    return [_get_qwen_status(), _get_stepfun_status()]
 
 
 def get_supported_upload_asr_model_keys() -> tuple[str, ...]:
@@ -193,4 +251,6 @@ def get_supported_asr_model_keys() -> tuple[str, ...]:
 def get_asr_display_meta(model_key: str) -> tuple[str, str]:
     if model_key == QWEN_ASR_MODEL:
         return "Bottle 2.0", "cloud"
+    if model_key == STEPFUN_ASR_MODEL:
+        return "StepAudio 2.5 ASR", "cloud"
     return str(model_key or "").strip() or "Unnamed model", "cloud"

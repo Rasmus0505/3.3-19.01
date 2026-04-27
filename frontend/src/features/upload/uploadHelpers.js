@@ -8,6 +8,7 @@ import {
   FASTER_WHISPER_MODEL,
   LOCAL_MODEL_OPTIONS,
   QWEN_MODEL,
+  STEPFUN_MODEL,
   UPLOAD_MODEL_OPTIONS,
 } from "./uploadConstants";
 
@@ -98,7 +99,7 @@ export function getUploadModelMeta(modelKey = "") {
 
 export function getDefaultFastUploadModelKey(configuredModel = "") {
   const normalizedConfiguredModel = String(configuredModel || "").trim();
-  if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
+  if ([FASTER_WHISPER_MODEL, QWEN_MODEL, STEPFUN_MODEL].includes(normalizedConfiguredModel)) {
     return normalizedConfiguredModel;
   }
   return DEFAULT_FAST_UPLOAD_MODEL;
@@ -106,7 +107,7 @@ export function getDefaultFastUploadModelKey(configuredModel = "") {
 
 export function getDefaultUploadModelKey(configuredModel = "") {
   const normalizedConfiguredModel = String(configuredModel || "").trim();
-  if (normalizedConfiguredModel === FASTER_WHISPER_MODEL || normalizedConfiguredModel === QWEN_MODEL) {
+  if ([FASTER_WHISPER_MODEL, QWEN_MODEL, STEPFUN_MODEL].includes(normalizedConfiguredModel)) {
     return normalizedConfiguredModel;
   }
   return QWEN_MODEL;

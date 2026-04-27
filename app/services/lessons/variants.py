@@ -219,10 +219,10 @@ def build_subtitle_variant(
 
     normalized_generation_options = normalize_generation_options(generation_options)
     subtitle_settings = get_subtitle_settings_snapshot(db)
-    _emit_subtitle_variant_progress(progress_callback, stage="prepare", message="正在重切分句")
+    _emit_subtitle_variant_progress(progress_callback, stage="prepare", message="正在读取 ASR 句子")
 
     sentences = extract_sentences(asr_payload)
-    split_mode = "asr_sentences"
+    split_mode = "asr_provider_sentences"
     if not sentences:
         raise MediaError("ASR_SENTENCE_MISSING", "ASR 返回结果缺少句级信息", "未找到有效句子")
 
@@ -255,7 +255,7 @@ def build_subtitle_variant(
         return {
             "split_mode": split_mode,
             "source_word_count": source_word_count,
-            "strategy_version": 2 if split_mode == "asr_sentences" else 1,
+            "strategy_version": 3,
             "sentences": normalized_sentences,
             "translate_failed_count": 0,
             "translation_attempt_records": [],
@@ -361,14 +361,14 @@ def build_subtitle_variant(
     _emit_subtitle_variant_progress(
         progress_callback,
         stage="completed",
-        message="字幕重新生成完成",
+        message="字幕生成完成",
         translate_done=len(sentences),
         translate_total=len(sentences),
     )
     return {
         "split_mode": split_mode,
         "source_word_count": source_word_count,
-        "strategy_version": 2 if split_mode == "asr_sentences" else 1,
+        "strategy_version": 3,
         "sentences": normalized_sentences,
         "translate_failed_count": int(translation_result.failed_count),
         "translation_attempt_records": list(translation_result.attempt_records),

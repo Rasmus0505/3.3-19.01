@@ -78,6 +78,7 @@ import {
   SERVER_PREPARABLE_MODELS,
   SNAPANY_FALLBACK_URL,
   STOPPABLE_SERVER_TASK_STATUSES,
+  STEPFUN_MODEL,
   UPLOAD_MODEL_OPTIONS,
   UPLOAD_PROGRESS_PERSIST_INTERVAL_MS,
 } from "./uploadConstants";
@@ -262,24 +263,35 @@ function getDesktopSelectionErrorMessage(selection = {}) {
   );
 }
 
-function getCloudFailureMessage(errorLike = "", serverStatus = {}, fallback = "") {
+function getCloudModelDisplayName(modelKey = "") {
+  return String(modelKey || "") === STEPFUN_MODEL ? "StepAudio 2.5 ASR" : "Bottle 2.0";
+}
+
+function getCloudFailureMessage(errorLike = "", serverStatus = {}, fallback = "", modelKey = QWEN_MODEL) {
   const normalizedServerStatus = normalizeServerStatus(serverStatus);
+  const modelName = getCloudModelDisplayName(modelKey);
+  const applyModelName = (message) => String(message || "").replaceAll("Bottle 2.0", modelName);
   const reason = sanitizeUserFacingText(normalizedServerStatus.reason || "");
   const hasApiErrorData = errorLike && (typeof errorLike === "object" ? Object.keys(errorLike).length > 0 : String(errorLike).trim().length > 0);
   if (normalizedServerStatus.reachable === false && reason && !hasApiErrorData) {
-    return reason;
+    return applyModelName(reason);
   }
   if (errorLike && typeof errorLike === "object") {
-    return mapCloudAsrFailureToMessage(
+    const exactMessage = toErrorText(errorLike, fallback || `${modelName} 请求失败`);
+    const exactDetail = typeof errorLike?.detail === "string" ? String(errorLike.detail || "").trim() : "";
+    if (exactMessage) {
+      return applyModelName(exactDetail ? `${exactMessage}；${exactDetail}` : exactMessage);
+    }
+    return applyModelName(mapCloudAsrFailureToMessage(
       {
         error_code: errorLike?.error_code ?? errorLike?.code ?? "",
-        message: errorLike?.message || toErrorText(errorLike, fallback || "Bottle 2.0 当前不可用"),
+        message: errorLike?.message || toErrorText(errorLike, fallback || `${modelName} 当前不可用`),
         detail: errorLike?.detail ?? "",
       },
       normalizedServerStatus,
-    );
+    ));
   }
-  return mapCloudAsrFailureToMessage(errorLike || fallback, normalizedServerStatus);
+  return applyModelName(mapCloudAsrFailureToMessage(errorLike || fallback, normalizedServerStatus));
 }
 
 function toNormalizedFilename(filename = "") {
@@ -1484,8 +1496,8 @@ export function UploadPanel({
     (Boolean(displayTaskSnapshot?.can_pause) || Boolean(displayTaskSnapshot?.can_terminate) || STOPPABLE_SERVER_TASK_STATUSES.has(displayTaskStatus));
   const taskPaused = !localTranscribing && displayTaskStatus === "paused";
   const taskTerminated = !localTranscribing && displayTaskStatus === "terminated";
-  const canResumeServerTask = taskPaused || Boolean(taskSnapshot?.resume_available);
-  const canReconnectInterruptedTask = restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED && Boolean(taskId) && !canResumeServerTask;
+  const canResumeServerTask = false;
+  const canReconnectInterruptedTask = restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED && Boolean(taskId);
   const showRecoveryBanner = hasLocalFile && RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus);
   const recoveryBannerText = getRecoveryBannerText(displayTaskSnapshot);
   const taskStatusCardText = getTaskStatusCardText(restoreBannerMode, taskSnapshot, status);
@@ -1534,7 +1546,7 @@ export function UploadPanel({
     restoreBannerMode !== RESTORE_BANNER_MODES.INTERRUPTED &&
     !RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus) &&
     (loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot));
-  const canRetryWithoutUpload = Boolean(taskId) && (Boolean(taskSnapshot?.resume_available) || phase === "error");
+  const canRetryWithoutUpload = false;
   const showMediaPreview = Boolean(file || coverDataUrl);
   const offlineHintText = getOfflineHintText(isOnline, selectedAsrModel);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
@@ -1554,7 +1566,7 @@ export function UploadPanel({
   const showRechargeButton = desktopClientBillingEnabled && desktopBillingState.status === "insufficient";
   const taskTone = getUploadTaskTone({
     phase,
-    resumeAvailable: Boolean(displayTaskSnapshot?.resume_available) || taskPaused,
+    resumeAvailable: false,
     taskStatus: displayTaskStatus,
   });
   const taskToneStyles = getUploadToneStyles(taskTone);
@@ -4339,6 +4351,8 @@ export function UploadPanel({
   }
 
   async function submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, displaySourceFile = uploadSourceFile) {
+    return submitServerUploadTask(uploadSourceFile, runToken, pollToken, displaySourceFile);
+    /*
     const uploadStartStatus = "正在获取云端上传地址";
     setPhase("uploading");
     setStatus(uploadStartStatus);
@@ -4438,7 +4452,6 @@ export function UploadPanel({
 
       const form = new FormData();
       form.append("asr_model", selectedAsrModel);
-      form.append("semantic_split_enabled", "false");
       form.append("generation_options_json", JSON.stringify(effectiveGenerationOptions));
       form.append("dashscope_file_id", resolvedFileId);
       form.append("source_filename", toNormalizedFilename(displaySourceFile?.name || uploadSourceFile?.name || ""));
@@ -4509,6 +4522,103 @@ export function UploadPanel({
       const message = error instanceof Error && error.message ? error.message : `云端直传失败: ${String(error)}`;
       await handleTaskFailureState({
         message,
+        nextTaskId: "",
+        nextTaskSnapshot: null,
+        nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+        nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+        nextBindingCompleted: false,
+      });
+    }
+    */
+  }
+
+  async function submitServerUploadTask(uploadSourceFile, runToken, pollToken, displaySourceFile = uploadSourceFile) {
+    const uploadStartStatus = "正在上传素材";
+    setPhase("uploading");
+    setStatus(uploadStartStatus);
+    await persistSession({
+      file: uploadSourceFile,
+      taskId: "",
+      phase: "uploading",
+      taskSnapshot: null,
+      uploadPercent: 0,
+      status: uploadStartStatus,
+      bindingCompleted: false,
+    });
+
+    const abortController = new AbortController();
+    uploadAbortRef.current = abortController;
+    uploadPersistRef.current = {
+      active: true,
+      fileName: String(displaySourceFile?.name || uploadSourceFile?.name || ""),
+      latestPercent: 0,
+    };
+    try {
+      const form = new FormData();
+      form.append("video_file", uploadSourceFile, toNormalizedFilename(uploadSourceFile?.name || ""));
+      form.append("asr_model", selectedAsrModel);
+      form.append("generation_options_json", JSON.stringify(effectiveGenerationOptions));
+
+      const { ok, data } = await uploadWithProgress(
+        "/api/lessons/tasks/upload",
+        {
+          method: "POST",
+          body: form,
+          signal: abortController.signal,
+          onUploadProgress: ({ percent }) => {
+            if (abortController.signal.aborted) return;
+            const clampedPercent = clampPercent(percent);
+            uploadPersistRef.current.latestPercent = clampedPercent;
+            setUploadPercent(clampedPercent);
+            persistUploadProgress(clampedPercent, displaySourceFile || uploadSourceFile);
+          },
+        },
+        accessToken,
+      );
+
+      uploadAbortRef.current = null;
+      if (runToken !== localRunTokenRef.current || abortController.signal.aborted) return;
+      if (!ok) {
+        const message = getCloudFailureMessage(data, desktopServerStatus, "创建云端任务失败", selectedAsrModel);
+        await handleTaskFailureState({
+          message,
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+          refreshWallet: true,
+        });
+        return;
+      }
+
+      const nextTaskId = String(data.task_id || "");
+      if (!nextTaskId) {
+        await handleTaskFailureState({
+          message: "任务创建成功但缺少 task_id",
+          nextTaskId: "",
+          nextTaskSnapshot: null,
+          nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
+          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
+          nextBindingCompleted: false,
+        });
+        return;
+      }
+
+      maybeShowModelFallbackToast({ ...data, task_id: nextTaskId });
+      setTaskId(nextTaskId);
+      setUploadPercent(100);
+      uploadPersistRef.current.latestPercent = 100;
+      setPhase("processing");
+      resetUploadPersistState();
+      await persistSession({ taskId: nextTaskId, phase: "processing", taskSnapshot: null, uploadPercent: 100, status: "", bindingCompleted: false });
+      void pollTask(nextTaskId, false, pollToken, displaySourceFile || uploadSourceFile);
+    } catch (error) {
+      uploadAbortRef.current = null;
+      if (error?.name === "AbortError") return;
+      resetUploadPersistState();
+      await handleTaskFailureState({
+        message: getCloudFailureMessage(error, desktopServerStatus, "云端上传失败", selectedAsrModel),
         nextTaskId: "",
         nextTaskSnapshot: null,
         nextUploadPercent: clampPercent(uploadPersistRef.current.latestPercent || uploadPercent),
@@ -4674,7 +4784,7 @@ export function UploadPanel({
       });
       return;
     }
-    // Bottle 2.0 直传模式（QWEN_MODEL）：使用 DashScope pre-signed URL 直传
+    // 云端模型统一走服务端上传任务，生成链路只保留一套 pipeline。
     if (selectedAsrModel === QWEN_MODEL) {
       try {
         const preparedDesktopSourceFile = await prepareDesktopCloudUploadSourceFile(
@@ -4682,7 +4792,7 @@ export function UploadPanel({
           String(selectedSourceFile?.desktopLinkLessonTitle || desktopLinkTitle || "").trim(),
         );
         const uploadSourceFile = await ensureBlobBackedSourceFile(preparedDesktopSourceFile);
-        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, selectedSourceFile);
+        await submitServerUploadTask(uploadSourceFile, runToken, pollToken, selectedSourceFile);
       } catch (error) {
         await handleTaskFailureState({
           message: error instanceof Error && error.message ? error.message : String(error),
@@ -4695,16 +4805,14 @@ export function UploadPanel({
       }
       return;
     }
-    // Bottle 1.0 (FasterWhisper) 任务恢复时，自动切换为云端继续生成
-    const resumeAsrModel = String(taskSnapshot?.asr_model || selectedAsrModel || "");
-    if (resumeAsrModel === FASTER_WHISPER_MODEL) {
+    if (selectedAsrModel === STEPFUN_MODEL) {
       try {
         const preparedDesktopSourceFile = await prepareDesktopCloudUploadSourceFile(
           selectedSourceFile,
           String(selectedSourceFile?.desktopLinkLessonTitle || desktopLinkTitle || "").trim(),
         );
         const uploadSourceFile = await ensureBlobBackedSourceFile(preparedDesktopSourceFile);
-        await submitCloudDirectUpload(uploadSourceFile, runToken, pollToken, selectedSourceFile);
+        await submitServerUploadTask(uploadSourceFile, runToken, pollToken, selectedSourceFile);
       } catch (error) {
         await handleTaskFailureState({
           message: error instanceof Error && error.message ? error.message : String(error),
@@ -5068,6 +5176,9 @@ export function UploadPanel({
               {effectiveGenerationOptions.vocabulary_annotation ? " + 生词标注" : ""}
               {effectiveGenerationOptions.word_explanation ? " + 生词讲解" : ""}
             </p>
+            {effectiveGenerationOptions.zh_translation ? (
+              <p className="text-xs text-muted-foreground">中文翻译使用 qwen-mt-flash，需配置 DASHSCOPE_API_KEY；ASR 模型只负责英文字幕识别。</p>
+            ) : null}
             {generationOptionCostHint ? <p className="text-xs text-muted-foreground">{generationOptionCostHint}</p> : null}
             {desktopClientBillingEnabled && desktopBillingState.message ? (
               <p className={cn("text-xs", desktopBillingState.status === "insufficient" || desktopBillingState.status === "offline" || desktopBillingState.status === "error" ? getUploadToneStyles("recoverable").text : "text-muted-foreground")}>
@@ -5193,7 +5304,10 @@ export function UploadPanel({
                       }
                   : isFasterWhisper
                     ? fasterWhisperActionMeta
-                    : actionMeta;
+                    : {
+                        label: selected ? "已选择" : "选择模型",
+                        disabled: uploadActionBusy || selected,
+                      };
               const showReadyIcon = !isQwen && highlightStatus;
               const showLoadingIcon = !isQwen && isFasterWhisper && (fasterWhisperDesktopTrack ? desktopBundleBusy : fasterModelBusy || fasterModelPreparing);
 
@@ -5312,7 +5426,9 @@ export function UploadPanel({
                             return;
                           }
                           void handleServerModelPrepare(item.key);
+                          return;
                         }
+                        handleSelectUploadModelCard(item.key);
                       }}
                       disabled={effectiveActionMeta.disabled}
                     >
@@ -5624,7 +5740,7 @@ export function UploadPanel({
                   <input type="checkbox" checked readOnly disabled className="mt-0.5 size-4 rounded border-input accent-primary" />
                   <span className="space-y-1">
                     <span className="block text-sm font-medium">英文字幕</span>
-                    <span className="block text-xs text-muted-foreground">句子切分、时间轴、tokens</span>
+                    <span className="block text-xs text-muted-foreground">官方时间戳、tokens</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
@@ -5639,9 +5755,9 @@ export function UploadPanel({
                     className="mt-0.5 size-4 rounded border-input accent-primary"
                   />
                   <span className="space-y-1">
-                    <span className="block text-sm font-medium">中文翻译</span>
+                    <span className="block text-sm font-medium">中文翻译（qwen-mt-flash）</span>
                     <span className="block text-xs text-muted-foreground">
-                      预计增加 {durationSec != null ? formatMoneyCents(estimatedMtChargeCents) : "翻译成本"} 的显性消耗
+                      需要 DASHSCOPE_API_KEY，预计增加 {durationSec != null ? formatMoneyCents(estimatedMtChargeCents) : "翻译成本"} 的显性消耗
                     </span>
                   </span>
                 </label>
@@ -5780,20 +5896,25 @@ export function UploadPanel({
             <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
               <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", taskToneStyles.progress)} style={{ width: `${progressPercent}%` }} />
             </div>
-            <div className="grid grid-cols-5 gap-2 overflow-x-auto pb-1">
-              {stageItems.map((item) => {
+            <div className="grid grid-cols-7 gap-2 overflow-x-auto pb-1">
+              {stageItems.map((item, index) => {
                 const stageToneStyles = getUploadToneStyles(getUploadStageTone(item.status));
                 const stageLabel = desktopLinkImporting && item.key === "convert_audio" ? "下载素材" : item.label;
+                const isCompleted = item.status === "completed";
+                const isRunning = item.status === "running";
+                const isFailed = item.status === "failed";
                 return (
-                  <div key={item.key} className={cn("min-w-[120px] space-y-2 rounded-xl border px-3 py-3", stageToneStyles.surface)}>
-                    <div className="flex items-start justify-between gap-3">
-                      <p className="text-sm font-semibold">{stageLabel}</p>
-                      <span className="text-xs font-semibold tabular-nums">{item.detailText}</span>
+                  <div key={item.key} className={cn("min-w-[104px] space-y-1.5 rounded-lg border px-2 py-2", stageToneStyles.surface)}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular-nums">
+                        {isCompleted ? <CheckCircle2 className="size-3.5" /> : isRunning ? <Loader2 className="size-3.5 animate-spin" /> : isFailed ? "!" : index + 1}
+                      </span>
+                      <p className="min-w-0 truncate text-xs font-semibold leading-4">{stageLabel}</p>
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-background/60">
                       <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", stageToneStyles.progress)} style={{ width: `${item.progressPercent}%` }} />
                     </div>
-                    <p className="text-xs leading-5 opacity-85">{item.statusText}</p>
+                    <p className="truncate text-[11px] leading-4 opacity-85">{item.detailText || item.statusText}</p>
                   </div>
                 );
               })}

@@ -135,8 +135,7 @@ def _patch_dashscope_generation_dependencies(monkeypatch, *, build_errors: list[
         "build_subtitle_cache_seed",
         staticmethod(
             lambda *, asr_payload, variant: {
-                "semantic_split_enabled": False,
-                "split_mode": "asr_sentences",
+                "split_mode": "asr_provider_sentences",
                 "source_word_count": 2,
                 "strategy_version": 2,
                 "asr_payload": asr_payload,
@@ -175,6 +174,9 @@ class _DummyDb:
         return None
 
     def get(self, *_args, **_kwargs):
+        return None
+
+    def add(self, _obj) -> None:
         return None
 
     def commit(self) -> None:

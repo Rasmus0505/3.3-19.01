@@ -7,12 +7,12 @@ const desktopRendererBuild = String(process.env.BOTTLE_DESKTOP_RENDERER_BUILD ||
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   base: desktopRendererBuild ? "./" : "/static/",
-  // 本地 dev：把 /data 代理到后端，否则 cefr_vocab_fixed.json 404 会导致 CEFR 全为 SUPER（橙色）
+  // 本地 dev：代理到同一个本机 FastAPI 后端，保持和 start-local.bat 的默认端口一致。
   server: desktopRendererBuild
     ? undefined
     : {
         proxy: {
-          "/data": { target: "http://127.0.0.1:8000", changeOrigin: true },
+          "/data": { target: "http://127.0.0.1:18080", changeOrigin: true },
           "/api": { target: "http://127.0.0.1:18080", changeOrigin: true },
           "/health": { target: "http://127.0.0.1:18080", changeOrigin: true },
         },
