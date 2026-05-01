@@ -38,12 +38,16 @@ export function LessonLearningSettingsSection({
           const recording = recordingShortcutActionId === action.id;
           const shortcutLabel = getShortcutLabel(learningSettings.shortcuts[action.id]);
           const shortcutMissing = shortcutLabel === "未设置";
+          const requiredMissing = shortcutMissing && action.required !== false;
           return (
             <div key={action.id} className="flex w-fit min-w-0 flex-col rounded-2xl border bg-background/80 p-3">
               <div className="flex flex-1 flex-col gap-3">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-semibold text-foreground">{action.label}</p>
-                  <p className={cn("text-sm break-all", shortcutMissing ? "font-semibold text-orange-500" : "text-muted-foreground")}>
+                  {action.required === false ? (
+                    <p className="text-xs text-muted-foreground">可选</p>
+                  ) : null}
+                  <p className={cn("text-sm break-all", requiredMissing ? "font-semibold text-orange-500" : "text-muted-foreground")}>
                     {shortcutLabel}
                   </p>
                 </div>

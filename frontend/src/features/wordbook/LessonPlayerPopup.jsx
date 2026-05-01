@@ -27,18 +27,25 @@ async function readErrorPayload(resp) {
   }
 }
 
-function renderSentenceWithHighlight(sentence, startTokenIndex, endTokenIndex) {
+function renderSentenceWithHighlight(sentence, startTokenIndex, endTokenIndex, selectedTokenIndexes = []) {
   const tokens = Array.isArray(sentence?.tokens) ? sentence.tokens : [];
   if (!tokens.length) {
     return <p className="text-lg leading-relaxed">{sentence?.text_en || "暂无英文"}</p>;
   }
+  const selectedSet = new Set(
+    Array.isArray(selectedTokenIndexes)
+      ? selectedTokenIndexes.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item >= 0)
+      : [],
+  );
 
   return (
     <p className="text-lg leading-relaxed">
       {tokens.map((token, index) => {
-        const highlighted = Number.isInteger(startTokenIndex) && Number.isInteger(endTokenIndex)
-          ? index >= startTokenIndex && index <= endTokenIndex
-          : false;
+        const highlighted = selectedSet.size > 0
+          ? selectedSet.has(index)
+          : Number.isInteger(startTokenIndex) && Number.isInteger(endTokenIndex)
+            ? index >= startTokenIndex && index <= endTokenIndex
+            : false;
         return (
           <span
             key={`${token}-${index}`}
@@ -60,6 +67,7 @@ export function LessonPlayerPopup({
   sentenceIndex,
   highlightStartTokenIndex = 0,
   highlightEndTokenIndex = 0,
+  selectedTokenIndexes = [],
   entryText = "",
   apiCall,
 }) {
@@ -361,6 +369,7 @@ export function LessonPlayerPopup({
               sourceSentenceIndex={sentenceIndex}
               highlightStartTokenIndex={highlightStartTokenIndex}
               highlightEndTokenIndex={highlightEndTokenIndex}
+              selectedTokenIndexes={selectedTokenIndexes}
               entryText={entryText}
               isPlaying={isPlaying}
               onPlayPause={() => void handlePlayPause()}
@@ -412,6 +421,7 @@ function LessonPlayer({
   sourceSentenceIndex,
   highlightStartTokenIndex,
   highlightEndTokenIndex,
+  selectedTokenIndexes,
   entryText,
   isPlaying,
   onPlayPause,
@@ -477,6 +487,7 @@ function LessonPlayer({
               sentence,
               currentIndex === Number(sourceSentenceIndex || 0) ? highlightStartTokenIndex : -1,
               currentIndex === Number(sourceSentenceIndex || 0) ? highlightEndTokenIndex : -1,
+              currentIndex === Number(sourceSentenceIndex || 0) ? selectedTokenIndexes : [],
             )}
             <p className="text-base text-muted-foreground">{sentence?.text_zh || "暂无中文"}</p>
             {entryText && currentIndex === Number(sourceSentenceIndex || 0) ? (

@@ -39,7 +39,8 @@ from app.api.routers.llm_vocabulary import (
     router as vocabulary_router,
     simplify_words_endpoint,
 )
-from app.infra.llm.deepseek import call_deepseek, generate_reading_material
+from app.infra.llm.deepseek import generate_reading_material
+from app.services.ai_platform import call_llm_chat as call_deepseek
 from app.services.billing_service import (
     EVENT_CONSUME_LLM,
     calculate_llm_charge_by_tokens,

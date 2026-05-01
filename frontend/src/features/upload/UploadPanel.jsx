@@ -9,6 +9,7 @@ export { UploadPanelHeader } from "./components/UploadPanelHeader";
 export { UploadProgress } from "./components/UploadProgress";
 export { DiagnosticsDialog } from "./components/DiagnosticsDialog";
 export { DesktopGuidanceDialog } from "./components/DesktopGuidanceDialog";
+export { default as ActivityTimeline } from "./components/ActivityTimeline";
 
 // Hooks 导出
 export { useUploadPanelState, useActiveTaskState } from "./hooks";
@@ -16,7 +17,9 @@ export { useUploadWorkflow } from "./hooks";
 
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
-import { buildAsrModelCatalogMap, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
+import ActivityTimeline from "./components/ActivityTimeline";
+import { buildUploadModelOptions } from "../../shared/lib/aiModels";
+import { buildAsrModelCatalogMap, getAsrModelCatalogItem, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents } from "../../shared/lib/money";
 import { extractMediaCoverPreview, getLessonMediaPreview, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
@@ -30,8 +33,10 @@ import {
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { ASR_STRATEGY_CLOUD, resolveAsrStrategy, mapCloudAsrFailureToMessage } from "./asrStrategy";
+import { UploadAsrOnlyPanel } from "./UploadAsrOnlyPanel";
 import {
   ACTIVE_SERVER_TASK_STATUSES,
+  AI_CATALOG_API_BASE,
   ASR_MODELS_API_BASE,
   BOTTLE1_DESKTOP_ONLY_MESSAGE,
   BOTTLE_LESSON_FILE_SUFFIX,
@@ -151,12 +156,14 @@ import {
 } from "./uploadTaskViewModel";
 import { getUploadModelTone, getUploadRestoreTone, getUploadStageTone, getUploadTaskTone, getUploadToneStyles } from "./uploadStatusTheme";
 import { useUploadWorkflow } from "./hooks/useUploadWorkflow";
+import { readUploadPreferences, writeUploadPreferences, sanitizeGenerationOptions } from "./uploadPreferences";
 
 const DEFAULT_GENERATION_OPTIONS = {
   core_subtitles: true,
   zh_translation: true,
   vocabulary_annotation: true,
-  word_explanation: true,
+  word_explanation: false,
+  forced_alignment: false,
 };
 
 function localAsrDirectoryBindingSupported() {
@@ -1032,8 +1039,13 @@ export function UploadPanel({
     checkedAt: "",
   });
   const [bindingCompleted, setBindingCompleted] = useState(false);
-  const [selectedUploadModel, setSelectedUploadModel] = useState(() => getDefaultUploadModelKey(configuredDefaultAsrModel));
-  const [generationOptions, setGenerationOptions] = useState(DEFAULT_GENERATION_OPTIONS);
+  const [selectedUploadModel, setSelectedUploadModel] = useState(() => {
+    const stored = readUploadPreferences();
+    return getDefaultUploadModelKey(stored.selectedUploadModel || configuredDefaultAsrModel);
+  });
+  const [generationOptions, setGenerationOptions] = useState(() => sanitizeGenerationOptions(readUploadPreferences().generationOptions));
+  const [uploadWorkspaceMode, setUploadWorkspaceMode] = useState("course");
+  const [asrOnlyBusy, setAsrOnlyBusy] = useState(false);
   const [fasterWhisperRuntimeTrack, setFasterWhisperRuntimeTrack] = useState(() =>
     getDefaultFasterWhisperRuntimeTrack({ isMobileViewport: isMobileUploadViewport() }),
   );
@@ -1376,14 +1388,25 @@ export function UploadPanel({
     }
   }
 
+  const resolvedUploadModelOptions = useMemo(() => {
+    const next = buildUploadModelOptions(asrModelCatalogMap);
+    return next.length ? next : UPLOAD_MODEL_OPTIONS;
+  }, [asrModelCatalogMap]);
+
   const selectedFastModel = useMemo(() => {
-    const selectedMeta = getUploadModelMeta(selectedUploadModel);
+    const selectedMeta =
+      resolvedUploadModelOptions.find((item) => item.key === selectedUploadModel) ||
+      getUploadModelMeta(selectedUploadModel);
     if (selectedMeta.mode === "fast") {
       return selectedMeta.key;
     }
     return getDefaultFastUploadModelKey(configuredDefaultAsrModel);
-  }, [configuredDefaultAsrModel, selectedUploadModel]);
+  }, [configuredDefaultAsrModel, resolvedUploadModelOptions, selectedUploadModel]);
   const selectedAsrModel = mode === "balanced" ? selectedBalancedModel : selectedFastModel;
+  const selectedUploadModelDescriptor = useMemo(
+    () => getAsrModelCatalogItem(selectedAsrModel, asrModelCatalogMap),
+    [asrModelCatalogMap, selectedAsrModel],
+  );
   const effectiveGenerationOptions = useMemo(() => {
     const next = {
       ...DEFAULT_GENERATION_OPTIONS,
@@ -1395,6 +1418,13 @@ export function UploadPanel({
     }
     return next;
   }, [generationOptions]);
+
+  useEffect(() => {
+    writeUploadPreferences({
+      selectedUploadModel,
+      generationOptions: effectiveGenerationOptions,
+    });
+  }, [effectiveGenerationOptions, selectedUploadModel]);
   const browserLocalRuntimeAvailable = hasBrowserLocalRuntimeBridge() && !isMobileUploadViewport();
   const browserLocalRuntimeBlockedMessage = hasBrowserLocalRuntimeBridge()
     ? "本地网站模式仅支持桌面浏览器，不支持手机和平板直接运行。"
@@ -1496,15 +1526,22 @@ export function UploadPanel({
     (Boolean(displayTaskSnapshot?.can_pause) || Boolean(displayTaskSnapshot?.can_terminate) || STOPPABLE_SERVER_TASK_STATUSES.has(displayTaskStatus));
   const taskPaused = !localTranscribing && displayTaskStatus === "paused";
   const taskTerminated = !localTranscribing && displayTaskStatus === "terminated";
-  const canResumeServerTask = false;
+  const canResumeServerTask =
+    !localTranscribing &&
+    Boolean(taskId) &&
+    Boolean(displayTaskSnapshot?.resume_available) &&
+    ["failed", "paused"].includes(displayTaskStatus);
   const canReconnectInterruptedTask = restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED && Boolean(taskId);
   const showRecoveryBanner = hasLocalFile && RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus);
   const recoveryBannerText = getRecoveryBannerText(displayTaskSnapshot);
   const taskStatusCardText = getTaskStatusCardText(restoreBannerMode, taskSnapshot, status);
   const showTaskStatusCard =
     restoreBannerMode !== RESTORE_BANNER_MODES.NONE || (showRecoveryBanner && !isRestoreVerifying);
+  const selectedUsesCloudUploadFlow =
+    Boolean(selectedUploadModelDescriptor?.supports_upload) &&
+    String(selectedUploadModelDescriptor?.runtime_kind || "") === "cloud_api";
   const isBottle2CloudFlow =
-    selectedAsrModel === QWEN_MODEL &&
+    selectedUsesCloudUploadFlow &&
     !localTranscribing &&
     !desktopLocalTranscribing &&
     !desktopLinkImporting &&
@@ -1546,7 +1583,11 @@ export function UploadPanel({
     restoreBannerMode !== RESTORE_BANNER_MODES.INTERRUPTED &&
     !RECOVERABLE_SERVER_TASK_STATUSES.has(displayTaskStatus) &&
     (loading || phase === "success" || phase === "error" || phase === "upload_paused" || Boolean(displayTaskSnapshot));
-  const canRetryWithoutUpload = false;
+  const canRetryWithoutUpload =
+    !localTranscribing &&
+    Boolean(taskId) &&
+    Boolean(taskSnapshot?.resume_available) &&
+    ["failed", "paused"].includes(String(taskSnapshot?.status || "").toLowerCase());
   const showMediaPreview = Boolean(file || coverDataUrl);
   const offlineHintText = getOfflineHintText(isOnline, selectedAsrModel);
   const sourceDisplayName = String(file?.name || taskSnapshot?.lesson?.source_filename || "");
@@ -1566,7 +1607,7 @@ export function UploadPanel({
   const showRechargeButton = desktopClientBillingEnabled && desktopBillingState.status === "insufficient";
   const taskTone = getUploadTaskTone({
     phase,
-    resumeAvailable: false,
+    resumeAvailable: Boolean(displayTaskSnapshot?.resume_available),
     taskStatus: displayTaskStatus,
   });
   const taskToneStyles = getUploadToneStyles(taskTone);
@@ -2233,7 +2274,7 @@ export function UploadPanel({
     let canceled = false;
     async function restoreServerModelState() {
       try {
-        const response = await api(ASR_MODELS_API_BASE, { method: "GET" }, accessToken);
+        const response = await api(AI_CATALOG_API_BASE, { method: "GET" }, accessToken);
         const payload = await parseResponse(response);
         if (!response.ok) {
           throw new Error(toErrorText(payload, "加载模型目录失败"));
@@ -2507,6 +2548,7 @@ export function UploadPanel({
     mode,
     taskSnapshot,
     selectedUploadModel,
+    generationOptions,
     coverDataUrl,
     coverWidth,
     coverHeight,
@@ -2554,6 +2596,7 @@ export function UploadPanel({
     setMode,
     setSelectedUploadModel,
     setSelectedBalancedModel,
+    setGenerationOptions,
     setRestoreBannerMode,
     clearActiveGenerationTask,
     clearUploadPanelSuccessSnapshot,
@@ -2999,7 +3042,7 @@ export function UploadPanel({
         return;
       }
       pollFailureCountRef.current = 0;
-      const message = "网络波动，任务状态暂时无法更新，可稍后继续查询或免上传继续生成。";
+      const message = "网络波动，任务状态暂时无法更新，可稍后继续查询或继续生成。";
       const nextPhase = file ? "ready" : "idle";
       await applyTaskViewState({
         nextTaskId,
@@ -3342,7 +3385,9 @@ export function UploadPanel({
   }
 
   function handleSelectUploadModelCard(modelKey) {
-    const nextModelMeta = getUploadModelMeta(modelKey);
+    const nextModelMeta =
+      resolvedUploadModelOptions.find((item) => item.key === modelKey) ||
+      getUploadModelMeta(modelKey);
     if (!desktopRuntimeAvailable && nextModelMeta.key === FASTER_WHISPER_MODEL) {
       openDesktopGuidanceDialog("bottle1_only", {
         sourceName: String(file?.name || "").trim(),
@@ -4656,11 +4701,7 @@ export function UploadPanel({
       });
       return;
     }
-    if (
-      selectedAsrModel === QWEN_MODEL &&
-      !skipDesktopRecommendation &&
-      shouldRecommendDesktopForBottle2Cloud(selectedSourceFile, sourceDurationSec)
-    ) {
+    if (selectedUsesCloudUploadFlow && !skipDesktopRecommendation && shouldRecommendDesktopForBottle2Cloud(selectedSourceFile, sourceDurationSec)) {
       openDesktopGuidanceDialog(
         "large_file",
         {
@@ -4785,27 +4826,7 @@ export function UploadPanel({
       return;
     }
     // 云端模型统一走服务端上传任务，生成链路只保留一套 pipeline。
-    if (selectedAsrModel === QWEN_MODEL) {
-      try {
-        const preparedDesktopSourceFile = await prepareDesktopCloudUploadSourceFile(
-          selectedSourceFile,
-          String(selectedSourceFile?.desktopLinkLessonTitle || desktopLinkTitle || "").trim(),
-        );
-        const uploadSourceFile = await ensureBlobBackedSourceFile(preparedDesktopSourceFile);
-        await submitServerUploadTask(uploadSourceFile, runToken, pollToken, selectedSourceFile);
-      } catch (error) {
-        await handleTaskFailureState({
-          message: error instanceof Error && error.message ? error.message : String(error),
-          nextTaskId: "",
-          nextTaskSnapshot: null,
-          nextUploadPercent: 0,
-          nextRestoreBannerMode: RESTORE_BANNER_MODES.NONE,
-          nextBindingCompleted: false,
-        });
-      }
-      return;
-    }
-    if (selectedAsrModel === STEPFUN_MODEL) {
+    if (selectedUploadModelDescriptor?.supports_upload && String(selectedUploadModelDescriptor?.runtime_kind || "") === "cloud_api") {
       try {
         const preparedDesktopSourceFile = await prepareDesktopCloudUploadSourceFile(
           selectedSourceFile,
@@ -4858,6 +4879,7 @@ export function UploadPanel({
                 message: String(data?.message || message),
                 current_text: String(data?.message || message),
                 resume_available: false,
+                resume_mode: "unavailable",
               }
             : taskSnapshot;
         await handleTaskFailureState({
@@ -4869,6 +4891,8 @@ export function UploadPanel({
         });
         return;
       }
+      const resumeMode = String(data?.resume_mode || taskSnapshot?.resume_mode || "checkpoint");
+      const resumeText = resumeMode === "restart_without_upload" ? "准备重新生成" : "准备继续生成";
       setPhase("processing");
       const nextTaskSnapshot =
         taskSnapshot != null
@@ -4877,8 +4901,9 @@ export function UploadPanel({
               status: "pending",
               error_code: "",
               message: "",
-              current_text: "准备重新生成",
+              current_text: resumeText,
               resume_available: false,
+              resume_mode: "unavailable",
             }
           : null;
       setTaskSnapshot((prev) =>
@@ -4888,8 +4913,9 @@ export function UploadPanel({
               status: "pending",
               error_code: "",
               message: "",
-              current_text: "准备重新生成",
+              current_text: resumeText,
               resume_available: false,
+              resume_mode: "unavailable",
             }
           : prev,
       );
@@ -5019,6 +5045,67 @@ export function UploadPanel({
       detail: desktopClientUpdateDiagnostic.detail,
     },
   ];
+  const workspaceModeSwitchDisabled = uploadActionBusy || asrOnlyBusy;
+  const workspaceModeToggle = (
+    <div className="space-y-2">
+      <div className="inline-flex w-fit rounded-2xl border bg-muted/20 p-1">
+        <button
+          type="button"
+          className={cn(
+            "rounded-xl px-3 py-1.5 text-sm transition-colors",
+            uploadWorkspaceMode === "course" ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle,
+          )}
+          onClick={() => setUploadWorkspaceMode("course")}
+          disabled={workspaceModeSwitchDisabled}
+        >
+          生成课程
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "rounded-xl px-3 py-1.5 text-sm transition-colors",
+            uploadWorkspaceMode === "asr_only" ? getUploadToneStyles("selected").button : getUploadToneStyles("selected").buttonSubtle,
+          )}
+          onClick={() => setUploadWorkspaceMode("asr_only")}
+          disabled={workspaceModeSwitchDisabled}
+        >
+          仅 ASR 结果
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {uploadWorkspaceMode === "asr_only"
+          ? "上传单个或多个音频文件，只输出识别文本并保存到 ASR 历史。"
+          : "当前模式会把素材继续生成课程，适合后续逐句学习。"}
+      </p>
+    </div>
+  );
+
+  if (uploadWorkspaceMode === "asr_only") {
+    return (
+      <Card>
+        <CardHeader className="gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <UploadCloud className="size-4" />
+              生成工作台
+            </CardTitle>
+            <CardDescription>左侧保留课程生成模式，右侧补上多文件 ASR 文本识别与复制能力。</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {workspaceModeToggle}
+          <UploadAsrOnlyPanel
+            accessToken={accessToken}
+            selectedModel={selectedUploadModel}
+            onSelectedModelChange={setSelectedUploadModel}
+            asrModelCatalogMap={asrModelCatalogMap}
+            onBusyChange={setAsrOnlyBusy}
+            onOpenHistory={() => navigate("/")}
+          />
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -5166,6 +5253,8 @@ export function UploadPanel({
           </div>
         )}
 
+        {workspaceModeToggle}
+
         <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
           <AlertDescription>
             <p className="text-muted-foreground">余额：{desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}</p>
@@ -5194,7 +5283,7 @@ export function UploadPanel({
           </div>
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {UPLOAD_MODEL_OPTIONS.map((item) => {
+            {resolvedUploadModelOptions.map((item) => {
               const selected = selectedUploadModel === item.key;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
               const isQwen = item.key === QWEN_MODEL;
@@ -5740,7 +5829,7 @@ export function UploadPanel({
                   <input type="checkbox" checked readOnly disabled className="mt-0.5 size-4 rounded border-input accent-primary" />
                   <span className="space-y-1">
                     <span className="block text-sm font-medium">英文字幕</span>
-                    <span className="block text-xs text-muted-foreground">官方时间戳、tokens</span>
+                    <span className="block text-xs text-muted-foreground">课程最终使用句级时间戳；开启本地对齐后将覆盖 ASR 原始时间轴</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
@@ -5779,6 +5868,25 @@ export function UploadPanel({
                   <span className="space-y-1">
                     <span className="block text-sm font-medium">生词标注</span>
                     <span className="block text-xs text-muted-foreground">生成 Collins 难度与重点词数据</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={effectiveGenerationOptions.forced_alignment}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setGenerationOptions((prev) => ({
+                        ...prev,
+                        forced_alignment: checked,
+                      }));
+                    }}
+                    disabled={loading || localModeBusy}
+                    className="mt-0.5 size-4 rounded border-input accent-primary"
+                  />
+                  <span className="space-y-1">
+                    <span className="block text-sm font-medium">启用本地时间戳对齐</span>
+                    <span className="block text-xs text-muted-foreground">使用本机 Qwen3-ForcedAligner 重算词级和句级时间戳；若失败，本次生成将直接失败</span>
                   </span>
                 </label>
                 <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
@@ -5919,6 +6027,8 @@ export function UploadPanel({
                 );
               })}
             </div>
+
+            <ActivityTimeline events={displayTaskSnapshot?.events || []} />
           </div>
         ) : null}
 
@@ -6024,7 +6134,7 @@ export function UploadPanel({
               {canRetryWithoutUpload ? (
                 <Button type="button" className={cn("h-9 px-3", getUploadToneStyles(taskSnapshot?.resume_available ? "recoverable" : "selected").button)} onClick={() => void resumeTask()}>
                   <RefreshCcw className="size-4" />
-                  {taskSnapshot?.resume_available ? "免上传继续生成" : "免上传重新生成"}
+                  继续生成
                 </Button>
               ) : null}
               {hasLocalFile ? (

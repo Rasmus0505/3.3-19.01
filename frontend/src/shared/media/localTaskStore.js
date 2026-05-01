@@ -75,6 +75,7 @@ function normalizeWorkspaceRestorePointer(pointer, workspace) {
     status: String(candidate.status || workspace?.current?.status || ""),
     resume_available: Boolean(candidate.resume_available),
     resume_stage: String(candidate.resume_stage || workspace?.current?.resume_stage || ""),
+    resume_mode: String(candidate.resume_mode || "unavailable"),
   };
 }
 
@@ -123,8 +124,10 @@ function normalizeTaskSnapshot(taskSnapshot) {
     error_code: String(taskSnapshot.error_code || ""),
     resume_available: Boolean(taskSnapshot.resume_available),
     resume_stage: String(taskSnapshot.resume_stage || ""),
+    resume_mode: String(taskSnapshot.resume_mode || "unavailable"),
     stages: Array.isArray(taskSnapshot.stages) ? taskSnapshot.stages.map((item) => ({ ...item })) : [],
     counters: taskSnapshot.counters && typeof taskSnapshot.counters === "object" ? { ...taskSnapshot.counters } : {},
+    events: Array.isArray(taskSnapshot.events) ? taskSnapshot.events.map((item) => ({ ...item })) : [],
     lesson:
       taskSnapshot.lesson && typeof taskSnapshot.lesson === "object"
         ? {
@@ -154,6 +157,10 @@ function normalizeSnapshotPayload(payload = {}) {
     task_snapshot: normalizedTaskSnapshot,
     workspace: normalizedWorkspace,
     selected_upload_model: String(payload.selected_upload_model || ""),
+    generation_options:
+      payload.generation_options && typeof payload.generation_options === "object"
+        ? { ...payload.generation_options }
+        : {},
     file_blob: normalizeBlob(payload.file_blob),
     file_name: String(payload.file_name || ""),
     media_type: String(payload.media_type || ""),

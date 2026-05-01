@@ -50,6 +50,7 @@ import {
   SET_TRANSLATION_DISPLAY_MODE,
   createImmersiveSessionState,
   immersiveSessionReducer,
+  normalizePlaybackRate,
 } from "./immersiveSessionMachine";
 import { isVideoFilename } from "./tokenNormalize";
 import { useImmersiveSessionController } from "./useImmersiveSessionController";
@@ -68,6 +69,8 @@ const IMMERSIVE_CONTRACT_MARKERS = {
   wordbookHelpers: ["buildWordbookTokenRange", "anchorTokenIndex"],
 };
 void IMMERSIVE_CONTRACT_MARKERS;
+
+const EMPTY_SELECTABLE_TOKENS = Object.freeze([]);
 
 import {
   MOBILE_KEYBOARD_MIN_INSET_PX,
@@ -101,6 +104,7 @@ import {
   resolveInteractiveWordbookContext,
   resolveMediaModeByTypeAndName,
   resolveMediaModeFromFileName,
+  resolveSessionPlaybackRate,
   resolveTranslationMaskRect,
   resolveTranslationMaskResizeRect,
   shouldAutoAdvanceSentence,
@@ -130,6 +134,10 @@ export function ImmersiveLessonPage({
   const [bindingError, setBindingError] = useState("");
   const [bindingHint, setBindingHint] = useState("");
   const [mediaReloadKey, setMediaReloadKey] = useState(0);
+  const [mediaElementRenderKey, setMediaElementRenderKey] = useState(0);
+  const [fullscreenStudyMode, setFullscreenStudyModeState] = useState(
+    () => readLearningSettings().uiPreferences?.fullscreenStudyMode === true,
+  );
   const [activeWordIndex, setActiveWordIndex] = useState(0);
   const [currentWordInput, setCurrentWordInput] = useState("");
   const [wordInputs, setWordInputs] = useState([]);
@@ -214,6 +222,7 @@ export function ImmersiveLessonPage({
   const clipAudioRef = useRef(null);
   const typingPanelRef = useRef(null);
   const typingInputRef = useRef(null);
+  const playbackRateInputRef = useRef(null);
   const bindingInputRef = useRef(null);
   const wordRowFrameRef = useRef(null);
   const [isWordRowMultiLine, setIsWordRowMultiLine] = useState(false);
@@ -221,6 +230,8 @@ export function ImmersiveLessonPage({
   const translationMaskChromeIdleTimerRef = useRef(null);
   const currentWordInputRef = useRef("");
   const activeWordIndexRef = useRef(0);
+  const selectedPlaybackRateRef = useRef(1);
+  const latestLearningSettingsRef = useRef(null);
   const wordInputsRef = useRef([]);
   const wordStatusesRef = useRef([]);
   const sentenceAdvanceLockedRef = useRef(false);
@@ -228,6 +239,10 @@ export function ImmersiveLessonPage({
   const playbackKindRef = useRef("initial");
   const focusRestoreTimerRef = useRef(null);
   const viewportSyncFrameRef = useRef(null);
+  const fullscreenStudyModeRef = useRef(false);
+  const fullscreenRepairFrameRef = useRef(null);
+  const fullscreenRepairTimerRef = useRef(null);
+  const fullscreenRepairTokenRef = useRef(0);
   const viewportBaselineHeightRef = useRef(0);
   const viewportOrientationRef = useRef("");
   const translationMaskGestureRef = useRef({
@@ -243,6 +258,7 @@ export function ImmersiveLessonPage({
   const prevLessonIdRef = useRef(null);
   const sessionMaxWidthRatioRef = useRef(TRANSLATION_MASK_DEFAULT_WIDTH_RATIO);
   const currentLessonId = String(lesson?.id ?? "").trim();
+  selectedPlaybackRateRef.current = selectedPlaybackRate;
 
   const isIpadSafari = useMemo(() => isIpadSafariBrowser(), []);
   const isTouchDevice = useMemo(() => isTouchPrimaryInputDevice(), []);
@@ -263,22 +279,28 @@ export function ImmersiveLessonPage({
     dispatchSession({ type: SET_LOOP_ENABLED, enabled });
   }, []);
   const setSelectedPlaybackRate = useCallback((nextValue) => {
-    dispatchSession({ type: SET_PLAYBACK_RATE, value: nextValue });
+    const resolvedValue = normalizePlaybackRate(nextValue);
+    selectedPlaybackRateRef.current = resolvedValue;
+    dispatchSession({ type: SET_PLAYBACK_RATE, value: resolvedValue });
   }, []);
   const setPlaybackRatePinned = useCallback((pinned, value) => {
-    dispatchSession({ type: SET_PLAYBACK_RATE_PINNED, pinned, value });
+    const resolvedValue = normalizePlaybackRate(value ?? selectedPlaybackRateRef.current);
+    selectedPlaybackRateRef.current = resolvedValue;
+    dispatchSession({ type: SET_PLAYBACK_RATE_PINNED, pinned, value: resolvedValue });
   }, []);
 
   const {
     learningSettings,
-    showFullscreenPreviousSentence: fullscreenStudyMode,
+    persistedFullscreenStudyMode,
     translationMaskEnabled,
     translationMaskRect,
     playbackRateInputValue,
+    hasPendingPlaybackRateDraft,
     setTranslationMaskRect,
-    persistFullscreenPreviousSentencePreference: setFullscreenStudyMode,
+    persistFullscreenStudyModePreference,
     persistTranslationMaskPreference,
     handleToggleSingleSentenceLoop,
+    commitPlaybackRateInput,
     handlePlaybackRateInputChange,
     handlePlaybackRateInputKeyDown,
     handlePlaybackRateInputBlur,
@@ -296,6 +318,59 @@ export function ImmersiveLessonPage({
     mediaElementRef,
     clipAudioRef,
   });
+  latestLearningSettingsRef.current = learningSettings;
+
+  const setFullscreenStudyMode = useCallback((nextValueOrUpdater) => {
+    setFullscreenStudyModeState((currentValue) => {
+      const nextValue =
+        typeof nextValueOrUpdater === "function"
+          ? nextValueOrUpdater(currentValue)
+          : nextValueOrUpdater;
+      const safeValue = Boolean(nextValue);
+      fullscreenStudyModeRef.current = safeValue;
+      persistFullscreenStudyModePreference(safeValue);
+      return safeValue;
+    });
+  }, [persistFullscreenStudyModePreference]);
+
+  useEffect(() => {
+    fullscreenStudyModeRef.current = fullscreenStudyMode;
+  }, [fullscreenStudyMode]);
+
+  useEffect(() => {
+    setFullscreenStudyModeState(Boolean(persistedFullscreenStudyMode));
+  }, [persistedFullscreenStudyMode]);
+
+  useEffect(() => {
+    const nextRate = Math.max(0.4, Math.min(2, Number(selectedPlaybackRate || 1)));
+    for (const media of [mediaElementRef.current, clipAudioRef.current]) {
+      if (!media) continue;
+      media.playbackRate = nextRate;
+      media.defaultPlaybackRate = nextRate;
+    }
+  }, [mediaBlobUrl, mediaMode, mediaReady, selectedPlaybackRate]);
+
+  const readCommittedSessionPlaybackRate = useCallback(
+    () => resolveSessionPlaybackRate(selectedPlaybackRateRef.current, selectedPlaybackRate),
+    [selectedPlaybackRate],
+  );
+
+  // Playback entrypoints use the committed session rate by default.
+  // Only when the user has an uncommitted input draft do we normalize+commit that draft first.
+  const resolveCurrentSessionPlaybackRate = useCallback(
+    () => {
+      if (hasPendingPlaybackRateDraft) {
+        return commitPlaybackRateInput(playbackRateInputRef.current?.value ?? playbackRateInputValue);
+      }
+      return readCommittedSessionPlaybackRate();
+    },
+    [
+      commitPlaybackRateInput,
+      hasPendingPlaybackRateDraft,
+      playbackRateInputValue,
+      readCommittedSessionPlaybackRate,
+    ],
+  );
 
   const clearTranslationMaskChromeIdleTimer = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -374,6 +449,34 @@ export function ImmersiveLessonPage({
     [focusTypingInput],
   );
 
+  const clearFullscreenRepairTimers = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (fullscreenRepairFrameRef.current !== null) {
+      window.cancelAnimationFrame(fullscreenRepairFrameRef.current);
+      fullscreenRepairFrameRef.current = null;
+    }
+    if (fullscreenRepairTimerRef.current !== null) {
+      window.clearTimeout(fullscreenRepairTimerRef.current);
+      fullscreenRepairTimerRef.current = null;
+    }
+  }, []);
+
+  const exitBrowserFullscreenIfNeeded = useCallback(() => {
+    if (typeof document === "undefined") return;
+    const fullscreenElement = document.fullscreenElement;
+    if (!fullscreenElement || typeof document.exitFullscreen !== "function") return;
+    const container = immersiveContainerRef.current;
+    if (container && fullscreenElement !== container && !container.contains(fullscreenElement)) return;
+    try {
+      const exitPromise = document.exitFullscreen();
+      if (exitPromise && typeof exitPromise.catch === "function") {
+        exitPromise.catch(() => {});
+      }
+    } catch (_) {
+      // Native fullscreen exit is best-effort only.
+    }
+  }, []);
+
   const syncMobileViewportLayout = useCallback(() => {
     if (typeof window === "undefined") return;
     const container = immersiveContainerRef.current;
@@ -398,8 +501,9 @@ export function ImmersiveLessonPage({
 
     const currentBaseline = viewportBaselineHeightRef.current;
     viewportBaselineHeightRef.current = currentBaseline;
-    const keyboardInset = isTouchDevice ? Math.max(0, currentBaseline - visualHeight - offsetTop) : 0;
-    const keyboardOpen = isTouchDevice && keyboardInset >= MOBILE_KEYBOARD_MIN_INSET_PX;
+    const rawKeyboardInset = isTouchDevice ? Math.max(0, currentBaseline - visualHeight - offsetTop) : 0;
+    const keyboardOpen = isTouchDevice && rawKeyboardInset >= MOBILE_KEYBOARD_MIN_INSET_PX;
+    const keyboardInset = keyboardOpen ? rawKeyboardInset : 0;
     const nextState = {
       height: visualHeight,
       keyboardInset,
@@ -416,7 +520,7 @@ export function ImmersiveLessonPage({
 
     if (!container) return;
     const shellHeight = resolveImmersiveShellHeightPx({
-      isTouchDevice,
+      isTouchDevice: keyboardOpen,
       currentBaseline,
       fallbackHeight,
       visualHeight,
@@ -488,7 +592,7 @@ export function ImmersiveLessonPage({
     ],
   );
   const wordbookSentence = interactiveWordbookContext?.sentence || null;
-  const wordbookSentenceTokens = interactiveWordbookContext?.tokens || [];
+  const wordbookSentenceTokens = interactiveWordbookContext?.tokens || EMPTY_SELECTABLE_TOKENS;
   const wordbookSentenceBandMap = useMemo(
     () => new Map(wordbookSentenceBandMapState),
     [wordbookSentenceBandMapState],
@@ -500,12 +604,14 @@ export function ImmersiveLessonPage({
   const wordbookSentenceSourceKey = `${lesson?.id ?? "lesson"}:${wordbookSentenceMode}:${
     wordbookSentence?.idx ?? "none"
   }`;
+  const currentSentenceSourceKey = `${lesson?.id ?? "lesson"}:typing:${currentSentence?.idx ?? "none"}`;
+  const wordbookSelectionScopeKey = `${currentSentenceSourceKey}:${wordbookSentenceSourceKey}`;
 
   useEffect(() => {
     let canceled = false;
     async function loadWordbookBands() {
       if (!accessToken || !apiClient || !Array.isArray(wordbookSentenceTokens) || wordbookSentenceTokens.length === 0) {
-        setWordbookSentenceBandMap(new Map());
+        setWordbookSentenceBandMap((currentMap) => (currentMap.size === 0 ? currentMap : new Map()));
         return;
       }
       try {
@@ -519,7 +625,7 @@ export function ImmersiveLessonPage({
         setWordbookSentenceBandMap(nextMap);
       } catch (_) {
         if (canceled) return;
-        setWordbookSentenceBandMap(new Map());
+        setWordbookSentenceBandMap((currentMap) => (currentMap.size === 0 ? currentMap : new Map()));
       }
     }
     void loadWordbookBands();
@@ -529,12 +635,24 @@ export function ImmersiveLessonPage({
   }, [accessToken, apiClient, wordbookSentenceSourceKey, wordbookSentenceTokens]);
   const {
     wordbookBusy,
+    wordbookTranslationBusy,
     wordbookSelectedTokenIndexes,
+    wordbookSelectionSourceKey,
+    selectedWordbookTokens,
+    selectedWordbookStart,
+    selectedWordbookEnd,
+    selectedWordbookText,
     wordbookSuccessAnimationIndexes,
+    wordbookSuccessSourceKey,
     wordbookSuccessMessage,
+    wordbookTranslationText,
     wordbookActionRef,
+    clearWordbookSelection,
     handleWordbookTokenClick,
+    handleWordbookTokenPointerDown,
+    handleWordbookTokenPointerEnter,
     collectWordbookEntry,
+    translateWordbookSelection,
   } = useWordbookSelection({
     lessonId: lesson?.id,
     accessToken,
@@ -542,20 +660,9 @@ export function ImmersiveLessonPage({
     parseResponse,
     onWordbookChanged,
     wordbookSentenceTokens,
-    wordbookSentenceSourceKey,
+    selectionScopeKey: wordbookSelectionScopeKey,
     canRenderInteractiveWordbook,
   });
-  const hasWordbookSelection = wordbookSelectedTokenIndexes.length > 0;
-  const selectedWordbookStart = hasWordbookSelection ? wordbookSelectedTokenIndexes[0] : -1;
-  const selectedWordbookEnd = hasWordbookSelection ? wordbookSelectedTokenIndexes[wordbookSelectedTokenIndexes.length - 1] : -1;
-  const selectedWordbookTokens = useMemo(
-    () =>
-      wordbookSelectedTokenIndexes
-        .map((tokenIndex) => wordbookSentenceTokens[tokenIndex])
-        .filter((token) => typeof token === "string" && token.length > 0),
-    [wordbookSentenceTokens, wordbookSelectedTokenIndexes],
-  );
-  const selectedWordbookText = selectedWordbookTokens.join(" ");
   const sentenceWordTimingMap = useMemo(
     () => buildSentenceWordTimingMap(lesson?.sentences || [], lesson?.subtitle_cache_seed?.asr_payload || null),
     [lesson?.sentences, lesson?.subtitle_cache_seed?.asr_payload],
@@ -689,6 +796,92 @@ export function ImmersiveLessonPage({
   const updateTranslationMaskMetrics = useCallback(() => {
     setTranslationMaskMetrics(null);
   }, []);
+
+  const repairMediaElementAfterFullscreenToggle = useCallback(
+    (source = "fullscreen_toggle") => {
+      updateTranslationMaskMetrics();
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => updateTranslationMaskMetrics());
+      }
+      if (!mediaBlobUrl || needsBinding || mediaMode === "clip") return;
+      const media = mediaElementRef.current;
+      if (!media) {
+        setMediaElementRenderKey((value) => value + 1);
+        setMediaReady(false);
+        return;
+      }
+
+      const elementSrc = String(media.currentSrc || media.getAttribute("src") || "").trim();
+      const shouldRemount = !elementSrc || (media.error && media.readyState === 0);
+      if (shouldRemount) {
+        debugImmersiveLog("fullscreen_media_remount", {
+          source,
+          mediaMode,
+          readyState: media.readyState,
+          networkState: media.networkState,
+          hasError: Boolean(media.error),
+        });
+        setMediaReady(false);
+        setMediaElementRenderKey((value) => value + 1);
+        return;
+      }
+
+      const nextRate = normalizePlaybackRate(selectedPlaybackRateRef.current || selectedPlaybackRate || 1);
+      media.playbackRate = nextRate;
+      media.defaultPlaybackRate = nextRate;
+      if (media.readyState >= 2) {
+        setMediaReady(true);
+        return;
+      }
+      try {
+        media.load();
+      } catch (_) {
+        // A failed load call should not take down the learning page.
+      }
+      setMediaReady(false);
+    },
+    [
+      mediaBlobUrl,
+      mediaMode,
+      needsBinding,
+      selectedPlaybackRate,
+      updateTranslationMaskMetrics,
+    ],
+  );
+
+  const scheduleFullscreenModeRepair = useCallback(
+    (source = "fullscreen_toggle") => {
+      if (typeof window === "undefined") return;
+      clearFullscreenRepairTimers();
+      const token = fullscreenRepairTokenRef.current + 1;
+      fullscreenRepairTokenRef.current = token;
+      const runRepair = () => {
+        if (fullscreenRepairTokenRef.current !== token) return;
+        repairMediaElementAfterFullscreenToggle(source);
+      };
+      fullscreenRepairFrameRef.current = window.requestAnimationFrame(() => {
+        fullscreenRepairFrameRef.current = null;
+        runRepair();
+        fullscreenRepairTimerRef.current = window.setTimeout(() => {
+          fullscreenRepairTimerRef.current = null;
+          runRepair();
+        }, 180);
+      });
+    },
+    [clearFullscreenRepairTimers, repairMediaElementAfterFullscreenToggle],
+  );
+
+  const toggleFullscreenStudyMode = useCallback(
+    (source = "button") => {
+      const nextValue = !fullscreenStudyModeRef.current;
+      if (!nextValue) {
+        exitBrowserFullscreenIfNeeded();
+      }
+      setFullscreenStudyMode(nextValue);
+      scheduleFullscreenModeRepair(source);
+    },
+    [exitBrowserFullscreenIfNeeded, scheduleFullscreenModeRepair, setFullscreenStudyMode],
+  );
 
   useEffect(() => {
     translationMaskMetricsRef.current = translationMaskMetrics;
@@ -833,12 +1026,14 @@ export function ImmersiveLessonPage({
 
   const { isPlaying, isPlaybackPaused, playSentence, stopPlayback, togglePausePlayback, onMainMediaTimeUpdate } =
     useSentencePlayback({
-    mode: mediaMode,
-    mediaElementRef,
-    clipAudioRef,
-    apiClient,
-    accessToken,
-    onSentenceFinished,
+      mode: mediaMode,
+      mediaElementRef,
+      clipAudioRef,
+      apiClient,
+      accessToken,
+      onSentenceFinished,
+      selectedPlaybackRate,
+      resolveSelectedPlaybackRate: readCommittedSessionPlaybackRate,
     });
 
   const tryPlayCurrentSentence = useCallback(
@@ -846,7 +1041,7 @@ export function ImmersiveLessonPage({
       if (!currentSentence) return;
       const replayShortcutLabel = getShortcutLabel(learningSettings.shortcuts.replay_sentence);
       const effectivePlaybackPlan = playbackPlan || {
-        initialRate: selectedPlaybackRate,
+        initialRate: resolveCurrentSessionPlaybackRate(),
         rateSteps: [],
       };
       if (needsBinding) {
@@ -910,7 +1105,7 @@ export function ImmersiveLessonPage({
       learningSettings.shortcuts.replay_sentence,
       needsBinding,
       playSentence,
-      selectedPlaybackRate,
+      resolveCurrentSessionPlaybackRate,
       translationDisplayMode,
     ],
   );
@@ -928,7 +1123,10 @@ export function ImmersiveLessonPage({
       sentenceIndex: currentSentenceIndex,
     });
 
-    const result = await playSentence(currentSentence, { initialRate: selectedPlaybackRate, rateSteps: [] });
+    const result = await playSentence(currentSentence, {
+      initialRate: resolveCurrentSessionPlaybackRate(),
+      rateSteps: [],
+    });
     if (result.ok) {
       debugImmersiveLog("answer_completed_replay.playing", {
         sentenceIndex: currentSentenceIndex,
@@ -942,7 +1140,7 @@ export function ImmersiveLessonPage({
       detail: result.detail || "",
     });
     dispatchSession({ type: POST_ANSWER_REPLAY_COMPLETED, phase: "typing" });
-  }, [currentSentence, currentSentenceIndex, playSentence, selectedPlaybackRate]);
+  }, [currentSentence, currentSentenceIndex, playSentence, resolveCurrentSessionPlaybackRate]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -954,10 +1152,13 @@ export function ImmersiveLessonPage({
     setMediaBlobUrl("");
     setMediaReady(false);
     setMediaLoading(false);
+    setMediaElementRenderKey((value) => value + 1);
+    setFullscreenStudyMode(false);
+    clearFullscreenRepairTimers();
     dispatchSession({
       type: LESSON_LOADED,
       lesson,
-      learningSettings,
+      learningSettings: latestLearningSettingsRef.current || readLearningSettings(),
       phase: "idle",
       playbackRequired: true,
     });
@@ -968,7 +1169,9 @@ export function ImmersiveLessonPage({
     const fileName = String(lesson.source_filename || "");
     const preferredMode = isVideoFilename(fileName) ? "video" : resolveMediaModeFromFileName(fileName);
     setMediaMode(preferredMode);
-  }, [learningSettings, lesson?.id, resetWordTyping, stopPlayback]);
+    // Keep media initialization keyed to the lesson identity only. Learning-setting
+    // updates must not clear the currently loaded media blob.
+  }, [clearFullscreenRepairTimers, lesson?.id, setFullscreenStudyMode]);
 
   useEffect(() => {
     if (!lesson) return;
@@ -1288,6 +1491,21 @@ export function ImmersiveLessonPage({
   }, [fullscreenStudyMode, immersiveActive]);
 
   useEffect(() => {
+    if (!immersiveActive) {
+      clearFullscreenRepairTimers();
+      return undefined;
+    }
+    scheduleFullscreenModeRepair(fullscreenStudyMode ? "fullscreen_entered" : "fullscreen_exited");
+    return undefined;
+  }, [clearFullscreenRepairTimers, fullscreenStudyMode, immersiveActive, scheduleFullscreenModeRepair]);
+
+  useEffect(() => {
+    return () => {
+      clearFullscreenRepairTimers();
+    };
+  }, [clearFullscreenRepairTimers]);
+
+  useEffect(() => {
     if (!typingEnabled || !isTouchDevice || !mobileViewportState.keyboardOpen) return;
     focusTypingInput(true);
   }, [focusTypingInput, isTouchDevice, mobileViewportState.keyboardOpen, typingEnabled]);
@@ -1335,9 +1553,31 @@ export function ImmersiveLessonPage({
     if (fullscreenStudyMode) {
       setFullscreenStudyMode(false);
     }
+    exitBrowserFullscreenIfNeeded();
+    clearFullscreenRepairTimers();
     stopPlayback();
     dispatchSession({ type: EXIT_IMMERSIVE });
-  }, [fullscreenStudyMode, immersiveActive, setFullscreenStudyMode, stopPlayback]);
+  }, [
+    clearFullscreenRepairTimers,
+    exitBrowserFullscreenIfNeeded,
+    fullscreenStudyMode,
+    immersiveActive,
+    setFullscreenStudyMode,
+    stopPlayback,
+  ]);
+
+  useEffect(() => {
+    updateTranslationMaskMetrics();
+    if (typeof window === "undefined") return undefined;
+    const frameId = window.requestAnimationFrame(() => {
+      updateTranslationMaskMetrics();
+      const media = mediaElementRef.current;
+      if (media && media.readyState >= 2) {
+        setMediaReady(true);
+      }
+    });
+    return () => window.cancelAnimationFrame(frameId);
+  }, [fullscreenStudyMode, updateTranslationMaskMetrics]);
 
   const handleMainMediaError = useCallback(() => {
     const hasClipFallback = lesson?.media_storage === "server" && Array.isArray(lesson?.sentences) && lesson.sentences.some((item) => item?.audio_url);
@@ -1615,7 +1855,7 @@ export function ImmersiveLessonPage({
         currentSentence,
         currentSentenceTiming,
         activeWordIndexRef.current,
-        selectedPlaybackRate,
+        resolveCurrentSessionPlaybackRate(),
       );
       debugImmersiveLog("manual_replay", {
         source,
@@ -1642,7 +1882,7 @@ export function ImmersiveLessonPage({
       mediaLoading,
       needsBinding,
       phase,
-      selectedPlaybackRate,
+      resolveCurrentSessionPlaybackRate,
       tryPlayCurrentSentence,
     ],
   );
@@ -1725,7 +1965,7 @@ export function ImmersiveLessonPage({
       void (async () => {
         // Tier 1: clip audio with main-video fallback
         const result = await playSentence(previousSentence, {
-          initialRate: selectedPlaybackRate,
+          initialRate: resolveCurrentSessionPlaybackRate(),
           rateSteps: [],
         }, { skipSeek: false });
         if (result.ok) return;
@@ -1735,7 +1975,10 @@ export function ImmersiveLessonPage({
           reason: result.reason || "unknown",
         });
         // Tier 2: Web Speech API TTS
-        const ttsOk = speakPreviousSentenceTTS(previousSentence.text_en || "", selectedPlaybackRate);
+        const ttsOk = speakPreviousSentenceTTS(
+          previousSentence.text_en || "",
+          resolveCurrentSessionPlaybackRate(),
+        );
         if (ttsOk) {
           dispatchSession({
             type: PLAYBACK_STARTED,
@@ -1753,7 +1996,13 @@ export function ImmersiveLessonPage({
         });
       })();
     },
-    [currentSentenceIndex, interruptCurrentSentencePlayback, playSentence, previousSentence, selectedPlaybackRate],
+    [
+      currentSentenceIndex,
+      interruptCurrentSentencePlayback,
+      playSentence,
+      previousSentence,
+      resolveCurrentSessionPlaybackRate,
+    ],
   );
 
   const requestPlayCurrentAnsweredSentence = useCallback(
@@ -1771,13 +2020,13 @@ export function ImmersiveLessonPage({
         manual: true,
         playbackKind: "wordbook_sentence_preview",
         playbackPlan: {
-          initialRate: selectedPlaybackRate,
+          initialRate: resolveCurrentSessionPlaybackRate(),
           rateSteps: [],
         },
         source,
       });
     },
-    [currentSentence, currentSentenceIndex, selectedPlaybackRate, stopPlayback, tryPlayCurrentSentence],
+    [currentSentence, currentSentenceIndex, resolveCurrentSessionPlaybackRate, stopPlayback, tryPlayCurrentSentence],
   );
 
   const requestInteractiveWordbookSentencePlayback = useCallback(
@@ -1816,6 +2065,18 @@ export function ImmersiveLessonPage({
     onPlayPreviousSentence: requestPlayPreviousSentence,
   });
 
+  const requestAdjustPlaybackRate = useCallback(
+    (direction, source = "shortcut_playback_rate") => {
+      adjustPlaybackRateByStep(direction);
+      debugImmersiveLog("adjust_playback_rate", {
+        source,
+        direction,
+        sentenceIndex: currentSentenceIndex,
+      });
+    },
+    [adjustPlaybackRateByStep, currentSentenceIndex],
+  );
+
   const { handleKeyDown } = useImmersiveKeyboard({
     immersiveActive,
     currentSentence,
@@ -1827,6 +2088,7 @@ export function ImmersiveLessonPage({
     exitImmersive,
     requestReplayCurrentSentence,
     requestTogglePausePlayback,
+    requestAdjustPlaybackRate,
     audioRecorderRef,
     requestNavigateSentence,
     requestRevealLetter,
@@ -1976,6 +2238,7 @@ export function ImmersiveLessonPage({
   const showMediaLoadingOverlay = mediaLoading && !needsBinding && !mediaReady;
   const waitingForInitialPlayback = sentenceTypingDone && !sentencePlaybackDone && sentencePlaybackRequired;
   const allowNativeVideoFullscreen = isIpadSafari && mediaMode === "video";
+  const mediaElementKey = `${lesson?.id ?? "lesson"}-${mediaMode}-${mediaElementRenderKey}`;
   const translationMaskVisible = canShowTranslationMask && translationMaskEnabled;
   const translationMaskClassName = [
     "immersive-translation-mask",
@@ -2020,6 +2283,7 @@ export function ImmersiveLessonPage({
         mediaBlobUrl,
         needsBinding,
         mediaReady,
+        mediaElementKey,
         setMediaReady,
         mediaElementRef,
         clipAudioRef,
@@ -2046,10 +2310,11 @@ export function ImmersiveLessonPage({
         requestReplayCurrentSentence,
         requestTogglePausePlayback,
         fullscreenStudyMode,
-        onToggleFullscreenStudyMode: () => setFullscreenStudyMode(!fullscreenStudyMode),
+        onToggleFullscreenStudyMode: () => toggleFullscreenStudyMode("button_toggle_fullscreen_study"),
         singleSentenceLoopEnabled,
         handleToggleSingleSentenceLoop,
         playbackRateInputValue,
+        playbackRateInputRef,
         handlePlaybackRateInputChange,
         handlePlaybackRateInputBlur,
         handlePlaybackRateInputKeyDown,
@@ -2080,18 +2345,28 @@ export function ImmersiveLessonPage({
         canRenderInteractiveWordbook,
         wordbookSentence,
         wordbookSentenceTokens,
+        wordbookReferenceSourceKey: wordbookSentenceSourceKey,
+        currentSentenceSourceKey,
+        wordbookSelectionSourceKey,
         wordbookSelectedTokenIndexes,
         wordbookBusy,
+        wordbookTranslationBusy,
         wordbookSuccessAnimationIndexes,
+        wordbookSuccessSourceKey,
         handleWordbookTokenClick,
+        handleWordbookTokenPointerDown,
+        handleWordbookTokenPointerEnter,
         requestInteractiveWordbookSentencePlayback,
         wordbookSentencePlaybackLabel,
         collectWordbookEntry,
+        translateWordbookSelection,
+        clearWordbookSelection,
         selectedWordbookTokens,
         selectedWordbookStart,
         selectedWordbookEnd,
         selectedWordbookText,
         wordbookSuccessMessage,
+        wordbookTranslationText,
         wordbookSentenceZh,
         soeTargetSentence,
         translationEn,
@@ -2138,23 +2413,32 @@ export function ImmersiveLessonPage({
         wordbookSentenceHeading: wordbookSentenceMode === "current" ? "本句" : "上一句",
         wordbookSentence: wordbookSentence,
         wordbookSentenceTokens,
+        wordbookReferenceSourceKey: wordbookSentenceSourceKey,
+        wordbookSelectionSourceKey,
         wordbookSelectedTokenIndexes,
         wordbookSuccessAnimationIndexes,
+        wordbookSuccessSourceKey,
         wordbookSentenceBandMap,
         difficultyAnalyzerRef,
         collinsLevel,
         lookupBandFromMap,
         handleWordbookTokenClick,
+        handleWordbookTokenPointerDown,
+        handleWordbookTokenPointerEnter,
         requestInteractiveWordbookSentencePlayback,
         wordbookSentencePlaybackLabel,
         collectWordbookEntry,
+        translateWordbookSelection,
+        clearWordbookSelection,
         selectedWordbookTokens,
         selectedWordbookStart,
         selectedWordbookEnd,
         selectedWordbookText,
         wordbookSuccessMessage,
+        wordbookTranslationText,
         wordbookSentenceZh,
         wordbookBusy,
+        wordbookTranslationBusy,
         audioUrl: showExplanation ? explanationAudioUrl : null,
         audioRef: explanationAudioRef,
         isAudioPlaying: isExplanationPlaying,
@@ -2178,5 +2462,3 @@ export function ImmersiveLessonPage({
     />
   );
 }
-
-

@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 
 from app.core.config import TTS_MAX_VOICES_PER_USER, TTS_VC_TARGET_MODEL
 from app.core.timezone import now_shanghai_naive
-from app.infra.tts import TTSError, create_voice, delete_voice
+from app.infra.tts import TTSError
 from app.models.voice_profile import VoiceProfile
+from app.services.ai_platform import create_voice_profile_runtime, delete_voice_profile_runtime
 
 
 class VoiceCloningError(RuntimeError):
@@ -63,10 +64,10 @@ def create_user_voice_profile(
                 f"用户音色数量已达上限 ({TTS_MAX_VOICES_PER_USER})"
             )
 
-        result = create_voice(
+        result = create_voice_profile_runtime(
             audio_file_path=audio_file_path,
             preferred_name=preferred_name,
-            target_model=target_model,
+            model_key=target_model,
             language=language,
         )
 
@@ -208,7 +209,7 @@ def delete_user_voice_profile(
         if voice_profile is None:
             raise VoiceCloningError("VOICE_NOT_FOUND", f"未找到音色: {voice_name}")
 
-        delete_voice(voice_name=voice_name)
+        delete_voice_profile_runtime(voice_name=voice_name)
 
         db.delete(voice_profile)
         db.commit()

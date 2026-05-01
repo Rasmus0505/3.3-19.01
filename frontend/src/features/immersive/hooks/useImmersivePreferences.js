@@ -31,6 +31,9 @@ export function useImmersivePreferences({
   const [showFullscreenPreviousSentence, setShowFullscreenPreviousSentence] = useState(
     () => readLearningSettings().uiPreferences?.showFullscreenPreviousSentence ?? false,
   );
+  const [persistedFullscreenStudyMode, setPersistedFullscreenStudyMode] = useState(
+    () => readLearningSettings().uiPreferences?.fullscreenStudyMode === true,
+  );
   const [translationMaskEnabled, setTranslationMaskEnabled] = useState(
     () => readLearningSettings().uiPreferences?.translationMask?.enabled !== false,
   );
@@ -40,6 +43,7 @@ export function useImmersivePreferences({
   const [playbackRateInputValue, setPlaybackRateInputValue] = useState(() =>
     formatPlaybackRateInputValue(DEFAULT_IMMERSIVE_PLAYBACK_RATE),
   );
+  const [hasPendingPlaybackRateDraft, setHasPendingPlaybackRateDraft] = useState(false);
 
   const syncLearningSettingsState = useCallback(
     (nextSettings) => {
@@ -48,6 +52,9 @@ export function useImmersivePreferences({
       setLearningSettings(resolvedSettings);
       setShowFullscreenPreviousSentence(
         resolvedSettings.uiPreferences?.showFullscreenPreviousSentence ?? false,
+      );
+      setPersistedFullscreenStudyMode(
+        resolvedSettings.uiPreferences?.fullscreenStudyMode === true,
       );
       setTranslationMaskEnabled(resolvedSettings.uiPreferences?.translationMask?.enabled !== false);
       setTranslationMaskRect(
@@ -106,6 +113,18 @@ export function useImmersivePreferences({
     [persistUiPreferences],
   );
 
+  const persistFullscreenStudyModePreference = useCallback(
+    (nextValue) => {
+      const safeValue = Boolean(nextValue);
+      setPersistedFullscreenStudyMode(safeValue);
+      persistUiPreferences((currentUiPreferences) => ({
+        ...currentUiPreferences,
+        fullscreenStudyMode: safeValue,
+      }));
+    },
+    [persistUiPreferences],
+  );
+
   const persistTranslationMaskPreference = useCallback(
     (nextEnabled, nextRect) => {
       const nextPreference = buildTranslationMaskUiPreference(nextEnabled, nextRect);
@@ -156,6 +175,7 @@ export function useImmersivePreferences({
       const resolvedRate = normalizePlaybackRate(nextRate);
       setSelectedPlaybackRate(resolvedRate);
       setPlaybackRateInputValue(formatPlaybackRateInputValue(resolvedRate));
+      setHasPendingPlaybackRateDraft(false);
       const activeMedia = [mediaElementRef.current, clipAudioRef.current];
       for (const media of activeMedia) {
         if (!media) continue;
@@ -182,16 +202,20 @@ export function useImmersivePreferences({
       if (!normalizedValue) {
         const resetRate = applyPlaybackRate(DEFAULT_IMMERSIVE_PLAYBACK_RATE);
         setPlaybackRateInputValue(formatPlaybackRateInputValue(resetRate));
-        return;
+        setHasPendingPlaybackRateDraft(false);
+        return resetRate;
       }
       const committedRate = applyPlaybackRate(normalizedValue);
       setPlaybackRateInputValue(formatPlaybackRateInputValue(committedRate));
+      setHasPendingPlaybackRateDraft(false);
+      return committedRate;
     },
     [applyPlaybackRate, playbackRateInputValue],
   );
 
   const handlePlaybackRateInputChange = useCallback((event) => {
     setPlaybackRateInputValue(event.target.value);
+    setHasPendingPlaybackRateDraft(true);
   }, []);
 
   const handlePlaybackRateInputKeyDown = useCallback(
@@ -224,7 +248,8 @@ export function useImmersivePreferences({
       const baseRate = Number.isFinite(parsedDraftValue)
         ? parsedDraftValue
         : selectedPlaybackRate;
-      applyPlaybackRate(baseRate + direction * IMMERSIVE_PLAYBACK_RATE_STEP);
+      const steppedRate = Math.round((baseRate + direction * IMMERSIVE_PLAYBACK_RATE_STEP) * 10) / 10;
+      applyPlaybackRate(steppedRate);
     },
     [applyPlaybackRate, playbackRateInputValue, selectedPlaybackRate],
   );
@@ -246,6 +271,7 @@ export function useImmersivePreferences({
 
   useEffect(() => {
     setPlaybackRateInputValue(formatPlaybackRateInputValue(selectedPlaybackRate));
+    setHasPendingPlaybackRateDraft(false);
   }, [selectedPlaybackRate]);
 
   useEffect(() => {
@@ -270,14 +296,17 @@ export function useImmersivePreferences({
   return {
     learningSettings,
     showFullscreenPreviousSentence,
+    persistedFullscreenStudyMode,
     translationMaskEnabled,
     translationMaskRect,
     playbackRateInputValue,
+    hasPendingPlaybackRateDraft,
     setTranslationMaskRect,
     syncLearningSettingsState,
     persistUiPreferences,
     persistPlaybackPreferences,
     persistFullscreenPreviousSentencePreference,
+    persistFullscreenStudyModePreference,
     persistTranslationMaskPreference,
     handleToggleSingleSentenceLoop,
     persistLessonPlaybackRate,

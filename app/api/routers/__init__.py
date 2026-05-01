@@ -13,6 +13,7 @@ from app.api.routers.announcement_public import router as announcement_public
 from app.api.routers.practice import router as practice
 from app.api.routers.wordbook import router as wordbook
 from app.api.routers.media import router as media
+from app.api.routers.ai import router as ai_router
 import app.api.routers.asr_models as asr_models
 from app.api.routers.asr_models import router as asr_models_router
 from app.api.routers.transcribe import router as transcribe
@@ -41,6 +42,7 @@ __all__ = [
     "lessons_router",
     "practice",
     "media",
+    "ai_router",
     "transcribe",
     "asr_models",
     "asr_models_router",

@@ -8,6 +8,7 @@ GENERATION_OPTION_KEYS: tuple[str, ...] = (
     "zh_translation",
     "vocabulary_annotation",
     "word_explanation",
+    "forced_alignment",
 )
 CONTENT_STATUS_KEYS: tuple[str, ...] = GENERATION_OPTION_KEYS
 CONTENT_STATE_GENERATED = "generated"
@@ -23,12 +24,13 @@ CONTENT_STATE_VALUES: tuple[str, ...] = (
 
 
 def default_generation_options() -> dict[str, bool]:
-    # Keep current behavior by default; callers may override in UI.
+    # Keep core subtitles always on while defaulting extra cost/features conservatively.
     return {
         "core_subtitles": True,
         "zh_translation": True,
         "vocabulary_annotation": True,
-        "word_explanation": True,
+        "word_explanation": False,
+        "forced_alignment": False,
     }
 
 

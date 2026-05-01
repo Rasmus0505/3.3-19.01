@@ -107,6 +107,7 @@ export function getUploadStageTone(status = "") {
   if (status === "completed") return "success";
   if (status === "running") return "running";
   if (status === "failed") return "error";
+  if (status === "skipped") return "neutral";
   return "idle";
 }
 

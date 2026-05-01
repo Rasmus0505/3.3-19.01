@@ -12,6 +12,7 @@ import {
   sanitizeLearningSettings,
   writeLearningSettings,
 } from "../immersive/learningSettings";
+import { AsrRecordHistorySection } from "./components/AsrRecordHistorySection";
 import { LessonHistoryCard } from "./components/LessonHistoryCard";
 import { LessonHistoryToolbar } from "./components/LessonHistoryToolbar";
 import { LessonLearningSettingsSection } from "./components/LessonLearningSettingsSection";
@@ -37,6 +38,7 @@ import "../immersive/immersive.css";
 /** @typedef {import("./types").LessonSentence} LessonSentence */
 
 export function LessonList({
+  accessToken,
   lessons,
   totalLessons = 0,
   currentLessonId,
@@ -691,6 +693,8 @@ export function LessonList({
             ) : null}
           </div>
         ) : null}
+
+        <AsrRecordHistorySection accessToken={accessToken} onOpenUpload={onSwitchToUpload} />
 
         <LessonListDialogs
           renamingLesson={renamingLesson}

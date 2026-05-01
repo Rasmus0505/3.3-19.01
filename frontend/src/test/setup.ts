@@ -1,5 +1,6 @@
 ﻿/// <reference types="vitest" />
 import { vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 
 // 模拟 window.matchMedia
 Object.defineProperty(window, 'matchMedia', {

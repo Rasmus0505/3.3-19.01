@@ -21,6 +21,7 @@ const VideoPanel = forwardRef(function VideoPanel(
     sentenceCount,
     mediaMode,
     mediaBlobUrl,
+    mediaElementKey,
     needsBinding,
     setMediaReady,
     mediaElementRef,
@@ -52,6 +53,7 @@ const VideoPanel = forwardRef(function VideoPanel(
     singleSentenceLoopEnabled,
     handleToggleSingleSentenceLoop,
     playbackRateInputValue,
+    playbackRateInputRef,
     handlePlaybackRateInputChange,
     handlePlaybackRateInputBlur,
     handlePlaybackRateInputKeyDown,
@@ -76,7 +78,16 @@ const VideoPanel = forwardRef(function VideoPanel(
             <div className="immersive-stage__topbar immersive-stage__topbar--compact">
               <div className="immersive-stage__topbar-main">
                 {immersiveActive && hasExitHandler ? (
-                  <Button variant="outline" size="sm" onClick={() => void exitImmersive("button")}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void exitImmersive("button");
+                    }}
+                  >
                     <ArrowLeft className="size-4" />
                     退出
                   </Button>
@@ -89,6 +100,7 @@ const VideoPanel = forwardRef(function VideoPanel(
               <div ref={immersiveMediaRef} className="immersive-media">
                 {!needsBinding && mediaMode === "video" ? (
                   <video
+                    key={mediaElementKey}
                     ref={mediaElementRef}
                     className={allowNativeVideoFullscreen ? "immersive-media-video immersive-media-video--allow-native-fullscreen" : "immersive-media-video"}
                     src={mediaBlobUrl || undefined}
@@ -117,6 +129,7 @@ const VideoPanel = forwardRef(function VideoPanel(
                       <p className="immersive-hint">主舞台保留节奏感，拼写任务放到底部 Dock 完成。</p>
                     </div>
                     <audio
+                      key={mediaElementKey}
                       ref={mediaElementRef}
                       src={mediaBlobUrl || undefined}
                       preload="metadata"
@@ -207,6 +220,7 @@ const VideoPanel = forwardRef(function VideoPanel(
                     singleSentenceLoopEnabled={singleSentenceLoopEnabled}
                     handleToggleSingleSentenceLoop={handleToggleSingleSentenceLoop}
                     playbackRateInputValue={playbackRateInputValue}
+                    playbackRateInputRef={playbackRateInputRef}
                     handlePlaybackRateInputChange={handlePlaybackRateInputChange}
                     handlePlaybackRateInputBlur={handlePlaybackRateInputBlur}
                     handlePlaybackRateInputKeyDown={handlePlaybackRateInputKeyDown}

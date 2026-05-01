@@ -112,6 +112,7 @@ def _build_workspace_restore_pointer(
     status: str = "",
     resume_available: bool = False,
     resume_stage: str = "",
+    resume_mode: str = "",
 ) -> dict:
     return {
         "task_id": str(task_id or ""),
@@ -119,6 +120,7 @@ def _build_workspace_restore_pointer(
         "status": str(status or ""),
         "resume_available": bool(resume_available),
         "resume_stage": str(resume_stage or ""),
+        "resume_mode": str(resume_mode or ""),
     }
 
 
@@ -136,7 +138,10 @@ def _extract_workspace_subtitle_snapshot(task: LessonGenerationTask, artifacts: 
         }
 
     def _snapshot_from_payload(payload: dict | None, *, key: str, source_kind: str, transcript_key: str = "") -> dict | None:
-        items = list((payload or {}).get("transcripts") or [])
+        source_payload = dict(payload or {})
+        if isinstance(source_payload.get("asr_payload"), dict):
+            source_payload = dict(source_payload.get("asr_payload") or {})
+        items = list(source_payload.get("transcripts") or [])
         sentences_local = []
         transcript_text = ""
         if items and isinstance(items[0], dict):
@@ -239,6 +244,7 @@ def _build_task_workspace_summary(task: LessonGenerationTask) -> dict:
             status=str(task.status or ""),
             resume_available=bool(task.resume_available),
             resume_stage=str(task.resume_stage or ""),
+            resume_mode=str(artifacts.get("resume_mode") or ""),
         ),
         "latest_subtitle_snapshot": _extract_workspace_subtitle_snapshot(task, artifacts),
         "log_summary": _merge_workspace_log_summary(existing_summary.get("log_summary") if isinstance(existing_summary, dict) else None, task),

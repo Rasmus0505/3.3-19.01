@@ -41,6 +41,17 @@ from app.schemas.admin import (
     WalletAdjustResponse,
     WalletLedgerItem,
 )
+from app.schemas.ai import AiCapabilityResponse, AiCatalogResponse, AiModelActionResponse, AiModelResponse
+from app.schemas.asr_record import (
+    AsrBatchTranscribeResponse,
+    AsrRecordDeleteResponse,
+    AsrRecordDetailResponse,
+    AsrRecordItemResponse,
+    AsrRecordListItemResponse,
+    AsrRecordListResponse,
+    AsrRecordSegmentResponse,
+    AsrRecordSummaryResponse,
+)
 from app.schemas.admin_console import AdminUserActivityItem, AdminUserActivityResponse, AdminUserActivitySummary, AdminUserActivitySummaryResponse
 from app.schemas.announcement import (
     AnnouncementCreate,
@@ -124,6 +135,18 @@ from app.schemas.tts import (
 __all__ = [
     "SuccessResponse",
     "ErrorResponse",
+    "AiCapabilityResponse",
+    "AiCatalogResponse",
+    "AiModelActionResponse",
+    "AiModelResponse",
+    "AsrRecordSegmentResponse",
+    "AsrRecordSummaryResponse",
+    "AsrRecordItemResponse",
+    "AsrRecordListItemResponse",
+    "AsrRecordDetailResponse",
+    "AsrBatchTranscribeResponse",
+    "AsrRecordListResponse",
+    "AsrRecordDeleteResponse",
     "DictionaryCollinsClassifyRequest",
     "DictionaryCollinsClassifyItem",
     "DictionaryCollinsClassifyResponse",

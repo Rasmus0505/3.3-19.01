@@ -10,7 +10,8 @@ class LessonGenerationOptions(BaseModel):
     core_subtitles: bool = True
     zh_translation: bool = True
     vocabulary_annotation: bool = True
-    word_explanation: bool = True
+    word_explanation: bool = False
+    forced_alignment: bool = False
 
 
 class GeneratedContentStatusResponse(BaseModel):
@@ -116,7 +117,7 @@ class LessonBulkDeleteResponse(BaseModel):
 class LessonTaskStageResponse(BaseModel):
     key: str
     label: str
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "skipped"]
 
 
 class LessonTaskCountersResponse(BaseModel):
@@ -126,6 +127,12 @@ class LessonTaskCountersResponse(BaseModel):
     translate_total: int = 0
     segment_done: int = 0
     segment_total: int = 0
+
+
+class LessonTaskEventResponse(BaseModel):
+    ts: str = ""
+    kind: Literal["info", "progress", "milestone", "debug"] = "info"
+    text: str = ""
 
 
 class LessonTaskTranslationUsageResponse(BaseModel):
@@ -185,6 +192,7 @@ class LessonTaskResponse(BaseModel):
     lesson_id: int | None = None
     stages: list[LessonTaskStageResponse]
     counters: LessonTaskCountersResponse
+    events: list[LessonTaskEventResponse] = Field(default_factory=list)
     requested_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
     effective_generation_options: LessonGenerationOptions = Field(default_factory=LessonGenerationOptions)
     generated_content_status: GeneratedContentStatusResponse | None = None
@@ -196,6 +204,7 @@ class LessonTaskResponse(BaseModel):
     message: str = ""
     resume_available: bool = False
     resume_stage: str = ""
+    resume_mode: Literal["checkpoint", "restart_without_upload", "unavailable"] = "unavailable"
     artifact_expires_at: datetime | None = None
     control_action: Literal["", "pause", "terminate"] = ""
     paused_at: datetime | None = None
@@ -240,6 +249,7 @@ class LessonGenerateMissingRequest(BaseModel):
 class LessonTaskResumeResponse(BaseModel):
     ok: bool = True
     task_id: str
+    resume_mode: Literal["checkpoint", "restart_without_upload", "unavailable"] = "unavailable"
 
 
 class LessonTaskControlResponse(BaseModel):

@@ -151,6 +151,8 @@ def resolve_database_url(*, development_default: str = "sqlite:///./app.db") -> 
 ASR_SEGMENT_TARGET_SECONDS = _get_env_int("ASR_SEGMENT_TARGET_SECONDS", 300)
 ASR_SEGMENT_SEARCH_WINDOW_SECONDS = _get_env_int("ASR_SEGMENT_SEARCH_WINDOW_SECONDS", 45)
 ASR_TASK_POLL_SECONDS = _get_env_int("ASR_TASK_POLL_SECONDS", 2)
+QWEN_FORCED_ALIGNER_MODEL_DIR = Path(_get_env_text("QWEN_FORCED_ALIGNER_MODEL_DIR", default=""))
+QWEN_FORCED_ALIGNER_DEVICE = _get_env_text("QWEN_FORCED_ALIGNER_DEVICE", default="cpu") or "cpu"
 
 MT_BATCH_MAX_CHARS = _get_env_int("MT_BATCH_MAX_CHARS", 2600)
 MT_MIN_REQUEST_INTERVAL_MS = _get_env_non_negative_int("MT_MIN_REQUEST_INTERVAL_MS", 600)

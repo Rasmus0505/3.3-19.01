@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { UploadProgress } from '../features/upload/components/UploadProgress';
+import { UploadProgress } from '../../features/upload/components/UploadProgress';
 
 describe('UploadProgress', () => {
   describe('idle state', () => {

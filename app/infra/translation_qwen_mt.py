@@ -378,7 +378,8 @@ def _retry_delay_seconds(attempt_no: int) -> float:
 
 
 def _is_fatal_batch_error(error_code: str) -> bool:
-    return False
+    normalized = str(error_code or "").strip().upper()
+    return normalized in {"INVALID_BATCH_JSON", "EMPTY_BATCH_ITEM"}
 
 
 def _build_sentence_batches(items: list[tuple[int, str]]) -> list[list[tuple[int, str]]]:

@@ -20,10 +20,11 @@ function normalizePlaybackPlan(playbackPlan = {}) {
   return { initialRate, rateSteps };
 }
 
-function resetMediaRate(media) {
+function applyMediaRate(media, rate) {
   if (!media) return;
-  media.playbackRate = 1;
-  media.defaultPlaybackRate = 1;
+  const safeRate = normalizePlaybackRate(rate);
+  media.playbackRate = safeRate;
+  media.defaultPlaybackRate = safeRate;
 }
 
 export function useSentencePlayback({
@@ -33,6 +34,8 @@ export function useSentencePlayback({
   apiClient,
   accessToken,
   onSentenceFinished,
+  selectedPlaybackRate = DEFAULT_IMMERSIVE_PLAYBACK_RATE,
+  resolveSelectedPlaybackRate = null,
 }) {
   const segmentEndRef = useRef(0);
   const isSegmentPlayingRef = useRef(false);
@@ -47,6 +50,13 @@ export function useSentencePlayback({
   const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
   const [currentPlaybackRate, setCurrentPlaybackRate] = useState(1);
 
+  const readSelectedPlaybackRate = useCallback(() => {
+    if (typeof resolveSelectedPlaybackRate === "function") {
+      return normalizePlaybackRate(resolveSelectedPlaybackRate());
+    }
+    return normalizePlaybackRate(selectedPlaybackRate);
+  }, [resolveSelectedPlaybackRate, selectedPlaybackRate]);
+
   const syncPlaybackRate = useCallback((nextRate) => {
     setCurrentPlaybackRate(
       Math.min(IMMERSIVE_PLAYBACK_RATE_MAX, Math.max(IMMERSIVE_PLAYBACK_RATE_MIN, Number(nextRate || 1))),
@@ -60,10 +70,20 @@ export function useSentencePlayback({
     }
   }, []);
 
+  useEffect(() => {
+    const nextRate = readSelectedPlaybackRate();
+    const activeMedia = mode === "clip" ? clipAudioRef.current : mediaElementRef.current;
+    applyMediaRate(activeMedia, nextRate);
+    if (!hasActivePlaybackRef.current) {
+      applyMediaRate(mediaElementRef.current, nextRate);
+      applyMediaRate(clipAudioRef.current, nextRate);
+    }
+    syncPlaybackRate(nextRate);
+  }, [clipAudioRef, mediaElementRef, mode, readSelectedPlaybackRate, syncPlaybackRate]);
+
   const applyInitialRate = useCallback((media, playbackPlan) => {
     if (!media) return;
-    media.playbackRate = playbackPlan.initialRate;
-    media.defaultPlaybackRate = playbackPlan.initialRate;
+    applyMediaRate(media, playbackPlan.initialRate);
     syncPlaybackRate(playbackPlan.initialRate);
   }, [syncPlaybackRate]);
 
@@ -75,33 +95,34 @@ export function useSentencePlayback({
       if (currentRelativeSec + 0.001 < nextStep.atSec) {
         break;
       }
-      media.playbackRate = nextStep.rate;
-      media.defaultPlaybackRate = nextStep.rate;
+      applyMediaRate(media, nextStep.rate);
       syncPlaybackRate(nextStep.rate);
       nextRateStepIndexRef.current += 1;
     }
   }, [syncPlaybackRate]);
 
   const finishPlayback = useCallback(() => {
+    const resetRate = readSelectedPlaybackRate();
     isSegmentPlayingRef.current = false;
     hasActivePlaybackRef.current = false;
     isPlaybackPausedRef.current = false;
     setIsPlaying(false);
     setIsPlaybackPaused(false);
-    syncPlaybackRate(1);
-    resetMediaRate(mediaElementRef.current);
-    resetMediaRate(clipAudioRef.current);
+    syncPlaybackRate(resetRate);
+    applyMediaRate(mediaElementRef.current, resetRate);
+    applyMediaRate(clipAudioRef.current, resetRate);
     onSentenceFinished?.();
-  }, [clipAudioRef, mediaElementRef, onSentenceFinished, syncPlaybackRate]);
+  }, [clipAudioRef, mediaElementRef, onSentenceFinished, readSelectedPlaybackRate, syncPlaybackRate]);
 
-  const stopPlayback = useCallback(() => {
+  const stopPlayback = useCallback(({ resetRate: explicitResetRate } = {}) => {
+    const resetRate = normalizePlaybackRate(explicitResetRate ?? readSelectedPlaybackRate());
     isSegmentPlayingRef.current = false;
     hasActivePlaybackRef.current = false;
     isPlaybackPausedRef.current = false;
     setIsPlaying(false);
     setIsPlaybackPaused(false);
-    syncPlaybackRate(1);
-    playbackPlanRef.current = { initialRate: 1, rateSteps: [] };
+    syncPlaybackRate(resetRate);
+    playbackPlanRef.current = { initialRate: resetRate, rateSteps: [] };
     nextRateStepIndexRef.current = 0;
     segmentStartRef.current = 0;
 
@@ -109,7 +130,7 @@ export function useSentencePlayback({
     if (media && !media.paused) {
       media.pause();
     }
-    resetMediaRate(media);
+    applyMediaRate(media, resetRate);
 
     const clipAudio = clipAudioRef.current;
     if (clipAudio) {
@@ -118,9 +139,9 @@ export function useSentencePlayback({
       clipAudio.onerror = null;
       clipAudio.ontimeupdate = null;
     }
-    resetMediaRate(clipAudio);
+    applyMediaRate(clipAudio, resetRate);
     clearClipUrl();
-  }, [clearClipUrl, clipAudioRef, mediaElementRef, syncPlaybackRate]);
+  }, [clearClipUrl, clipAudioRef, mediaElementRef, readSelectedPlaybackRate, syncPlaybackRate]);
 
   const togglePausePlayback = useCallback(async () => {
     const media = mode === "clip" ? clipAudioRef.current : mediaElementRef.current;
@@ -173,7 +194,8 @@ export function useSentencePlayback({
       if (!sentence) {
         return { ok: false, reason: "sentence_missing" };
       }
-      stopPlayback();
+      const normalizedPlaybackPlan = normalizePlaybackPlan(playbackPlan || {});
+      stopPlayback({ resetRate: normalizedPlaybackPlan.initialRate });
 
       // When skipSeek is true: only use clip audio, never touch main video timeline.
       // If clip audio is unavailable, return error without seeking main video.
@@ -181,12 +203,9 @@ export function useSentencePlayback({
         if (!sentence.audio_url) {
           return { ok: false, reason: "clip_unavailable" };
         }
-        // ... (clip mode logic follows below)
       }
 
       const effectiveMode = skipSeek && sentence.audio_url ? "clip" : mode;
-
-      const normalizedPlaybackPlan = normalizePlaybackPlan(playbackPlan || {});
       playbackPlanRef.current = normalizedPlaybackPlan;
       nextRateStepIndexRef.current = 0;
 
@@ -225,14 +244,15 @@ export function useSentencePlayback({
         };
         clipAudio.onerror = () => {
           if (token !== playTokenRef.current) return;
+          const resetRate = readSelectedPlaybackRate();
           clearClipUrl();
           isSegmentPlayingRef.current = false;
           hasActivePlaybackRef.current = false;
           isPlaybackPausedRef.current = false;
           setIsPlaying(false);
           setIsPlaybackPaused(false);
-          syncPlaybackRate(1);
-          resetMediaRate(clipAudio);
+          syncPlaybackRate(resetRate);
+          applyMediaRate(clipAudio, resetRate);
         };
         clipAudio.ontimeupdate = () => {
           if (token !== playTokenRef.current) return;
@@ -248,11 +268,12 @@ export function useSentencePlayback({
           setIsPlaybackPaused(false);
           return { ok: true };
         } catch (error) {
+          const resetRate = readSelectedPlaybackRate();
           clearClipUrl();
           hasActivePlaybackRef.current = false;
           isPlaybackPausedRef.current = false;
-          syncPlaybackRate(1);
-          resetMediaRate(clipAudio);
+          syncPlaybackRate(resetRate);
+          applyMediaRate(clipAudio, resetRate);
           return { ok: false, reason: "autoplay_blocked", detail: String(error) };
         }
       }
@@ -277,14 +298,28 @@ export function useSentencePlayback({
         setIsPlaybackPaused(false);
         return { ok: true };
       } catch (error) {
+        const resetRate = readSelectedPlaybackRate();
         hasActivePlaybackRef.current = false;
         isPlaybackPausedRef.current = false;
-        syncPlaybackRate(1);
-        resetMediaRate(media);
+        syncPlaybackRate(resetRate);
+        applyMediaRate(media, resetRate);
         return { ok: false, reason: "autoplay_blocked", detail: String(error) };
       }
     },
-    [accessToken, apiClient, applyInitialRate, applyScheduledRateSteps, clearClipUrl, clipAudioRef, finishPlayback, mediaElementRef, mode, stopPlayback, syncPlaybackRate],
+    [
+      accessToken,
+      apiClient,
+      applyInitialRate,
+      applyScheduledRateSteps,
+      clearClipUrl,
+      clipAudioRef,
+      finishPlayback,
+      mediaElementRef,
+      mode,
+      readSelectedPlaybackRate,
+      stopPlayback,
+      syncPlaybackRate,
+    ],
   );
 
   useEffect(() => {

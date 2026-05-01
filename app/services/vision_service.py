@@ -3,12 +3,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from app.core.config import (
-    DASHSCOPE_API_KEY,
-    QWEN_VISION_MODEL,
-    QWEN_VISION_TIMEOUT_SECONDS,
-)
-from app.infra.vision import QwenVisionProvider, VisionConfig, VisionError, VisionResult
+from app.core.config import QWEN_VISION_MODEL, QWEN_VISION_TIMEOUT_SECONDS
+from app.infra.vision import VisionConfig, VisionError, VisionResult
+from app.services.ai_platform import AiPlatformError, analyze_image as analyze_image_via_platform
 
 
 class VisionServiceError(RuntimeError):
@@ -35,10 +32,15 @@ def analyze_image_with_qwen(
     api_key: Optional[str] = None,
 ) -> VisionResult:
     """Analyze an image without exposing provider-specific details to callers."""
-    provider = QwenVisionProvider(api_key=api_key or DASHSCOPE_API_KEY)
     try:
-        return provider.analyze(image_source, config=config or get_default_vision_config(prompt=prompt))
-    except VisionError as exc:
+        effective_config = config or get_default_vision_config(prompt=prompt)
+        return analyze_image_via_platform(
+            image_source=image_source,
+            prompt=effective_config.prompt,
+            model_key=effective_config.model_name,
+            api_key=api_key,
+        )
+    except (VisionError, AiPlatformError) as exc:
         raise VisionServiceError(exc.code, exc.message) from exc
 
 

@@ -1,9 +1,6 @@
 """TTS (Text-to-Speech) synthesis API endpoints."""
 from __future__ import annotations
 
-import base64
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -19,29 +16,11 @@ from app.schemas.tts import (
     VoiceInfoResponse,
     VoiceListResponse,
 )
+from app.services.ai_platform import AiPlatformError, build_tts_data_uri, resolve_default_model, synthesize_tts_streaming
 from app.services.tts_service import (
     TTSError,
     get_available_voices,
-    synthesize_speech,
 )
-
-logger = logging.getLogger(__name__)
-
-
-def _synthesize_via_tts_v2(text: str, voice: str, model: str = "cosyvoice-v1") -> str:
-    """Use dashscope.audio.tts_v2.SpeechSynthesizer to get raw audio bytes,
-    return as a base64 data URI so the browser can play it without CORS issues."""
-    import dashscope
-    from dashscope.audio.tts_v2 import SpeechSynthesizer
-    from app.core.config import DASHSCOPE_API_KEY
-
-    dashscope.api_key = DASHSCOPE_API_KEY
-    synth = SpeechSynthesizer(model=model, voice=voice)
-    audio_bytes: bytes = synth.call(text)
-    if not audio_bytes:
-        raise TTSError("TTS_EMPTY", "SpeechSynthesizer returned empty audio")
-    b64 = base64.b64encode(audio_bytes).decode()
-    return f"data:audio/mpeg;base64,{b64}"
 
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
@@ -100,14 +79,11 @@ async def synthesize_text(
 
     Returns an audio URL that is valid for 24 hours.
     """
-    # Determine which model to use; default to cosyvoice-v1 for the reading classroom
-    model = request.model or "cosyvoice-v1"
+    model = request.model or resolve_default_model("tts") or "cosyvoice-v1"
     voice = request.voice or "longxiaochun"
 
-    # Try tts_v2 SpeechSynthesizer first — returns raw audio bytes → base64 data URI.
-    # This avoids CORS/autoplay issues with DashScope CDN URLs.
     try:
-        audio_url = _synthesize_via_tts_v2(request.text, voice, model)
+        audio_url = build_tts_data_uri(text=request.text, voice=voice, model_key=model)
         return TTSResponse(
             ok=True,
             audio_url=audio_url,
@@ -116,31 +92,7 @@ async def synthesize_text(
             characters=len(request.text),
             finish_reason="complete",
         )
-    except Exception as tts_v2_exc:
-        logger.warning("tts_v2 failed (%s), falling back to synthesize_speech", tts_v2_exc)
-
-    # Fallback: legacy synthesize_speech (may return CDN URL)
-    try:
-        result = synthesize_speech(
-            text=request.text,
-            voice=voice,
-            model=model,
-            language_type=request.language_type or "Auto",
-        )
-        audio_url = result.audio_url
-        if result.audio_data and not audio_url:
-            audio_url = f"data:audio/mpeg;base64,{result.audio_data}"
-
-        return TTSResponse(
-            ok=True,
-            audio_url=audio_url,
-            model=result.model,
-            voice=result.voice,
-            characters=result.characters,
-            finish_reason=result.finish_reason,
-        )
-
-    except TTSError as exc:
+    except (TTSError, AiPlatformError) as exc:
         return error_response(502, exc.code, exc.message, {})
     except Exception as exc:
         return error_response(502, "INTERNAL_ERROR", "服务内部错误", str(exc)[:500])
@@ -169,13 +121,11 @@ async def synthesize_text_stream(
     Returns Server-Sent Events (SSE) with base64 encoded audio chunks.
     Each chunk contains a 'data' field with the base64 audio data.
     """
-    from app.infra.tts import synthesize_text_stream as _synthesize_stream
-
     try:
-        audio_stream = _synthesize_stream(
+        audio_stream = synthesize_tts_streaming(
             text=request.text,
             voice=request.voice,
-            model=request.model or "qwen3-tts-vc-2026-01-22",
+            model_key=request.model or resolve_default_model("tts") or "qwen3-tts-vc-2026-01-22",
             language_type=request.language_type or "Auto",
         )
 
@@ -202,7 +152,7 @@ async def synthesize_text_stream(
             }
         )
 
-    except TTSError as exc:
+    except (TTSError, AiPlatformError) as exc:
         raise HTTPException(status_code=502, detail=f"{exc.code}: {exc.message}")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"INTERNAL_ERROR: {str(exc)[:200]}")

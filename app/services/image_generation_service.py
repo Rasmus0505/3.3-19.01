@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Optional
 
 from app.core.config import (
-    DASHSCOPE_API_KEY,
     QWEN_IMAGE_DEFAULT_SIZE,
     QWEN_IMAGE_MODEL,
 )
@@ -12,8 +11,8 @@ from app.infra.image_generation import (
     ImageGenerationConfig,
     ImageGenerationError,
     ImageGenerationResult,
-    QwenImageProvider,
 )
+from app.services.ai_platform import AiPlatformError, generate_image_asset
 
 
 class ImageGenerationServiceError(RuntimeError):
@@ -40,10 +39,16 @@ def generate_image(
     api_key: Optional[str] = None,
 ) -> ImageGenerationResult:
     """Generate images without exposing provider-specific details to callers."""
-    provider = QwenImageProvider(api_key=api_key or DASHSCOPE_API_KEY)
     try:
-        return provider.generate(prompt, config=config or get_default_image_generation_config())
-    except ImageGenerationError as exc:
+        effective_config = config or get_default_image_generation_config()
+        return generate_image_asset(
+            prompt=prompt,
+            model_key=effective_config.model_name,
+            size=effective_config.size,
+            image_count=effective_config.image_count,
+            api_key=api_key,
+        )
+    except (ImageGenerationError, AiPlatformError) as exc:
         raise ImageGenerationServiceError(exc.code, exc.message) from exc
 
 

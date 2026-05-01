@@ -22,6 +22,7 @@ def test_normalize_generation_options_forces_core_and_dependencies():
     assert payload["word_explanation"] is True
     assert payload["vocabulary_annotation"] is True
     assert payload["zh_translation"] is False
+    assert payload["forced_alignment"] is False
 
 
 def test_build_generated_content_status_marks_skipped_items():

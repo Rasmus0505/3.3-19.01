@@ -1,4 +1,5 @@
 from app.models.announcement import Announcement
+from app.models.asr_record import AsrRecord, AsrRecordItem
 from app.models.billing import (
     AdminOperationLog,
     BillingModelRate,
@@ -23,6 +24,8 @@ __all__ = [
     "Announcement",
     "User",
     "UserLoginEvent",
+    "AsrRecord",
+    "AsrRecordItem",
 
     "Lesson",
     "LessonSentence",

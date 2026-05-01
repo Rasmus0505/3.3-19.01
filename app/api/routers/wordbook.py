@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
@@ -132,6 +132,7 @@ def collect_wordbook(
         entry_text=payload.entry_text,
         start_token_index=payload.start_token_index,
         end_token_index=payload.end_token_index,
+        selected_token_indexes=payload.selected_token_indexes,
     )
     # Schedule async translation for new entries
     if result.created:
@@ -293,11 +294,10 @@ async def translate_text_endpoint(
     current_user: User = Depends(get_current_user),
 ):
     """Translate a single text."""
-    from app.infra.translation_qwen_mt import translate_to_zh
-    from app.core.config import DASHSCOPE_API_KEY
+    from app.services.ai_platform import translate_text_to_zh
 
     try:
-        translated = translate_to_zh(request.text, api_key=DASHSCOPE_API_KEY)
+        translated = translate_text_to_zh(request.text)
         return TranslateTextResponse(ok=True, text=request.text, translation=translated)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"翻译失败: {str(e)}")

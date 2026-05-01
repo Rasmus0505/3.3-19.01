@@ -133,6 +133,7 @@ def test_lesson_task_response_schema_contract_for_partial_result():
         "message": "第2句失败：REQUEST_FAILED rate limit",
         "resume_available": True,
         "resume_stage": "translate_zh",
+        "resume_mode": "checkpoint",
         "artifact_expires_at": None,
         "control_action": "",
         "paused_at": None,

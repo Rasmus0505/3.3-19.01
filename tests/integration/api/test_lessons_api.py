@@ -51,6 +51,8 @@ def test_lessons_detail_includes_generation_status_defaults(authenticated_client
         "vocabulary_annotation",
         "word_explanation",
     }
+    assert "forced_alignment" in data["requested_generation_options"]
+    assert "forced_alignment" in data["effective_generation_options"]
 
 
 def test_lessons_detail_404_for_nonexistent(authenticated_client, test_user):

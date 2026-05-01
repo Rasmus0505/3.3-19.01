@@ -16,6 +16,7 @@ from app.core.timezone import to_shanghai_aware
 from app.db import get_db
 from app.models import LessonSentence, User
 from app.schemas import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEPhoneResult, SOEWordResult
+from app.services.ai_platform import assess_sentence as assess_sentence_with_ai
 from app.services.media import cleanup_dir, create_request_dir, probe_audio_duration_ms
 from app.services.tencent_soe_service import SOEServiceResult, assess_sentence_practice, list_soe_results
 from app.infra.tencent_soe import SOEConfigError
@@ -166,12 +167,12 @@ async def assess_audio(
         # 评测在独立线程中跑 asyncio/WebSocket；禁止把 FastAPI 的 db Session 传入子线程（非线程安全）
         result = await asyncio.wait_for(
             asyncio.to_thread(
-                assess_sentence_practice,
-                str(wav_path),
-                ref_text.strip(),
-                current_user.id,
-                lesson_id,
-                resolved_sentence_id,
+                assess_sentence_with_ai,
+                audio_path=str(wav_path),
+                ref_text=ref_text.strip(),
+                user_id=current_user.id,
+                lesson_id=lesson_id,
+                sentence_id=resolved_sentence_id,
                 db=None,
                 save_result=True,
             ),

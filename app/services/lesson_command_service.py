@@ -55,10 +55,14 @@ from app.services.lesson_task_manager import (
     patch_task_artifacts,
     request_active_tasks_terminate_for_owner,
     request_task_control,
-    reset_failed_task_for_restart,
     reset_task_for_resume,
     signal_task_terminate,
     update_task_progress,
+)
+from app.services.lessons.recovery_contract import (
+    RESUME_MODE_RESTART_WITHOUT_UPLOAD,
+    RESUME_MODE_UNAVAILABLE,
+    derive_resume_plan,
 )
 from app.services.lessons.content_options import build_generated_content_status, normalize_generation_options
 from app.services.media import MediaError, cleanup_dir, probe_audio_duration_ms, save_upload_file_stream, validate_suffix
@@ -480,7 +484,9 @@ def run_lesson_generation_task(
 
         def _progress(payload: dict) -> None:
             _raise_if_task_control_requested(task_id, session_factory=session_factory)
-            if _should_emit_progress(payload):
+            has_events = bool(payload.get("events"))
+            should_emit = _should_emit_progress(payload) or has_events
+            if should_emit:
                 update_task_progress(
                     task_id,
                     stage_key=payload.get("stage_key"),
@@ -490,6 +496,7 @@ def run_lesson_generation_task(
                     counters=payload.get("counters"),
                     translation_debug=payload.get("translation_debug"),
                     asr_raw=payload.get("asr_raw"),
+                    events=payload.get("events"),
                     session_factory=session_factory,
                 )
                 last_progress_snapshot.update(
@@ -1049,38 +1056,83 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
         return None
 
     task_status = str(task.get("status") or "").strip().lower()
-    retry_mode = ""
-    resumed = None
-    if bool(task.get("resume_available")):
-        resumed = reset_task_for_resume(task_id, db=db)
-        retry_mode = "resume"
-
-    if not resumed and task_status == "failed":
-        resumed = reset_failed_task_for_restart(task_id, db=db)
-        retry_mode = "restart"
-
-    if not resumed:
+    artifacts = dict(task.get("artifacts") or {})
+    resume_plan = derive_resume_plan(
+        status=task_status,
+        task_id=str(task.get("task_id") or task_id),
+        source_filename=str(task.get("source_filename") or ""),
+        source_path=str(artifacts.get("source_path") or ""),
+        work_dir=str(artifacts.get("work_dir") or ""),
+        artifacts=artifacts,
+        generation_options=task.get("effective_generation_options"),
+    )
+    retry_mode = str(resume_plan.mode or RESUME_MODE_UNAVAILABLE)
+    if not resume_plan.available:
         logger.info(
-            "[DEBUG] lessons.task.retry.unavailable task_id=%s user_id=%s status=%s resume_available=%s",
+            "[DEBUG] lessons.task.retry.unavailable task_id=%s user_id=%s status=%s resume_mode=%s resume_stage=%s",
             task_id,
             user_id,
             task_status,
-            bool(task.get("resume_available")),
+            retry_mode,
+            resume_plan.stage,
         )
-        return {"task": task, "resumed": None, "retry_mode": retry_mode}
+        return {
+            "task": task,
+            "resumed": None,
+            "retry_mode": retry_mode,
+            "resume_plan": {
+                "available": resume_plan.available,
+                "stage": resume_plan.stage,
+                "mode": retry_mode,
+                "source_available": resume_plan.source_available,
+                "reason": resume_plan.reason,
+            },
+            "artifact_missing": not resume_plan.source_available,
+        }
+
+    resumed = reset_task_for_resume(
+        task_id,
+        resume_stage=resume_plan.stage,
+        resume_mode=retry_mode,
+        force=True,
+        db=db,
+    )
+    if not resumed:
+        logger.info(
+            "[DEBUG] lessons.task.retry.reset_failed task_id=%s user_id=%s status=%s resume_mode=%s resume_stage=%s",
+            task_id,
+            user_id,
+            task_status,
+            retry_mode,
+            resume_plan.stage,
+        )
+        return {
+            "task": task,
+            "resumed": None,
+            "retry_mode": retry_mode,
+            "resume_plan": {
+                "available": resume_plan.available,
+                "stage": resume_plan.stage,
+                "mode": retry_mode,
+                "source_available": resume_plan.source_available,
+                "reason": resume_plan.reason,
+            },
+        }
 
     artifacts = dict(resumed.get("artifacts") or {})
     req_dir = Path(str(artifacts.get("work_dir") or "").strip())
     source_path = Path(str(artifacts.get("source_path") or resumed.get("source_path") or "").strip())
+    req_dir.mkdir(parents=True, exist_ok=True)
     logger.info(
-        "[DEBUG] lessons.task.retry.prepare task_id=%s user_id=%s mode=%s req_dir_exists=%s source_exists=%s",
+        "[DEBUG] lessons.task.retry.prepare task_id=%s user_id=%s mode=%s resume_stage=%s req_dir_exists=%s source_exists=%s",
         task_id,
         user_id,
-        retry_mode or "unknown",
+        retry_mode,
+        resume_plan.stage,
         req_dir.exists(),
         source_path.exists(),
     )
-    if not req_dir.exists() or not source_path.exists():
+    if retry_mode == RESUME_MODE_RESTART_WITHOUT_UPLOAD and not source_path.exists():
         mark_task_failed(
             task_id,
             error_code="TASK_ARTIFACT_MISSING",
@@ -1088,7 +1140,7 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
             exception_type="FileNotFoundError",
             detail_excerpt=f"resume artifacts missing work_dir={req_dir} source_path={source_path}",
             traceback_excerpt="",
-            failed_stage=str(resumed.get("resume_stage") or ""),
+            failed_stage=str(resume_plan.stage or resumed.get("resume_stage") or ""),
             resume_available=False,
             db=db,
         )
@@ -1105,6 +1157,13 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
             "resumed": resumed,
             "retry_mode": retry_mode,
             "artifact_missing": True,
+            "resume_plan": {
+                "available": resume_plan.available,
+                "stage": resume_plan.stage,
+                "mode": retry_mode,
+                "source_available": resume_plan.source_available,
+                "reason": resume_plan.reason,
+            },
         }
 
     task_session_factory = build_lesson_task_session_factory(db.get_bind())
@@ -1115,10 +1174,23 @@ def resume_lesson_task_for_user(*, task_id: str, user_id: int, db: Session) -> d
         admission, start_kwargs = _admit_or_queue_task_locked(task=latest_task, db=db, reject_when_queue_full=False)
     if start_kwargs is not None:
         _start_lesson_generation_thread(session_factory=task_session_factory, task_kwargs=start_kwargs)
-        logger.info("[DEBUG] lessons.task.retry.started task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode or "unknown")
+        logger.info("[DEBUG] lessons.task.retry.started task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode)
     else:
-        logger.info("[DEBUG] lessons.task.retry.queued task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode or "unknown")
-    return {"task": task, "resumed": resumed, "retry_mode": retry_mode, "task_id": task_id, "admission": admission}
+        logger.info("[DEBUG] lessons.task.retry.queued task_id=%s user_id=%s mode=%s", task_id, user_id, retry_mode)
+    return {
+        "task": task,
+        "resumed": resumed,
+        "retry_mode": retry_mode,
+        "task_id": task_id,
+        "admission": admission,
+        "resume_plan": {
+            "available": resume_plan.available,
+            "stage": resume_plan.stage,
+            "mode": retry_mode,
+            "source_available": resume_plan.source_available,
+            "reason": resume_plan.reason,
+        },
+    }
 
 
 def request_lesson_task_control_for_user(*, task_id: str, user_id: int, action: str, db: Session) -> dict[str, object] | None:

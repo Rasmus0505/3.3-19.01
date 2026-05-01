@@ -26,6 +26,7 @@ class WordbookEntryResponse(BaseModel):
     latest_sentence_idx: int
     start_token_index: int = 0
     end_token_index: int = 0
+    selected_token_indexes: list[int] = Field(default_factory=list)
     latest_sentence_en: str
     latest_sentence_zh: str
     word_translation: str = ""
@@ -49,6 +50,7 @@ class WordbookCollectRequest(BaseModel):
     entry_type: WordbookEntryType
     start_token_index: int = Field(ge=0)
     end_token_index: int = Field(ge=0)
+    selected_token_indexes: list[int] | None = None
 
 
 class WordbookCollectFreeformRequest(BaseModel):

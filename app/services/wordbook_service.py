@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -37,6 +38,7 @@ WORD_SORT_OLDEST = "oldest"
 VALID_ENTRY_TYPES = {WORD_ENTRY_TYPE, PHRASE_ENTRY_TYPE}
 VALID_ENTRY_STATUSES = {WORD_STATUS_ACTIVE, WORD_STATUS_MASTERED}
 VALID_SORTS = {WORD_SORT_RECENT, WORD_SORT_OLDEST}
+WORDBOOK_PUNCTUATION_RE = re.compile(r"^[.!?,;:—–\-\"'“”‘’（）()[\]【】《》]+$")
 
 
 @dataclass
@@ -57,7 +59,57 @@ def _validated_sentence_tokens(sentence) -> list[str]:
     return tokenize_learning_sentence(sentence.text_en or "")
 
 
-def _validate_collect_payload(*, sentence, entry_type: str, entry_text: str, start_token_index: int, end_token_index: int) -> tuple[str, str]:
+def _normalize_selected_token_indexes(selected_token_indexes: list[int] | None) -> list[int]:
+    if not selected_token_indexes:
+        return []
+
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for raw_index in selected_token_indexes:
+        if isinstance(raw_index, bool):
+            raise HTTPException(status_code=400, detail="词条范围无效")
+        try:
+            index = int(raw_index)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="词条范围无效") from None
+        if index in seen:
+            raise HTTPException(status_code=400, detail="词条范围无效")
+        seen.add(index)
+        normalized.append(index)
+    return sorted(normalized)
+
+
+def _validate_selected_indexes(*, sentence_tokens: list[str], selected_indexes: list[int]) -> list[str]:
+    if not selected_indexes:
+        raise HTTPException(status_code=400, detail="词条范围无效")
+
+    selected_tokens: list[str] = []
+    for index in selected_indexes:
+        if index < 0 or index >= len(sentence_tokens):
+            raise HTTPException(status_code=400, detail="词条范围无效")
+        token = str(sentence_tokens[index] or "").strip()
+        if not token or WORDBOOK_PUNCTUATION_RE.match(token):
+            raise HTTPException(status_code=400, detail="词条范围无效")
+        selected_tokens.append(token)
+    return selected_tokens
+
+
+def _validate_entry_shape(*, entry_type: str, selected_tokens: list[str]) -> None:
+    if entry_type == WORD_ENTRY_TYPE and len(selected_tokens) != 1:
+        raise HTTPException(status_code=400, detail="单词收藏必须只选择一个词")
+    if entry_type == PHRASE_ENTRY_TYPE and len(selected_tokens) < 2:
+        raise HTTPException(status_code=400, detail="短语收藏必须选择两个及以上词")
+
+
+def _validate_collect_payload(
+    *,
+    sentence,
+    entry_type: str,
+    entry_text: str,
+    start_token_index: int,
+    end_token_index: int,
+    selected_token_indexes: list[int] | None = None,
+) -> tuple[str, str, str, list[int]]:
     safe_entry_type = str(entry_type or "").strip().lower()
     if safe_entry_type not in VALID_ENTRY_TYPES:
         raise HTTPException(status_code=400, detail="词条类型无效")
@@ -66,26 +118,36 @@ def _validate_collect_payload(*, sentence, entry_type: str, entry_text: str, sta
     if not sentence_tokens:
         raise HTTPException(status_code=400, detail="该句缺少可收藏的英文词元")
 
+    selected_indexes = _normalize_selected_token_indexes(selected_token_indexes)
+    if selected_indexes:
+        expected_tokens = _validate_selected_indexes(sentence_tokens=sentence_tokens, selected_indexes=selected_indexes)
+        _validate_entry_shape(entry_type=safe_entry_type, selected_tokens=expected_tokens)
+        normalized_entry_text = _normalize_entry_text(entry_text)
+        expected_text = " ".join(expected_tokens)
+        if normalized_entry_text != expected_text:
+            raise HTTPException(status_code=400, detail="所选文本不是该句中的词元组合")
+        return expected_text, expected_text, safe_entry_type, selected_indexes
+
     start_idx = int(start_token_index)
     end_idx = int(end_token_index)
     if start_idx < 0 or end_idx < start_idx or end_idx >= len(sentence_tokens):
         raise HTTPException(status_code=400, detail="词条范围无效")
 
     expected_tokens = sentence_tokens[start_idx : end_idx + 1]
-    if safe_entry_type == WORD_ENTRY_TYPE and len(expected_tokens) != 1:
-        raise HTTPException(status_code=400, detail="单词收藏必须只选择一个词")
-    if safe_entry_type == PHRASE_ENTRY_TYPE and len(expected_tokens) < 2:
-        raise HTTPException(status_code=400, detail="短语收藏必须选择连续的两个及以上词")
+    _validate_entry_shape(entry_type=safe_entry_type, selected_tokens=expected_tokens)
 
     normalized_entry_text = _normalize_entry_text(entry_text)
     expected_text = " ".join(expected_tokens)
     if normalized_entry_text != expected_text:
         raise HTTPException(status_code=400, detail="所选文本不是该句中的连续片段")
-    return expected_text, expected_text
+    return expected_text, expected_text, safe_entry_type, []
 
 
 def _entry_payload_to_dict(payload: dict[str, object]) -> dict[str, object]:
     entry = payload["entry"]
+    selected_token_indexes = getattr(entry, "selected_token_indexes_json", None) or []
+    if not isinstance(selected_token_indexes, list):
+        selected_token_indexes = []
     return {
         "id": int(entry.id),
         "entry_text": str(entry.entry_text or ""),
@@ -95,6 +157,7 @@ def _entry_payload_to_dict(payload: dict[str, object]) -> dict[str, object]:
         "latest_sentence_idx": int(entry.latest_sentence_idx or 0),
         "start_token_index": int(getattr(entry, "start_token_index", 0) or 0),
         "end_token_index": int(getattr(entry, "end_token_index", 0) or 0),
+        "selected_token_indexes": [int(index) for index in selected_token_indexes if isinstance(index, int) and index >= 0],
         "latest_sentence_en": str(entry.latest_sentence_en or ""),
         "latest_sentence_zh": str(entry.latest_sentence_zh or ""),
         "word_translation": str(entry.word_translation or ""),
@@ -122,20 +185,27 @@ def collect_wordbook_entry(
     entry_text: str,
     start_token_index: int,
     end_token_index: int,
+    selected_token_indexes: list[int] | None = None,
 ) -> WordbookCollectResult:
     sentence = get_sentence(db, lesson.id, int(sentence_index))
     if not sentence:
         raise HTTPException(status_code=404, detail="句子不存在")
 
-    canonical_text, normalized_text = _validate_collect_payload(
+    canonical_text, normalized_text, safe_entry_type, selected_indexes = _validate_collect_payload(
         sentence=sentence,
         entry_type=entry_type,
         entry_text=entry_text,
         start_token_index=start_token_index,
         end_token_index=end_token_index,
+        selected_token_indexes=selected_token_indexes,
     )
+    safe_start_token_index = int(start_token_index)
+    safe_end_token_index = int(end_token_index)
+    if selected_indexes:
+        safe_start_token_index = selected_indexes[0]
+        safe_end_token_index = selected_indexes[-1]
 
-    existing_entry = get_wordbook_entry_by_identity(db, user_id=user_id, normalized_text=normalized_text, entry_type=entry_type)
+    existing_entry = get_wordbook_entry_by_identity(db, user_id=user_id, normalized_text=normalized_text, entry_type=safe_entry_type)
     created = existing_entry is None
     if existing_entry is None:
         initial_review_state = build_initial_review_state()
@@ -144,10 +214,11 @@ def collect_wordbook_entry(
             latest_lesson_id=lesson.id,
             entry_text=canonical_text,
             normalized_text=normalized_text,
-            entry_type=entry_type,
+            entry_type=safe_entry_type,
             latest_sentence_idx=sentence.idx,
-            start_token_index=int(start_token_index),
-            end_token_index=int(end_token_index),
+            start_token_index=safe_start_token_index,
+            end_token_index=safe_end_token_index,
+            selected_token_indexes_json=selected_indexes or None,
             latest_sentence_en=str(sentence.text_en or ""),
             latest_sentence_zh=str(sentence.text_zh or ""),
             latest_collected_at=now_shanghai_naive(),
@@ -162,8 +233,9 @@ def collect_wordbook_entry(
         existing_entry.latest_lesson_id = lesson.id
         existing_entry.entry_text = canonical_text
         existing_entry.latest_sentence_idx = sentence.idx
-        existing_entry.start_token_index = int(start_token_index)
-        existing_entry.end_token_index = int(end_token_index)
+        existing_entry.start_token_index = safe_start_token_index
+        existing_entry.end_token_index = safe_end_token_index
+        existing_entry.selected_token_indexes_json = selected_indexes or None
         existing_entry.latest_sentence_en = str(sentence.text_en or "")
         existing_entry.latest_sentence_zh = str(sentence.text_zh or "")
         existing_entry.latest_collected_at = now_shanghai_naive()
@@ -179,12 +251,14 @@ def collect_wordbook_entry(
             sentence_idx=sentence.idx,
             sentence_en=str(sentence.text_en or ""),
             sentence_zh=str(sentence.text_zh or ""),
+            selected_token_indexes_json=selected_indexes or None,
             first_collected_at=now_shanghai_naive(),
             last_collected_at=now_shanghai_naive(),
         )
     else:
         source_link.sentence_en = str(sentence.text_en or "")
         source_link.sentence_zh = str(sentence.text_zh or "")
+        source_link.selected_token_indexes_json = selected_indexes or None
         source_link.last_collected_at = now_shanghai_naive()
 
     db.add(source_link)

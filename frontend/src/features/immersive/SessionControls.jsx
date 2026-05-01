@@ -2,9 +2,20 @@ import React from "react";
 import {
   ChevronDown,
   ChevronUp,
+  Lock,
   Maximize2,
   Minimize2,
+  Repeat2,
+  Unlock,
 } from "lucide-react";
+
+function ToggleStateBadge({ active }) {
+  return (
+    <span className="immersive-session-toggle__state">
+      {active ? "开" : "关"}
+    </span>
+  );
+}
 
 export default function SessionControls({
   currentSentenceIndex,
@@ -17,6 +28,7 @@ export default function SessionControls({
   singleSentenceLoopEnabled,
   handleToggleSingleSentenceLoop,
   playbackRateInputValue,
+  playbackRateInputRef,
   handlePlaybackRateInputChange,
   handlePlaybackRateInputBlur,
   handlePlaybackRateInputKeyDown,
@@ -67,9 +79,11 @@ export default function SessionControls({
         className={`immersive-session-toggle ${singleSentenceLoopEnabled ? "immersive-session-toggle--active" : ""}`}
         aria-pressed={singleSentenceLoopEnabled}
         onClick={handleToggleSingleSentenceLoop}
-        title="重复播放当前句子，加强听力训练"
+        title={singleSentenceLoopEnabled ? "精听已开启：重复播放当前句子" : "精听已关闭"}
       >
+        <Repeat2 className="size-4" />
         精听
+        <ToggleStateBadge active={singleSentenceLoopEnabled} />
       </button>
       <button
         type="button"
@@ -80,11 +94,13 @@ export default function SessionControls({
       >
         {fullscreenStudyMode ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
         {fullscreenStudyMode ? "退出全屏" : "全屏学习"}
+        <ToggleStateBadge active={fullscreenStudyMode} />
       </button>
       <label className="immersive-session-rate-field">
         <span className="immersive-session-rate-label">倍速</span>
         <span className="immersive-session-rate-input-wrap">
           <input
+            ref={playbackRateInputRef}
             type="text"
             inputMode="decimal"
             className="immersive-session-rate-input [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -101,7 +117,7 @@ export default function SessionControls({
               className="immersive-session-rate-stepper-button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => adjustPlaybackRateByStep(1)}
-              aria-label="倍速增加 0.25"
+              aria-label="倍速增加 0.1"
             >
               <ChevronUp className="immersive-session-rate-stepper-icon" />
             </button>
@@ -110,7 +126,7 @@ export default function SessionControls({
               className="immersive-session-rate-stepper-button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => adjustPlaybackRateByStep(-1)}
-              aria-label="倍速减少 0.25"
+              aria-label="倍速减少 0.1"
             >
               <ChevronDown className="immersive-session-rate-stepper-icon" />
             </button>
@@ -131,9 +147,11 @@ export default function SessionControls({
         className={`immersive-session-toggle ${playbackRatePinned ? "immersive-session-toggle--active" : ""}`}
         aria-pressed={playbackRatePinned}
         onClick={handleTogglePlaybackRatePinned}
-        title={playbackRatePinned ? "取消固定倍速" : "切换句子时保持倍速不变"}
+        title={playbackRatePinned ? "固定倍速已开启：切换句子时保持当前倍速" : "固定倍速已关闭：切换句子时恢复 1.0x"}
       >
+        {playbackRatePinned ? <Lock className="size-4" /> : <Unlock className="size-4" />}
         固定
+        <ToggleStateBadge active={playbackRatePinned} />
       </button>
     </div>
   );

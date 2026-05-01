@@ -8,13 +8,14 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.core.config import DASHSCOPE_API_KEY
+from app.services.ai_platform import resolve_default_model
 from app.services.collins_levels import VALID_COLLINS_LEVELS, normalize_collins_level
 
 logger = logging.getLogger(__name__)
 
-LLM_MODEL_DEEPSEEK_THINKING = "deepseek-v3.2"
-LLM_MODEL_DEEPSEEK_FAST = "deepseek-v3.2"
-LLM_VALID_MODELS = {"deepseek-v3.2"}
+LLM_MODEL_DEEPSEEK_THINKING = resolve_default_model("llm")
+LLM_MODEL_DEEPSEEK_FAST = resolve_default_model("llm")
+LLM_VALID_MODELS = {LLM_MODEL_DEEPSEEK_FAST}
 
 
 def require_collins_level(value: Any, *, field_name: str = "target_level", default: int | None = None) -> int:

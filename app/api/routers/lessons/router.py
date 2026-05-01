@@ -131,6 +131,7 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         lesson_id=int(task.get("lesson_id") or 0) or None,
         stages=list(task.get("stages", [])),
         counters=dict(task.get("counters", {})),
+        events=list(task.get("events", [])),
         requested_generation_options=LessonGenerationOptions.model_validate(task.get("requested_generation_options") or {}),
         effective_generation_options=LessonGenerationOptions.model_validate(task.get("effective_generation_options") or {}),
         generated_content_status=GeneratedContentStatusResponse.model_validate(task.get("generated_content_status") or {}),
@@ -142,6 +143,7 @@ def _to_task_response(task: dict, db: Session) -> LessonTaskResponse:
         message=response_message,
         resume_available=bool(task.get("resume_available")),
         resume_stage=str(task.get("resume_stage") or ""),
+        resume_mode=str(task.get("resume_mode") or "unavailable"),
         artifact_expires_at=task.get("artifact_expires_at"),
         control_action=str(task.get("control_action") or ""),
         paused_at=task.get("paused_at"),
@@ -590,9 +592,6 @@ def terminate_active_lesson_tasks(db: Session = Depends(get_db), current_user: U
     responses={400: {"model": ErrorResponse}, 401: {"model": ErrorResponse}, 404: {"model": ErrorResponse}, 429: {"model": ErrorResponse}, 503: {"model": ErrorResponse}},
 )
 def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    _ = (task_id, db, current_user)
-    return error_response(410, "TASK_RESUME_DISABLED", "旧任务恢复已停用，请重新上传生成")
-
     try:
         payload = resume_lesson_task_for_user(task_id=task_id, user_id=current_user.id, db=db)
     except LessonTaskStorageNotReadyError as exc:
@@ -601,11 +600,12 @@ def resume_lesson_task(task_id: str, db: Session = Depends(get_db), current_user
         return error_response(429, exc.code, exc.message, exc.detail)
     if payload is None:
         return error_response(404, "TASK_NOT_FOUND", "任务不存在")
+    resume_mode = str(((payload.get("resume_plan") or {}).get("mode")) or payload.get("retry_mode") or "unavailable")
     if payload.get("resumed") is None:
+        if payload.get("artifact_missing"):
+            return error_response(400, "TASK_ARTIFACT_MISSING", "素材已过期，请重新上传素材")
         return error_response(400, "TASK_RESUME_UNAVAILABLE", "当前任务不可继续生成")
-    if payload.get("artifact_missing"):
-        return error_response(400, "TASK_ARTIFACT_MISSING", "素材已过期，请重新上传素材")
-    response_payload = LessonTaskResumeResponse(ok=True, task_id=task_id).model_dump(mode="json")
+    response_payload = LessonTaskResumeResponse(ok=True, task_id=task_id, resume_mode=resume_mode).model_dump(mode="json")
     admission = dict(payload.get("admission") or {})
     if admission:
         response_payload["admission"] = admission

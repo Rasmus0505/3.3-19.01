@@ -37,6 +37,8 @@ if exist ".env.local" (
     if /i "%%A"=="APP_TIMEZONE" if not defined APP_TIMEZONE set "APP_TIMEZONE=%%B"
     if /i "%%A"=="PYTHONUNBUFFERED" if not defined PYTHONUNBUFFERED set "PYTHONUNBUFFERED=%%B"
     if /i "%%A"=="LESSON_DEFAULT_ASR_MODEL" if not defined LESSON_DEFAULT_ASR_MODEL set "LESSON_DEFAULT_ASR_MODEL=%%B"
+    if /i "%%A"=="QWEN_FORCED_ALIGNER_MODEL_DIR" if not defined QWEN_FORCED_ALIGNER_MODEL_DIR set "QWEN_FORCED_ALIGNER_MODEL_DIR=%%B"
+    if /i "%%A"=="QWEN_FORCED_ALIGNER_DEVICE" if not defined QWEN_FORCED_ALIGNER_DEVICE set "QWEN_FORCED_ALIGNER_DEVICE=%%B"
     if /i "%%A"=="STEPFUN_API_KEY" if not defined STEPFUN_API_KEY set "STEPFUN_API_KEY=%%B"
     if /i "%%A"=="STEP_API_KEY" if not defined STEP_API_KEY set "STEP_API_KEY=%%B"
     if /i "%%A"=="STEPFUN_ASR_BASE_URL" if not defined STEPFUN_ASR_BASE_URL set "STEPFUN_ASR_BASE_URL=%%B"

@@ -29,7 +29,8 @@ from app.db import get_db
 from app.models import User
 from app.repositories.lessons import get_lesson_sentences
 from app.schemas import ErrorResponse, LessonCreateResponse
-from app.services.asr_dashscope import AsrCancellationRequested, AsrError, transcribe_audio_file
+from app.services.ai_platform import transcribe_audio
+from app.services.asr_dashscope import AsrCancellationRequested, AsrError
 from app.services.billing_service import BillingError
 from app.services.lesson_command_service import create_completed_lesson_from_local_generation
 from app.services.media import MediaError, cleanup_dir, create_request_dir, save_upload_file_stream
@@ -151,9 +152,9 @@ async def cloud_transcribe(
 
         # Forward to DashScope transcription
         try:
-            result = transcribe_audio_file(
-                audio_path=str(tmp_path),
-                model=CLOUD_ASR_MODEL,
+            result = transcribe_audio(
+                str(tmp_path),
+                model_key=CLOUD_ASR_MODEL,
                 requests_timeout=REQUEST_TIMEOUT_SECONDS,
             )
         except AsrError as exc:

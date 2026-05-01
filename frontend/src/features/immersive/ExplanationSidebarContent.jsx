@@ -1,8 +1,9 @@
 ﻿import { BookOpenText, Lightbulb, BookOpen, Volume2 } from "lucide-react";
 
 import { Button } from "../../shared/ui";
-import { cn } from "../../lib/utils";
 import { computeDifficultyClassName } from "./DifficultyBadge";
+import SelectableTokenText from "./SelectableTokenText";
+import WordbookSelectionToolbar from "./WordbookSelectionToolbar";
 
 /**
  * Mask a word for hint display: show first letter + underscores.
@@ -35,24 +36,29 @@ export default function ExplanationSidebarContent({
   previousSentenceTranslation,
   wordbookSentenceHeading,
   wordbookSentenceTokens,
+  wordbookReferenceSourceKey,
+  wordbookSelectionSourceKey,
   wordbookSelectedTokenIndexes,
   wordbookSuccessAnimationIndexes,
+  wordbookSuccessSourceKey,
   wordbookSentenceBandMap,
   difficultyAnalyzerRef,
   collinsLevel,
   lookupBandFromMap,
-  handleWordbookTokenClick,
+  handleWordbookTokenPointerDown,
+  handleWordbookTokenPointerEnter,
   requestInteractiveWordbookSentencePlayback,
   wordbookSentencePlaybackLabel,
   collectWordbookEntry,
-  selectedWordbookTokens,
-  selectedWordbookStart,
-  selectedWordbookEnd,
   selectedWordbookText,
   wordbookSuccessMessage,
+  wordbookTranslationText,
   wordbookSentenceZh,
   wordbookSentence,
   wordbookBusy,
+  wordbookTranslationBusy,
+  translateWordbookSelection,
+  clearWordbookSelection,
   wordStatuses,
   expectedTokens,
   sentenceTypingDone,
@@ -63,35 +69,25 @@ export default function ExplanationSidebarContent({
   const hasWordbookContext = Array.isArray(wordbookSentenceTokens) && wordbookSentenceTokens.length > 0;
 
   const tokenRow = hasWordbookContext ? (
-    <div className="immersive-explanation-panel__context-token-wrap">
-      {wordbookSentenceTokens.map((token, tokenIndex) => {
-        const trimmedToken = String(token || "").trim();
-        const selected = Array.isArray(wordbookSelectedTokenIndexes) && wordbookSelectedTokenIndexes.includes(tokenIndex);
-        const success = Array.isArray(wordbookSuccessAnimationIndexes) && wordbookSuccessAnimationIndexes.includes(tokenIndex);
-        const difficultyClass = computeDifficultyClassName(
+    <SelectableTokenText
+      tokens={wordbookSentenceTokens}
+      sentence={wordbookSentence}
+      sourceKey={wordbookReferenceSourceKey}
+      selectionSourceKey={wordbookSelectionSourceKey}
+      selectedIndexes={wordbookSelectedTokenIndexes}
+      successSourceKey={wordbookSuccessSourceKey}
+      successIndexes={wordbookSuccessAnimationIndexes}
+      disabled={wordbookBusy}
+      className="immersive-explanation-panel__context-token-wrap"
+      getTokenClassName={(token) =>
+        computeDifficultyClassName(
           lookupBandFromMap(wordbookSentenceBandMap, token, difficultyAnalyzerRef.current),
           collinsLevel,
-        );
-
-        return (
-          <button
-            key={`${trimmedToken || "token"}-${tokenIndex}`}
-            type="button"
-            data-wordbook-token-index={tokenIndex}
-            className={cn(
-              "immersive-wordbook-token",
-              difficultyClass,
-              selected ? "immersive-wordbook-token--selected" : "",
-              success ? "wordbook-token--success" : "",
-            )}
-            onClick={() => handleWordbookTokenClick?.(tokenIndex)}
-            disabled={wordbookBusy || !trimmedToken}
-          >
-            {trimmedToken || token}
-          </button>
-        );
-      })}
-    </div>
+        )
+      }
+      onTokenPointerDown={handleWordbookTokenPointerDown}
+      onTokenPointerEnter={handleWordbookTokenPointerEnter}
+    />
   ) : null;
 
   const previousSentenceBlock = (
@@ -112,25 +108,6 @@ export default function ExplanationSidebarContent({
               {wordbookSentencePlaybackLabel}
             </Button>
           ) : null}
-          {selectedWordbookText ? (
-            <Button
-              type="button"
-              size="sm"
-              className="immersive-explanation-panel__context-button"
-              disabled={wordbookBusy}
-              onClick={() =>
-                collectWordbookEntry?.({
-                  sentence: wordbookSentence,
-                  entryType: selectedWordbookTokens.length >= 2 ? "phrase" : "word",
-                  entryText: selectedWordbookText,
-                  startTokenIndex: selectedWordbookStart,
-                  endTokenIndex: selectedWordbookEnd,
-                })
-              }
-            >
-              {wordbookBusy ? "加入中..." : "加入生词本"}
-            </Button>
-          ) : null}
         </div>
       </div>
       {tokenRow || (
@@ -144,8 +121,17 @@ export default function ExplanationSidebarContent({
       <p className="immersive-explanation-panel__context-tip">
         {selectedWordbookText
           ? `已选：${selectedWordbookText}`
-          : wordbookSuccessMessage || "点击一个词选择单词；再点另一个词选择连续短语。"}
+          : wordbookSuccessMessage || "点击选择；Shift 连续选择；Ctrl 或 Command 多选。"}
       </p>
+      <WordbookSelectionToolbar
+        selectedText={selectedWordbookText}
+        translationText={wordbookTranslationText}
+        busy={wordbookBusy}
+        translationBusy={wordbookTranslationBusy}
+        onTranslate={() => translateWordbookSelection?.()}
+        onCollect={() => collectWordbookEntry?.()}
+        onClear={clearWordbookSelection}
+      />
     </section>
   );
 

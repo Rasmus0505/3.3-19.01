@@ -159,7 +159,7 @@ def test_orphaned_running_task_is_reconciled_on_first_get(test_client):
     assert payload["can_terminate"] is False
 
 
-def test_reconciled_task_resume_endpoint_is_disabled(test_client, monkeypatch):
+def test_reconciled_task_resume_endpoint_restarts_from_workspace_checkpoint(test_client, monkeypatch):
     client, session_factory, tmp_path = test_client
     token = _register_and_login(client, email="recovery-resume@example.com")
     user_id = _get_user_id(session_factory, email="recovery-resume@example.com")
@@ -181,25 +181,75 @@ def test_reconciled_task_resume_endpoint_is_disabled(test_client, monkeypatch):
 
     response = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 410
+    assert response.status_code == 200
     payload = response.json()
-    assert payload["ok"] is False
-    assert payload["error_code"] == "TASK_RESUME_DISABLED"
-    assert started_runs == []
+    assert payload["ok"] is True
+    assert payload["resume_mode"] == "restart_without_upload"
+    assert len(started_runs) == 1
+    assert started_runs[0]["task_id"] == task_id
 
     session = session_factory()
     try:
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
         assert task is not None
-        assert task.status == "running"
+        assert task.status == "pending"
         assert task.resume_available is False
-        assert task.resume_stage == "translate_zh"
-        assert task.current_text == "翻译中"
+        assert task.current_text == "准备重新生成"
     finally:
         session.close()
 
 
-def test_reconciled_task_resume_disabled_even_when_artifacts_missing(test_client):
+def test_task_stage_projection_marks_disabled_optional_stage_skipped(test_client):
+    client, session_factory, tmp_path = test_client
+    token = _register_and_login(client, email="stage-skipped@example.com")
+    _ = token
+    owner_user_id = _get_user_id(session_factory, email="stage-skipped@example.com")
+    req_dir = tmp_path / "task-skipped"
+    req_dir.mkdir(parents=True, exist_ok=True)
+    source_path = req_dir / "source.mp4"
+    source_path.write_bytes(b"video")
+
+    session = session_factory()
+    try:
+        create_task(
+            task_id="lesson_task_stage_skipped",
+            owner_user_id=owner_user_id,
+            source_filename="source.mp4",
+            asr_model="qwen3-asr-flash-filetrans",
+            requested_generation_options={
+                "core_subtitles": True,
+                "zh_translation": True,
+                "vocabulary_annotation": True,
+                "word_explanation": False,
+                "forced_alignment": False,
+            },
+            effective_generation_options={
+                "core_subtitles": True,
+                "zh_translation": True,
+                "vocabulary_annotation": True,
+                "word_explanation": False,
+                "forced_alignment": False,
+            },
+            work_dir=str(req_dir),
+            source_path=str(source_path),
+            db=session,
+        )
+    finally:
+        session.close()
+
+    from app.services.lesson_task_manager import get_task
+
+    read_session = session_factory()
+    try:
+        task_payload = get_task("lesson_task_stage_skipped", db=read_session)
+    finally:
+        read_session.close()
+    stage_by_key = {item["key"]: item["status"] for item in task_payload["stages"]}
+    assert stage_by_key["word_explanation"] == "skipped"
+    assert stage_by_key["forced_alignment"] == "skipped"
+
+
+def test_reconciled_task_resume_returns_artifact_missing_when_source_is_missing(test_client):
     client, session_factory, tmp_path = test_client
     token = _register_and_login(client, email="recovery-missing@example.com")
     user_id = _get_user_id(session_factory, email="recovery-missing@example.com")
@@ -208,15 +258,15 @@ def test_reconciled_task_resume_disabled_even_when_artifacts_missing(test_client
 
     response = client.post(f"/api/lessons/tasks/{task_id}/resume", headers={"Authorization": f"Bearer {token}"})
 
-    assert response.status_code == 410
+    assert response.status_code == 400
     payload = response.json()
-    assert payload["error_code"] == "TASK_RESUME_DISABLED"
+    assert payload["error_code"] == "TASK_ARTIFACT_MISSING"
 
     task_response = client.get(f"/api/lessons/tasks/{task_id}", headers={"Authorization": f"Bearer {token}"})
     assert task_response.status_code == 200
     task_payload = task_response.json()
     assert task_payload["status"] == "paused"
-    assert task_payload["resume_available"] is True
+    assert task_payload["resume_available"] is False
 
 
 def test_active_task_probe_prevents_orphan_recovery(test_client):

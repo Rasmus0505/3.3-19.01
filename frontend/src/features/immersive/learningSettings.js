@@ -69,6 +69,8 @@ export const SHORTCUT_ACTIONS = [
   { id: "next_sentence", label: "下一句" },
   { id: "replay_sentence", label: "重播" },
   { id: "toggle_pause_playback", label: "播放" },
+  { id: "playback_rate_down", label: "倍速 -0.1", required: false },
+  { id: "playback_rate_up", label: "倍速 +0.1", required: false },
   { id: "record_score", label: "录音评分" },
 ];
 
@@ -79,6 +81,8 @@ export const DEFAULT_SHORTCUTS = {
   next_sentence: null,
   replay_sentence: null,
   toggle_pause_playback: null,
+  playback_rate_down: { code: "ArrowDown", key: "arrowdown", shift: true, ctrl: false, alt: false, meta: false },
+  playback_rate_up: { code: "ArrowUp", key: "arrowup", shift: true, ctrl: false, alt: false, meta: false },
   record_score: null,
 };
 
@@ -86,6 +90,7 @@ export const TRANSLATION_MASK_LAYOUT_VERSION = 3;
 
 export const DEFAULT_UI_PREFERENCES = {
   showFullscreenPreviousSentence: false,
+  fullscreenStudyMode: false,
   translationMask: {
     enabled: true,
     layoutVersion: TRANSLATION_MASK_LAYOUT_VERSION,
@@ -336,13 +341,14 @@ export function sanitizeShortcutMap(rawShortcutMap = {}) {
   for (const action of SHORTCUT_ACTIONS) {
     const hasExplicitValue = Object.prototype.hasOwnProperty.call(rawShortcutMap, action.id);
     const rawValue = rawShortcutMap?.[action.id];
-    if (hasExplicitValue && (rawValue == null || rawValue === "")) {
-      nextShortcutMap[action.id] = null;
-      continue;
-    }
 
-    const requestedRaw = normalizeShortcutBindingValue(rawValue);
-    if (hasExplicitValue) {
+    const defaultRaw = normalizeShortcutBindingValue(DEFAULT_SHORTCUTS[action.id]);
+    const requestedRaw =
+      hasExplicitValue && rawValue != null && rawValue !== ""
+        ? normalizeShortcutBindingValue(rawValue)
+        : defaultRaw;
+
+    if (requestedRaw) {
       if (!isShortcutBindingAllowed(requestedRaw)) {
         nextShortcutMap[action.id] = null;
         continue;
@@ -366,6 +372,7 @@ export function getShortcutCompleteness(learningSettings) {
   const shortcuts = learningSettings?.shortcuts;
   const result = { complete: true, missingActions: [] };
   for (const action of SHORTCUT_ACTIONS) {
+    if (action.required === false) continue;
     const binding = shortcuts?.[action.id];
     if (!binding || !getShortcutSignature(binding)) {
       result.complete = false;
@@ -485,6 +492,10 @@ export function sanitizeUiPreferences(rawPreferences = {}) {
       typeof rawPreferences?.showFullscreenPreviousSentence === "boolean"
         ? rawPreferences.showFullscreenPreviousSentence
         : DEFAULT_UI_PREFERENCES.showFullscreenPreviousSentence,
+    fullscreenStudyMode:
+      typeof rawPreferences?.fullscreenStudyMode === "boolean"
+        ? rawPreferences.fullscreenStudyMode
+        : DEFAULT_UI_PREFERENCES.fullscreenStudyMode,
     translationMask: {
       enabled:
         typeof rawTranslationMask?.enabled === "boolean"

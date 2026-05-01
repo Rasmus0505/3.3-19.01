@@ -81,6 +81,7 @@ export function LearningShellPanelContent({
       return (
         <Suspense fallback={<PanelFallback />}>
           <LessonList
+            accessToken={accessToken}
             lessons={lessons}
             totalLessons={totalLessons}
             currentLessonId={currentLesson?.id}

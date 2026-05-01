@@ -97,6 +97,7 @@ class LessonGenerationTask(Base):
     failure_debug_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     asr_raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     subtitle_cache_seed_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    events_json: Mapped[list[dict]] = mapped_column(JSON, default=list, nullable=False)
     error_code: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     message: Mapped[str] = mapped_column(String(1200), default="", nullable=False)
     resume_available: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -143,6 +144,7 @@ class WordbookEntry(Base):
     latest_sentence_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     start_token_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     end_token_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    selected_token_indexes_json: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     latest_sentence_en: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
     latest_sentence_zh: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
     word_translation: Mapped[str] = mapped_column(String(500), nullable=False, default="")
@@ -173,6 +175,7 @@ class WordbookEntrySource(Base):
     sentence_idx: Mapped[int] = mapped_column(Integer, nullable=False)
     sentence_en: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
     sentence_zh: Mapped[str] = mapped_column(String(1200), nullable=False, default="")
+    selected_token_indexes_json: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
     first_collected_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     last_collected_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
 

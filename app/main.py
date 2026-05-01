@@ -20,7 +20,9 @@ from app.api.routers.admin.console import router as admin_console_router
 from app.api.routers.admin.router import router as admin_router
 from app.api.routers.admin.sql_console import router as admin_sql_console_router
 from app.api.routers.announcement_public import router as announcement_public_router
+from app.api.routers.asr_records import router as asr_records_router
 from app.api.routers.asr_models import router as asr_models_router
+from app.api.routers.ai import router as ai_router
 from app.api.routers.auth.router import router as auth_router
 from app.api.routers.billing.router import router as billing_router
 from app.api.routers.billing.wallet import router as wallet_router
@@ -742,6 +744,8 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(cloud_transcribe_router)
     app.include_router(dashscope_upload_router)
     app.include_router(dictionary_router)
+    app.include_router(ai_router)
+    app.include_router(asr_records_router)
     app.include_router(asr_models_router)
     # app.include_router(local_asr_assets_router)  # TODO: 创建缺失模块
     app.include_router(practice_router)

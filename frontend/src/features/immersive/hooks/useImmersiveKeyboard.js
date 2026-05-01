@@ -21,6 +21,7 @@ export function useImmersiveKeyboard({
   exitImmersive,
   requestReplayCurrentSentence,
   requestTogglePausePlayback,
+  requestAdjustPlaybackRate,
   audioRecorderRef,
   requestNavigateSentence,
   requestRevealLetter,
@@ -60,6 +61,18 @@ export function useImmersiveKeyboard({
         requestTogglePausePlayback(
           `shortcut_${getShortcutLabel(learningSettings.shortcuts.toggle_pause_playback)}`,
         );
+        return true;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.playback_rate_down)) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestAdjustPlaybackRate?.(-1, `shortcut_${getShortcutLabel(learningSettings.shortcuts.playback_rate_down)}`);
+        return true;
+      }
+      if (isShortcutPressed(event, learningSettings.shortcuts.playback_rate_up)) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestAdjustPlaybackRate?.(1, `shortcut_${getShortcutLabel(learningSettings.shortcuts.playback_rate_up)}`);
         return true;
       }
       if (isShortcutPressed(event, learningSettings.shortcuts.record_score)) {
@@ -108,6 +121,7 @@ export function useImmersiveKeyboard({
       audioRecorderRef,
       exitImmersive,
       learningSettings.shortcuts,
+      requestAdjustPlaybackRate,
       requestNavigateSentence,
       requestReplayCurrentSentence,
       requestRevealLetter,

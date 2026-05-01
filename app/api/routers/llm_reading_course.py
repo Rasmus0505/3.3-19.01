@@ -488,7 +488,7 @@ def _find_scene(course: dict[str, Any], scene_id: str) -> dict[str, Any] | None:
 
 @router.post("/reading-course/discussion", response_model=ReadingCourseDiscussionResponse, responses={503: {"model": ErrorResponse}, 422: {"model": ErrorResponse}})
 def continue_reading_course_discussion(body: ReadingCourseDiscussionRequest, current_user: User = Depends(get_current_user)):
-    from app.infra.llm.deepseek import call_deepseek
+    from app.services.ai_platform import call_llm_chat as call_deepseek
 
     api_key = _require_api_key()
     scene = _find_scene(body.course, body.scene_id)
@@ -845,7 +845,7 @@ def generate_explain_actions(
     body: ExplainGenerateRequest,
     current_user: User = Depends(get_current_user),
 ):
-    from app.infra.llm.deepseek import call_deepseek
+    from app.services.ai_platform import call_llm_chat as call_deepseek
 
     api_key = _require_api_key()
 
@@ -998,7 +998,7 @@ def generate_discuss_actions(
     body: DiscussGenerateRequest,
     current_user: User = Depends(get_current_user),
 ):
-    from app.infra.llm.deepseek import call_deepseek
+    from app.services.ai_platform import call_llm_chat as call_deepseek
 
     api_key = _require_api_key()
 
@@ -1094,7 +1094,7 @@ def get_word_definition(
     body: WordDefinitionRequest,
     current_user: User = Depends(get_current_user),
 ):
-    from app.infra.llm.deepseek import call_deepseek
+    from app.services.ai_platform import call_llm_chat as call_deepseek
 
     api_key = _require_api_key()
     system = (

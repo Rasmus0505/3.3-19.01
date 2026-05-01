@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import get_current_user
 from app.api.routers.llm_shared import _require_api_key
 from app.db import get_db
-from app.infra.llm.deepseek import call_deepseek
 from app.models import Lesson, User
+from app.services.ai_platform import call_llm_chat as call_deepseek
 
 logger = logging.getLogger(__name__)
 

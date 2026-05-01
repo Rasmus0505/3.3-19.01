@@ -6,11 +6,10 @@ from typing import Optional
 
 from app.core.config import (
     TTS_PLATFORM_VOICES_JSON,
-    TTS_VC_REALTIME_MODEL,
-    TTS_VC_TARGET_MODEL,
 )
-from app.infra.tts import TTSError, TTSResult, synthesize_text
+from app.infra.tts import TTSError as InfraTTSError, TTSResult
 from app.infra.tts.base import VoiceInfo
+from app.services.ai_platform import resolve_default_model, synthesize_tts
 
 
 class TTSError(RuntimeError):
@@ -71,17 +70,16 @@ def synthesize_speech(
         TTSResult with audio URL or data
     """
     if not model:
-        model = TTS_VC_TARGET_MODEL
+        model = resolve_default_model("tts")
 
     try:
-        return synthesize_text(
+        return synthesize_tts(
             text=text,
             voice=voice,
-            model=model,
+            model_key=model,
             language_type=language_type,
-            stream=False,
         )
-    except TTSError as e:
+    except InfraTTSError as e:
         raise TTSError("TTS_SYNTHESIS_FAILED", str(e))
 
 
@@ -94,7 +92,9 @@ def get_default_tts_model(is_realtime: bool = False) -> str:
     Returns:
         Model name
     """
-    return TTS_VC_REALTIME_MODEL if is_realtime else TTS_VC_TARGET_MODEL
+    if is_realtime:
+        return "qwen3-tts-vc-realtime-2026-01-15"
+    return resolve_default_model("tts")
 
 
 __all__ = [

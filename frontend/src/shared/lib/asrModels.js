@@ -1,69 +1,51 @@
-﻿export const ASR_MODEL_KEYS = {
+import {
+  FALLBACK_AI_MODEL_CATALOG,
+  buildAiModelCatalogMap,
+  getAiModelCatalogItem,
+  getCapabilityModels,
+  isAiModelPreparing,
+  isAiModelReady,
+} from "./aiModels";
+
+export const ASR_MODEL_KEYS = {
   qwen: "qwen3-asr-flash-filetrans",
   stepfun: "stepaudio-2.5-asr",
 };
 
 export const LLM_MODEL_KEYS = {
   deepseekThinking: "deepseek-v3.2",
-  deepseekFast: "deepseek-v3.2-fast",
+  deepseekFast: "deepseek-v3.2",
 };
 
-export const FALLBACK_ASR_MODEL_CATALOG = {
-  [ASR_MODEL_KEYS.qwen]: {
-    model_key: ASR_MODEL_KEYS.qwen,
-    display_name: "Bottle 2.0",
-    subtitle: "网页端默认路径，上传后即可开始生成。",
-    runtime_kind: "cloud_api",
-    runtime_label: "Cloud API",
-    prepare_mode: "none",
-    cache_scope: "cloud",
-    supports_upload: true,
-    supports_preview: false,
-    supports_transcribe_api: true,
-    note: "Bottle 2.0 通过 DashScope 云端能力完成识别。",
-  },
-  [ASR_MODEL_KEYS.stepfun]: {
-    model_key: ASR_MODEL_KEYS.stepfun,
-    display_name: "StepAudio 2.5 ASR",
-    subtitle: "英文素材默认识别路径，使用 StepAudio 2.5 云端识别。",
-    runtime_kind: "cloud_api",
-    runtime_label: "Cloud API",
-    prepare_mode: "none",
-    cache_scope: "cloud",
-    supports_upload: true,
-    supports_preview: false,
-    supports_transcribe_api: true,
-    note: "默认识别英文，适合英语学习字幕。",
-  },
-};
+export const FALLBACK_ASR_MODEL_CATALOG = Object.fromEntries(
+  Object.entries(FALLBACK_AI_MODEL_CATALOG).filter(([, item]) =>
+    Array.isArray(item?.capabilities) && item.capabilities.includes("asr"),
+  ),
+);
 
 export function buildAsrModelCatalogMap(models = []) {
-  const next = { ...FALLBACK_ASR_MODEL_CATALOG };
-  for (const item of Array.isArray(models) ? models : []) {
-    const modelKey = String(item?.model_key || "").trim();
-    if (!modelKey) continue;
-    next[modelKey] = {
-      ...(next[modelKey] || {}),
-      ...(item || {}),
-    };
-  }
-  return next;
+  const fullMap = buildAiModelCatalogMap(models);
+  const filteredEntries = getCapabilityModels(fullMap, "asr").map((item) => [String(item.model_key || "").trim(), item]);
+  return {
+    ...FALLBACK_ASR_MODEL_CATALOG,
+    ...Object.fromEntries(filteredEntries),
+  };
 }
 
 export function getAsrModelCatalogItem(modelKey, catalogMap = {}) {
-  const normalizedModelKey = String(modelKey || "").trim();
-  return catalogMap[normalizedModelKey] || FALLBACK_ASR_MODEL_CATALOG[normalizedModelKey] || null;
+  const item = getAiModelCatalogItem(modelKey, catalogMap);
+  if (item && Array.isArray(item.capabilities) && item.capabilities.includes("asr")) {
+    return item;
+  }
+  return FALLBACK_ASR_MODEL_CATALOG[String(modelKey || "").trim()] || null;
 }
 
 export function isAsrModelPreparing(modelState) {
-  const status = String(modelState?.status || "").trim().toLowerCase();
-  return Boolean(modelState?.preparing) || ["loading", "preparing", "downloading"].includes(status);
+  return isAiModelPreparing(modelState);
 }
 
 export function isAsrModelReady(modelState) {
-  const status = String(modelState?.status || "").trim().toLowerCase();
-  if (Boolean(modelState?.cached) || ["ready", "cached"].includes(status)) return true;
-  return Boolean(modelState) && modelState.downloadRequired === false && !isAsrModelPreparing(modelState) && status !== "error";
+  return isAiModelReady(modelState);
 }
 
 export function getAsrModelStatusLabel(modelState, options = {}) {
@@ -81,5 +63,3 @@ export function getAsrModelStatusLabel(modelState, options = {}) {
   if (isAsrModelReady(modelState)) return readyLabel;
   return missingLabel;
 }
-
-

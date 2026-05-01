@@ -1,4 +1,5 @@
 ﻿export default function ImmersiveLayout({
+  containerRef = null,
   leftTopContent,
   leftBottomContent,
   rightTopContent,
@@ -6,25 +7,17 @@
   fullscreenStudyMode = false,
 }) {
   const layoutClassName = `immersive-layout immersive-layout--workbench${
-    fullscreenStudyMode ? " immersive-layout--fullscreen-study" : ""
+    fullscreenStudyMode ? " immersive-layout--fullscreen-study" : " immersive-layout--standard-study"
   }`;
 
-  if (fullscreenStudyMode) {
-    return (
-      <div className={layoutClassName}>
-        <section className="immersive-layout__left immersive-layout__left--fullscreen" aria-label="全屏视频与拼写工作区">
-          {leftTopContent}
-          {leftBottomContent}
-        </section>
-      </div>
-    );
-  }
-
   return (
-    <div className={layoutClassName}>
-      <section className="immersive-layout__left" aria-label="视频与拼写工作区">
+    <div ref={containerRef} className={layoutClassName} data-fullscreen-study-mode={fullscreenStudyMode ? "true" : "false"}>
+      <section
+        className={`immersive-layout__left${fullscreenStudyMode ? " immersive-layout__left--fullscreen" : ""}`}
+        aria-label={fullscreenStudyMode ? "全屏视频与拼写工作区" : "视频与拼写工作区"}
+      >
         <div className="immersive-layout__left-top">{leftTopContent}</div>
-        <div className="immersive-layout__divider-horizontal" aria-hidden="true" />
+        {!fullscreenStudyMode ? <div className="immersive-layout__divider-horizontal" aria-hidden="true" /> : null}
         <div className="immersive-layout__left-bottom">{leftBottomContent}</div>
       </section>
 

@@ -393,6 +393,14 @@ def build_subtitle_cache_seed(*, asr_payload: dict[str, Any], variant: dict[str,
         "asr_payload": dict(asr_payload or {}),
         "sentences": [dict(item) for item in list(variant.get("sentences") or []) if isinstance(item, dict)],
     }
+    forced_alignment = variant.get("forced_alignment")
+    if isinstance(forced_alignment, dict):
+        payload["forced_alignment"] = {
+            "enabled": bool(forced_alignment.get("enabled")),
+            "applied": bool(forced_alignment.get("applied")),
+            "language": str(forced_alignment.get("language") or ""),
+            "words": [dict(item) for item in list(forced_alignment.get("words") or []) if isinstance(item, dict)],
+        }
     normalized_runtime_kind = str(runtime_kind or "").strip().lower()
     if normalized_runtime_kind:
         payload["runtime_kind"] = normalized_runtime_kind

@@ -110,7 +110,7 @@ export function getBottle2CloudStageDisplayItems({ phase, uploadPercent, taskSna
   const isTaskFailed = taskStatus === "failed";
   const isTaskSucceeded = normalizedPhase === "success" || taskStatus === "succeeded";
   const isTranscribingStage = hasTask && (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe");
-  const isLessonBuildingStage = hasTask && (currentTaskStageKey === "build_lesson" || currentTaskStageKey === "translate_zh");
+  const isLessonBuildingStage = hasTask && (currentTaskStageKey === "forced_alignment" || currentTaskStageKey === "build_lesson" || currentTaskStageKey === "translate_zh");
   const isCefrStage =
     hasTask &&
     (currentTaskStageKey === "vocabulary_annotation" || currentTaskStageKey === "word_explanation" || currentTaskStageKey === "write_lesson");
@@ -179,7 +179,7 @@ export function getBottle2CloudProgressHeadline({ phase, uploadPercent, taskSnap
   if (currentTaskStageKey === "convert_audio" || currentTaskStageKey === "asr_transcribe") {
     return currentTaskText || "转写中";
   }
-  if (["build_lesson", "translate_zh"].includes(currentTaskStageKey)) {
+  if (["forced_alignment", "build_lesson", "translate_zh"].includes(currentTaskStageKey)) {
     return currentTaskText || "生成课程";
   }
   if (["vocabulary_annotation", "word_explanation", "write_lesson"].includes(currentTaskStageKey)) {
@@ -254,11 +254,13 @@ export function trimStageCounterSuffix(text) {
 export function getStageStatusText(taskSnapshot, stageKey, stageStatus, currentStageKey) {
   const currentText = trimStageCounterSuffix(taskSnapshot?.current_text);
   if (stageStatus === "completed") return "已完成";
+  if (stageStatus === "skipped") return "已跳过";
   if (stageStatus === "failed") return currentText || "执行失败";
   if (stageStatus === "running") {
     if (stageKey === currentStageKey && currentText) return currentText;
     if (stageKey === "convert_audio") return "抽音频中";
     if (stageKey === "asr_transcribe") return "识别字幕中";
+    if (stageKey === "forced_alignment") return "时间戳对齐中";
     if (stageKey === "build_lesson") return "生成课程结构中";
     if (stageKey === "translate_zh") return "翻译中";
     if (stageKey === "vocabulary_annotation") return "生成生词标注中";
@@ -270,10 +272,12 @@ export function getStageStatusText(taskSnapshot, stageKey, stageStatus, currentS
 
 export function getStageDisplayMeta(taskSnapshot, stageKey, stageStatus, currentStageKey) {
   const counters = taskSnapshot?.counters || {};
-  const fallbackRatio = stageStatus === "completed" ? 1 : stageStatus === "pending" ? 0 : getStageProgressRatioFromOverall(stageKey, taskSnapshot?.overall_percent);
+  const fallbackRatio = stageStatus === "completed" ? 1 : (stageStatus === "pending" || stageStatus === "skipped") ? 0 : getStageProgressRatioFromOverall(stageKey, taskSnapshot?.overall_percent);
   let progressMeta = { detailText: "--", progressPercent: clampPercent(fallbackRatio * 100) };
 
-  if (stageKey === "convert_audio") {
+  if (stageStatus === "skipped") {
+    progressMeta = { detailText: "--", progressPercent: 0 };
+  } else if (stageKey === "convert_audio") {
     progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
   } else if (stageKey === "asr_transcribe") {
     const segmentDone = Math.max(0, Number(counters.segment_done || 0));
@@ -289,6 +293,8 @@ export function getStageDisplayMeta(taskSnapshot, stageKey, stageStatus, current
     const done = Math.max(0, Number(counters.translate_done || 0));
     const total = Math.max(done, Number(counters.translate_total || 0));
     progressMeta = buildStageCounterDisplay(done, total, fallbackRatio, Math.max(1, total));
+  } else if (stageKey === "forced_alignment") {
+    progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
   } else if (stageKey === "vocabulary_annotation" || stageKey === "word_explanation" || stageKey === "write_lesson") {
     progressMeta = buildStageCounterDisplay(stageStatus === "completed" ? 1 : 0, 1, fallbackRatio, 1);
   }
@@ -329,6 +335,7 @@ export function getProgressHeadline(phase, uploadPercent, taskSnapshot) {
     }
     return sanitizeUserFacingText(taskSnapshot.current_text || "识别中");
   }
+  if (stageKey === "forced_alignment") return sanitizeUserFacingText(taskSnapshot.current_text || "时间戳对齐");
   if (stageKey === "build_lesson") return sanitizeUserFacingText(taskSnapshot.current_text || "生成课程结构");
   if (stageKey === "translate_zh") {
     const done = Math.max(0, Number(counters.translate_done || 0));
@@ -363,11 +370,12 @@ export function getStageProgressPercent(stageKey, ratio = 1) {
   const safeRatio = Math.max(0, Math.min(1, Number(ratio) || 0));
   if (stageKey === "convert_audio") return Math.round(15 * safeRatio);
   if (stageKey === "asr_transcribe") return Math.round(15 + 30 * safeRatio);
-  if (stageKey === "build_lesson") return Math.round(45 + 15 * safeRatio);
-  if (stageKey === "translate_zh") return Math.round(60 + 25 * safeRatio);
-  if (stageKey === "vocabulary_annotation") return Math.round(85 + 5 * safeRatio);
-  if (stageKey === "word_explanation") return Math.round(90 + 5 * safeRatio);
-  if (stageKey === "write_lesson") return Math.round(95 + 5 * safeRatio);
+  if (stageKey === "forced_alignment") return Math.round(45 + 15 * safeRatio);
+  if (stageKey === "build_lesson") return Math.round(60 + 10 * safeRatio);
+  if (stageKey === "translate_zh") return Math.round(70 + 18 * safeRatio);
+  if (stageKey === "vocabulary_annotation") return Math.round(88 + 5 * safeRatio);
+  if (stageKey === "word_explanation") return Math.round(93 + 4 * safeRatio);
+  if (stageKey === "write_lesson") return Math.round(97 + 3 * safeRatio);
   return 0;
 }
 
@@ -377,6 +385,7 @@ export function buildLocalProgressSnapshot({ stageKey, stageStatus = "running", 
     overall_percent: getStageProgressPercent(stageKey, ratio),
     current_text: String(currentText || ""),
     counters: { ...(counters || {}) },
+    events: [],
     stages: DISPLAY_STAGES.map((item, index) => {
       let status = "pending";
       if (stageIndex >= 0) {

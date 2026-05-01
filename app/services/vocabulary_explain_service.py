@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.config import DASHSCOPE_API_KEY, VOCABULARY_EXPLAIN_TTS_VOICE
-from app.infra.llm.deepseek import call_deepseek
+from app.services.ai_platform import call_llm_chat as call_deepseek
 from app.services.collins_levels import normalize_collins_level
 from app.services.dictionary_service import classify_tokens
 

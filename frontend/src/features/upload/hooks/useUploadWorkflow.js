@@ -21,6 +21,7 @@ export function useUploadWorkflow(deps) {
     mode,
     taskSnapshot,
     selectedUploadModel,
+    generationOptions,
     coverDataUrl,
     coverWidth,
     coverHeight,
@@ -68,6 +69,7 @@ export function useUploadWorkflow(deps) {
     setMode,
     setSelectedUploadModel,
     setSelectedBalancedModel,
+    setGenerationOptions,
     setRestoreBannerMode,
     clearActiveGenerationTask,
     clearUploadPanelSuccessSnapshot,
@@ -121,6 +123,7 @@ export function useUploadWorkflow(deps) {
       phase: restorablePhase,
       task_snapshot: overrides.taskSnapshot ?? taskSnapshot,
       selected_upload_model: String(overrides.selectedUploadModel ?? selectedUploadModel ?? ""),
+      generation_options: { ...(overrides.generationOptions ?? generationOptions ?? {}) },
       file_blob: isBlobBackedSourceFile(nextFile) ? nextFile : null,
       file_name: String(nextFile?.name || ""),
       media_type: String(nextFile?.type || ""),
@@ -222,6 +225,7 @@ export function useUploadWorkflow(deps) {
     const restoredFile = deps.restoreSavedSourceFile(saved);
     const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
     const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
+    const restoredGenerationOptions = saved?.generation_options && typeof saved.generation_options === "object" ? saved.generation_options : null;
     setFile(restoredFile);
     setTaskId("");
     setLoading(false);
@@ -231,6 +235,9 @@ export function useUploadWorkflow(deps) {
     setMode(restoredMode);
     setSelectedUploadModel(getDefaultUploadModelKey(restoredModelKey));
     setSelectedBalancedModel(getDefaultBalancedModelKey(restoredModelKey));
+    if (restoredGenerationOptions) {
+      setGenerationOptions(restoredGenerationOptions);
+    }
     setCoverDataUrl(String(saved?.cover_data_url || ""));
     setCoverWidth(Number(saved?.cover_width || 0));
     setCoverHeight(Number(saved?.cover_height || 0));
@@ -263,6 +270,7 @@ export function useUploadWorkflow(deps) {
     const restoredFile = deps.restoreSavedSourceFile(saved);
     const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
     const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
+    const restoredGenerationOptions = saved?.generation_options && typeof saved.generation_options === "object" ? saved.generation_options : null;
     const restoredTaskId = String(saved?.task_id || saved?.task_snapshot?.task_id || "");
     const restoredTaskSnapshot = saved?.task_snapshot || null;
     const restoredPhase = String(saved?.phase || "").trim().toLowerCase();
@@ -275,6 +283,9 @@ export function useUploadWorkflow(deps) {
     setMode(restoredMode);
     setSelectedUploadModel(getDefaultUploadModelKey(restoredModelKey));
     setSelectedBalancedModel(getDefaultBalancedModelKey(restoredModelKey));
+    if (restoredGenerationOptions) {
+      setGenerationOptions(restoredGenerationOptions);
+    }
     setLocalProgressSnapshot(null);
     setLocalBusyModelKey("");
     setLocalBusyText("");
@@ -291,30 +302,32 @@ export function useUploadWorkflow(deps) {
       return;
     }
 
-    if (restoredPhase === "processing" && restoredTaskId) {
+    if (restoredTaskId) {
+      const nextPhase = restoredPhase === "processing" ? "processing" : hasRestoredFile ? "ready" : "idle";
       setTaskId(restoredTaskId);
       setTaskSnapshot(restoredTaskSnapshot);
-      setPhase("processing");
-      setStatus(restoredStatus);
-      setLoading(true);
-      setUploadPercent(100);
-      uploadPersistRef.current.latestPercent = 100;
+      setPhase(nextPhase);
+      setStatus(restoredStatus || "正在检查上次任务状态");
+      setLoading(restoredPhase === "processing");
+      setUploadPercent(restoredPhase === "processing" ? 100 : restoredUploadPercent);
+      uploadPersistRef.current.latestPercent = restoredPhase === "processing" ? 100 : restoredUploadPercent;
       setBindingCompleted(restoredBindingCompleted);
       setRestoreBannerMode(RESTORE_BANNER_MODES.VERIFYING);
       await persistSession({
         file: restoredFile,
         taskId: restoredTaskId,
-        phase: "processing",
+        phase: nextPhase,
         taskSnapshot: restoredTaskSnapshot,
         selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
+        generationOptions: restoredGenerationOptions || undefined,
         durationSec: Number(saved?.duration_seconds || 0) || null,
         coverDataUrl: String(saved?.cover_data_url || ""),
         coverWidth: Number(saved?.cover_width || 0),
         coverHeight: Number(saved?.cover_height || 0),
         aspectRatio: Number(saved?.aspect_ratio || 0),
         isVideoSource: Boolean(saved?.is_video_source),
-        uploadPercent: 100,
-        status: restoredStatus,
+        uploadPercent: restoredPhase === "processing" ? 100 : restoredUploadPercent,
+        status: restoredStatus || "正在检查上次任务状态",
         bindingCompleted: restoredBindingCompleted,
       });
       return;
@@ -337,6 +350,7 @@ export function useUploadWorkflow(deps) {
         phase: "upload_paused",
         taskSnapshot: null,
         selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
+        generationOptions: restoredGenerationOptions || undefined,
         durationSec: Number(saved?.duration_seconds || 0) || null,
         coverDataUrl: String(saved?.cover_data_url || ""),
         coverWidth: Number(saved?.cover_width || 0),
@@ -358,17 +372,14 @@ export function useUploadWorkflow(deps) {
     setUploadPercent(restoredPhase === "error" ? restoredUploadPercent : 0);
     uploadPersistRef.current.latestPercent = restoredPhase === "error" ? restoredUploadPercent : 0;
     setBindingCompleted(restoredBindingCompleted);
-    setRestoreBannerMode(
-      restoredPhase === "error" && restoredTaskId && Boolean(restoredTaskSnapshot?.resume_available)
-        ? RESTORE_BANNER_MODES.INTERRUPTED
-        : RESTORE_BANNER_MODES.NONE,
-    );
+    setRestoreBannerMode(RESTORE_BANNER_MODES.NONE);
     await persistSession({
       file: restoredFile,
       taskId: restoredTaskId,
       phase: hasRestoredFile ? (restoredPhase === "error" ? "error" : "ready") : "idle",
       taskSnapshot: restoredTaskSnapshot,
       selectedUploadModel: getDefaultUploadModelKey(restoredModelKey),
+      generationOptions: restoredGenerationOptions || undefined,
       durationSec: Number(saved?.duration_seconds || 0) || null,
       coverDataUrl: String(saved?.cover_data_url || ""),
       coverWidth: Number(saved?.cover_width || 0),
@@ -643,6 +654,7 @@ export function useUploadWorkflow(deps) {
       phase: "success",
       task_snapshot: data,
       selected_upload_model: String(selectedUploadModel || ""),
+      generation_options: { ...(generationOptions || {}) },
       file_blob: isBlobBackedSourceFile(sourceFile) ? sourceFile : null,
       file_name: String(sourceFile?.name || data.lesson.source_filename || ""),
       media_type: String(sourceFile?.type || ""),

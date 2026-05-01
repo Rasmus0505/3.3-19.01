@@ -11,6 +11,8 @@ BUSINESS_TABLES = (
     "user_login_events",
     "courses",
     "course_scenes",
+    "asr_records",
+    "asr_record_items",
     "lessons",
     "lesson_sentences",
     "lesson_progress",

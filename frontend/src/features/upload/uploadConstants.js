@@ -6,6 +6,7 @@ export const FASTER_WHISPER_MODEL = "faster-whisper-medium";
 export const MT_PRICE_MODEL = "qwen-mt-flash";
 export const ESTIMATED_MT_TOKENS_PER_MINUTE = 320;
 export const UPLOAD_PROGRESS_PERSIST_INTERVAL_MS = 800;
+export const AI_CATALOG_API_BASE = "/api/ai/catalog";
 export const ASR_MODELS_API_BASE = "/api/asr-models";
 export const DESKTOP_CLIENT_OFFLINE_MESSAGE = "离线模式下无法生成课程，请联网后重试";
 export const DESKTOP_CLIENT_INSUFFICIENT_BALANCE_MESSAGE = "余额不足，充值后即可继续生成当前内容";
@@ -30,7 +31,7 @@ export const LOCAL_BROWSER_RUNTIME_BASE_URL = String(import.meta.env.VITE_LOCAL_
 export const LOCAL_ASR_LONG_AUDIO_HINT_SECONDS = 300;
 export const LOCAL_ASR_STORAGE_MODE_BROWSER = "browser";
 export const LOCAL_ASR_TARGET_SAMPLE_RATE = 16000;
-export const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov";
+export const LOCAL_ASR_FILE_ACCEPT = ".mp3,.mp4,.m4a,.wav,.flac,.ogg,.aac,.webm,.mkv,.mov,.avi";
 export const LOCAL_STAGE_PROGRESS_INTERVAL_MS = 500;
 export const LOCAL_RECOGNITION_STOPPED_MESSAGE = "已停止生成，可重新开始。";
 export const DESKTOP_CLIENT_ENTRY_URL = String(import.meta.env.VITE_DESKTOP_CLIENT_ENTRY_URL || import.meta.env.VITE_DESKTOP_CLIENT_DOWNLOAD_URL || "/download/desktop").trim();
@@ -75,6 +76,7 @@ export const UPLOAD_MODEL_OPTIONS = [
 export const DISPLAY_STAGES = [
   { key: "convert_audio", label: "抽音频" },
   { key: "asr_transcribe", label: "识别字幕" },
+  { key: "forced_alignment", label: "时间戳对齐" },
   { key: "build_lesson", label: "生成课程结构" },
   { key: "translate_zh", label: "翻译" },
   { key: "vocabulary_annotation", label: "生词标注" },
@@ -85,11 +87,12 @@ export const DISPLAY_STAGES = [
 export const STAGE_PROGRESS_BOUNDS = {
   convert_audio: { start: 0, end: 15 },
   asr_transcribe: { start: 15, end: 45 },
-  build_lesson: { start: 45, end: 60 },
-  translate_zh: { start: 60, end: 85 },
-  vocabulary_annotation: { start: 85, end: 90 },
-  word_explanation: { start: 90, end: 95 },
-  write_lesson: { start: 95, end: 100 },
+  forced_alignment: { start: 45, end: 60 },
+  build_lesson: { start: 60, end: 70 },
+  translate_zh: { start: 70, end: 88 },
+  vocabulary_annotation: { start: 88, end: 93 },
+  word_explanation: { start: 93, end: 97 },
+  write_lesson: { start: 97, end: 100 },
 };
 
 export const BOTTLE2_CLOUD_DISPLAY_STAGES = [

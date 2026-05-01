@@ -6,7 +6,9 @@ import AudioRecorder from "../../shared/components/AudioRecorder";
 import { Button } from "../../shared/ui";
 import { cn } from "../../lib/utils";
 import { computeDifficultyClassName } from "./DifficultyBadge";
+import SelectableTokenText from "./SelectableTokenText";
 import SOEResultCard from "./SOEResultCard";
+import WordbookSelectionToolbar from "./WordbookSelectionToolbar";
 
 function formatSoeAssessErrorMessage(data, httpStatus = 0) {
   if (!data || typeof data !== "object") {
@@ -53,6 +55,15 @@ function renderWordSlots({
   collinsLevel,
   lookupBandFromMap,
   sentenceTypingDone,
+  currentSentence,
+  currentSentenceSourceKey,
+  wordbookSelectionSourceKey,
+  wordbookSuccessSourceKey,
+  wordbookSelectedTokenIndexes,
+  wordbookSuccessAnimationIndexes,
+  handleWordbookTokenPointerDown,
+  handleWordbookTokenPointerEnter,
+  canRenderInteractiveWordbook,
 }) {
   const renderToken = (token, index) => {
     const status = wordStatuses[index] || "pending";
@@ -69,7 +80,39 @@ function renderWordSlots({
             lookupBandFromMap(currentSentenceBandMap, token, difficultyAnalyzerRef.current),
             collinsLevel,
           ),
+          canRenderInteractiveWordbook ? "immersive-word-slot--selectable" : "",
+          currentSentenceSourceKey === wordbookSelectionSourceKey && wordbookSelectedTokenIndexes?.includes(index)
+            ? "immersive-word-slot--selected"
+            : "",
+          currentSentenceSourceKey === wordbookSuccessSourceKey && wordbookSuccessAnimationIndexes?.includes(index)
+            ? "wordbook-token--success"
+            : "",
         )}
+        data-wordbook-token-index={index}
+        role={canRenderInteractiveWordbook ? "button" : undefined}
+        tabIndex={canRenderInteractiveWordbook ? 0 : undefined}
+        onPointerDown={
+          canRenderInteractiveWordbook
+            ? (event) =>
+                handleWordbookTokenPointerDown?.(event, {
+                  sourceKey: currentSentenceSourceKey,
+                  sentence: currentSentence,
+                  tokens: expectedTokens,
+                  tokenIndex: index,
+                })
+            : undefined
+        }
+        onPointerEnter={
+          canRenderInteractiveWordbook
+            ? (event) =>
+                handleWordbookTokenPointerEnter?.(event, {
+                  sourceKey: currentSentenceSourceKey,
+                  sentence: currentSentence,
+                  tokens: expectedTokens,
+                  tokenIndex: index,
+                })
+            : undefined
+        }
       >
         <div className="immersive-letter-row">
           {slots.map((slot) => (
@@ -122,6 +165,23 @@ const TypingPanel = forwardRef(function TypingPanel(
     wordRevealComparableIndices,
     showPreviousSentenceBlock,
     canRenderInteractiveWordbook,
+    wordbookSentence,
+    wordbookSentenceTokens,
+    wordbookReferenceSourceKey,
+    currentSentenceSourceKey,
+    wordbookSelectionSourceKey,
+    wordbookSelectedTokenIndexes,
+    wordbookSuccessAnimationIndexes,
+    wordbookSuccessSourceKey,
+    wordbookBusy,
+    wordbookTranslationBusy,
+    wordbookTranslationText,
+    selectedWordbookText,
+    handleWordbookTokenPointerDown,
+    handleWordbookTokenPointerEnter,
+    collectWordbookEntry,
+    translateWordbookSelection,
+    clearWordbookSelection,
     soeTargetSentence,
     previousSentence,
     requestPreviousSentencePlayback,
@@ -185,8 +245,27 @@ const TypingPanel = forwardRef(function TypingPanel(
           collinsLevel,
           lookupBandFromMap,
           sentenceTypingDone,
+          currentSentence,
+          currentSentenceSourceKey,
+          wordbookSelectionSourceKey,
+          wordbookSuccessSourceKey,
+          wordbookSelectedTokenIndexes,
+          wordbookSuccessAnimationIndexes,
+          handleWordbookTokenPointerDown,
+          handleWordbookTokenPointerEnter,
+          canRenderInteractiveWordbook,
         })}
       </div>
+
+      <WordbookSelectionToolbar
+        selectedText={selectedWordbookText}
+        translationText={wordbookTranslationText}
+        busy={wordbookBusy}
+        translationBusy={wordbookTranslationBusy}
+        onTranslate={() => translateWordbookSelection?.()}
+        onCollect={() => collectWordbookEntry?.()}
+        onClear={clearWordbookSelection}
+      />
 
       {fullscreenStudyMode ? (
         <div className="immersive-typing__dock-row">
@@ -195,9 +274,31 @@ const TypingPanel = forwardRef(function TypingPanel(
               <span className="immersive-typing__fullscreen-context-kicker">Subtitle reference</span>
               <span className="immersive-typing__fullscreen-context-badge">{fullscreenSentenceHeading || "上一句"}</span>
             </div>
-            <p className="immersive-typing__fullscreen-context-en">
-              {fullscreenSentenceEn || "(暂无英文字幕)"}
-            </p>
+            {canRenderInteractiveWordbook && wordbookReferenceSourceKey && Array.isArray(wordbookSentenceTokens) && wordbookSentenceTokens.length ? (
+              <SelectableTokenText
+                tokens={wordbookSentenceTokens}
+                sentence={wordbookSentence}
+                sourceKey={wordbookReferenceSourceKey}
+                selectionSourceKey={wordbookSelectionSourceKey}
+                selectedIndexes={wordbookSelectedTokenIndexes}
+                successSourceKey={wordbookSuccessSourceKey}
+                successIndexes={wordbookSuccessAnimationIndexes}
+                disabled={wordbookBusy}
+                className="immersive-typing__fullscreen-token-row"
+                getTokenClassName={(token) =>
+                  computeDifficultyClassName(
+                    lookupBandFromMap(wordbookSentenceBandMap, token, difficultyAnalyzerRef.current),
+                    collinsLevel,
+                  )
+                }
+                onTokenPointerDown={handleWordbookTokenPointerDown}
+                onTokenPointerEnter={handleWordbookTokenPointerEnter}
+              />
+            ) : (
+              <p className="immersive-typing__fullscreen-context-en">
+                {fullscreenSentenceEn || "(暂无英文字幕)"}
+              </p>
+            )}
             <p className="immersive-typing__fullscreen-context-zh">
               {fullscreenSentenceZh || "(暂无中文翻译)"}
             </p>

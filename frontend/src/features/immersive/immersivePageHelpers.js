@@ -3,7 +3,7 @@
   TRANSLATION_MASK_LAYOUT_VERSION,
   getShortcutLabel,
 } from "./learningSettings";
-import { normalizePlaybackRate } from "./immersiveSessionMachine";
+import { DEFAULT_IMMERSIVE_PLAYBACK_RATE, normalizePlaybackRate } from "./immersiveSessionMachine";
 import { getMediaExt, isAudioFilename, isVideoFilename, normalizeToken } from "./tokenNormalize";
 
 const LOCAL_MEDIA_REQUIRED_CODE = "LOCAL_MEDIA_REQUIRED";
@@ -100,7 +100,7 @@ const TRANSLATION_MASK_DEFAULT_WIDTH_RATIO = 0.58;
 const TRANSLATION_MASK_DEFAULT_BOTTOM_OFFSET_PX = 12;
 const TRANSLATION_MASK_CHROME_IDLE_MS = 1200;
 const TRANSLATION_MASK_VISIBLE_BOTTOM_GAP_PX = 12;
-const IMMERSIVE_PLAYBACK_RATE_STEP = 0.25;
+const IMMERSIVE_PLAYBACK_RATE_STEP = 0.1;
 const TRANSLATION_MASK_EMPTY_RECT = Object.freeze({ x: null, y: null, width: null, height: null });
 const ENTRY_HINT_ACTION_IDS = ["reveal_word", "replay_sentence", "next_sentence"];
 const Collins_CACHE_KEY_PREFIX = "levelTag_analysis_v1:";
@@ -441,6 +441,32 @@ function formatPlaybackRateInputValue(rate) {
   return Number(normalizePlaybackRate(rate)).toFixed(2).replace(/\.00$/, "").replace(/0$/, "");
 }
 
+function resolveSessionPlaybackRate(currentRate, fallbackRate = DEFAULT_IMMERSIVE_PLAYBACK_RATE) {
+  if (currentRate != null) {
+    const numeric = Number(currentRate);
+    if (Number.isFinite(numeric)) {
+      return normalizePlaybackRate(numeric);
+    }
+  }
+  return normalizePlaybackRate(fallbackRate);
+}
+
+function resolveRequestedPlaybackRate(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate == null) {
+      continue;
+    }
+    if (typeof candidate === "string" && String(candidate).trim() === "") {
+      continue;
+    }
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric)) {
+      return normalizePlaybackRate(numeric);
+    }
+  }
+  return DEFAULT_IMMERSIVE_PLAYBACK_RATE;
+}
+
 function isIpadSafariBrowser() {
   if (typeof navigator === "undefined") return false;
   const userAgent = String(navigator.userAgent || "");
@@ -452,11 +478,12 @@ function isIpadSafariBrowser() {
 }
 
 function isTouchPrimaryInputDevice() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  if (window.matchMedia("(pointer: coarse)").matches) return true;
   if (typeof navigator === "undefined") return false;
   const touchPoints = Number(navigator.maxTouchPoints || 0);
-  if (touchPoints > 0) return true;
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia("(pointer: coarse)").matches;
+  const userAgent = String(navigator.userAgent || "");
+  return touchPoints > 0 && /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
 }
 
 function countTokenInputErrors(inputValue, expectedToken) {
@@ -990,6 +1017,8 @@ export {
   buildImmersiveEntryHintItems,
   formatPlaybackRateLabel,
   formatPlaybackRateInputValue,
+  resolveSessionPlaybackRate,
+  resolveRequestedPlaybackRate,
   isIpadSafariBrowser,
   isTouchPrimaryInputDevice,
   countTokenInputErrors,

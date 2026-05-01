@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useUploadPanelState } from '../features/upload/hooks/useUploadPanelState';
+import { useUploadPanelState } from '../../features/upload/hooks/useUploadPanelState';
 
 describe('useUploadPanelState', () => {
   describe('initial state', () => {

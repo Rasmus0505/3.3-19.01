@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-import os
+from app.infra.asr_stepfun import STEPFUN_ASR_MODEL
+from app.services.ai_platform.registry import QWEN_ASR_MODEL, filter_models_by_capability, get_model_descriptor
 
-from app.core.config import DASHSCOPE_API_KEY, STEPFUN_API_KEY
-
-QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
-STEPFUN_ASR_MODEL = "stepaudio-2.5-asr"
 
 UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,
     STEPFUN_ASR_MODEL,
 )
-TRANSCRIBE_ASR_MODEL_KEYS: tuple[str, ...] = (
-    QWEN_ASR_MODEL,
-    STEPFUN_ASR_MODEL,
-)
+TRANSCRIBE_ASR_MODEL_KEYS: tuple[str, ...] = UPLOAD_ASR_MODEL_KEYS
 LOCAL_BROWSER_ASR_MODEL_KEYS: tuple[str, ...] = ()
 LOCAL_DESKTOP_ASR_MODEL_KEYS: tuple[str, ...] = ()
 LOCAL_TASK_ASR_MODEL_KEYS: tuple[str, ...] = ()
-ALL_ASR_MODEL_KEYS: tuple[str, ...] = (QWEN_ASR_MODEL, STEPFUN_ASR_MODEL)
+ALL_ASR_MODEL_KEYS: tuple[str, ...] = UPLOAD_ASR_MODEL_KEYS
 
 STATUS_READY = "ready"
 STATUS_PREPARING = "preparing"
@@ -26,202 +20,62 @@ STATUS_MISSING = "missing"
 STATUS_ERROR = "error"
 STATUS_UNSUPPORTED = "unsupported"
 
-_FALSEY_ENV_VALUES = {"0", "false", "no", "off"}
 
-
-def _get_qwen_status() -> dict[str, object]:
-    if str(os.getenv("QWEN_ASR_ENABLED", "1") or "1").strip().lower() in _FALSEY_ENV_VALUES:
+def _descriptor_to_payload(model_key: str) -> dict[str, object]:
+    descriptor = get_model_descriptor(model_key)
+    if descriptor is None or "asr" not in set(descriptor.capabilities):
         return {
-            "model_key": QWEN_ASR_MODEL,
-            "display_name": "Bottle 2.0",
-            "subtitle": "网页端默认路径，上传后即可开始生成。",
-            "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
+            "model_key": str(model_key or "").strip() or "unknown",
+            "display_name": str(model_key or "").strip() or "Unsupported model",
+            "subtitle": "",
+            "note": "",
             "runtime_kind": "cloud_api",
             "runtime_label": "Cloud API",
             "prepare_mode": "none",
             "cache_scope": "cloud",
-            "supports_upload": True,
+            "supports_upload": False,
             "supports_preview": False,
-            "supports_transcribe_api": True,
+            "supports_transcribe_api": False,
             "source_model_id": "",
             "deploy_path": "",
-            "status": STATUS_ERROR,
+            "status": STATUS_UNSUPPORTED,
             "available": False,
             "download_required": False,
             "preparing": False,
             "cached": False,
-            "message": "Cloud API is disabled for this deployment.",
-            "last_error": "qwen_asr_disabled",
+            "message": "Unsupported model.",
+            "last_error": "",
             "model_dir": "",
             "missing_files": [],
             "actions": [{"key": "verify", "label": "Verify", "enabled": False, "primary": False}],
         }
-    api_key = str(DASHSCOPE_API_KEY or "").strip()
-    if not api_key:
-        return {
-            "model_key": QWEN_ASR_MODEL,
-            "display_name": "Bottle 2.0",
-            "subtitle": "网页端默认路径，上传后即可开始生成。",
-            "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
-            "runtime_kind": "cloud_api",
-            "runtime_label": "Cloud API",
-            "prepare_mode": "none",
-            "cache_scope": "cloud",
-            "supports_upload": True,
-            "supports_preview": False,
-            "supports_transcribe_api": True,
-            "source_model_id": "",
-            "deploy_path": "",
-            "status": STATUS_MISSING,
-            "available": False,
-            "download_required": False,
-            "preparing": False,
-            "cached": False,
-            "message": "DASHSCOPE_API_KEY is missing.",
-            "last_error": "DASHSCOPE_API_KEY is missing.",
-            "model_dir": "",
-            "missing_files": [],
-            "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
-        }
-    try:
-        from app.infra.asr_dashscope import setup_dashscope
-
-        setup_dashscope(api_key)
-    except Exception as exc:  # pragma: no cover - defensive configuration check
-        return {
-            "model_key": QWEN_ASR_MODEL,
-            "display_name": "Bottle 2.0",
-            "subtitle": "网页端默认路径，上传后即可开始生成。",
-            "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
-            "runtime_kind": "cloud_api",
-            "runtime_label": "Cloud API",
-            "prepare_mode": "none",
-            "cache_scope": "cloud",
-            "supports_upload": True,
-            "supports_preview": False,
-            "supports_transcribe_api": True,
-            "source_model_id": "",
-            "deploy_path": "",
-            "status": STATUS_ERROR,
-            "available": False,
-            "download_required": False,
-            "preparing": False,
-            "cached": False,
-            "message": "DashScope configuration is invalid.",
-            "last_error": str(exc)[:1200],
-            "model_dir": "",
-            "missing_files": [],
-            "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
-        }
-    return {
-        "model_key": QWEN_ASR_MODEL,
-        "display_name": "Bottle 2.0",
-        "subtitle": "网页端默认路径，上传后即可开始生成。",
-        "note": "Bottle 2.0 通过 DashScope 云端能力完成识别。",
-        "runtime_kind": "cloud_api",
-        "runtime_label": "Cloud API",
-        "prepare_mode": "none",
-        "cache_scope": "cloud",
-        "supports_upload": True,
-        "supports_preview": False,
-        "supports_transcribe_api": True,
-        "source_model_id": "",
-        "deploy_path": "",
-        "status": STATUS_READY,
-        "available": True,
-        "download_required": False,
-        "preparing": False,
-        "cached": False,
-        "message": "Cloud API is ready.",
-        "last_error": "",
-        "model_dir": "",
-        "missing_files": [],
-        "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
-    }
-
-
-def _get_stepfun_status() -> dict[str, object]:
-    base = {
-        "model_key": STEPFUN_ASR_MODEL,
-        "display_name": "StepAudio 2.5 ASR",
-        "subtitle": "英文素材默认识别路径，使用 StepAudio 2.5 云端识别。",
-        "note": "默认 language=en，enable_itn=false，适合英语学习字幕。",
-        "runtime_kind": "cloud_api",
-        "runtime_label": "Cloud API",
-        "prepare_mode": "none",
-        "cache_scope": "cloud",
-        "supports_upload": True,
-        "supports_preview": False,
-        "supports_transcribe_api": True,
-        "source_model_id": "",
-        "deploy_path": "",
-        "download_required": False,
-        "preparing": False,
-        "cached": False,
-        "model_dir": "",
-        "missing_files": [],
-    }
-    if str(os.getenv("STEPFUN_ASR_ENABLED", "1") or "1").strip().lower() in _FALSEY_ENV_VALUES:
-        return {
-            **base,
-            "status": STATUS_ERROR,
-            "available": False,
-            "message": "StepAudio 2.5 ASR is disabled for this deployment.",
-            "last_error": "stepfun_asr_disabled",
-            "actions": [{"key": "verify", "label": "Verify", "enabled": False, "primary": False}],
-        }
-    if not str(STEPFUN_API_KEY or "").strip():
-        return {
-            **base,
-            "status": STATUS_MISSING,
-            "available": False,
-            "message": "STEPFUN_API_KEY is missing.",
-            "last_error": "STEPFUN_API_KEY is missing.",
-            "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
-        }
-    return {
-        **base,
-        "status": STATUS_READY,
-        "available": True,
-        "message": "StepAudio 2.5 ASR is ready.",
-        "last_error": "",
-        "actions": [{"key": "verify", "label": "Verify", "enabled": True, "primary": False}],
-    }
+    payload = descriptor.to_dict()
+    payload.pop("provider", None)
+    payload.pop("capabilities", None)
+    payload.pop("default_for_capabilities", None)
+    payload.pop("supported_features", None)
+    return payload
 
 
 def list_asr_model_descriptors() -> list[dict[str, object]]:
-    return [_get_qwen_status(), _get_stepfun_status()]
+    return [item.to_dict() for item in filter_models_by_capability("asr")]
 
 
 def get_asr_model_status(model_key: str) -> dict[str, object]:
-    if model_key == QWEN_ASR_MODEL:
-        return _get_qwen_status()
-    if model_key == STEPFUN_ASR_MODEL:
-        return _get_stepfun_status()
-    return {
-        "model_key": str(model_key or "").strip() or "unknown",
-        "status": STATUS_UNSUPPORTED,
-        "available": False,
-        "message": "Unsupported model.",
-        "last_error": "",
-        "actions": [{"key": "verify", "label": "Verify", "enabled": False, "primary": False}],
-    }
+    return _descriptor_to_payload(model_key)
 
 
 def prepare_asr_model(model_key: str, *, force_refresh: bool = False) -> dict[str, object]:
-    if model_key == STEPFUN_ASR_MODEL:
-        return _get_stepfun_status()
-    return _get_qwen_status()
+    _ = force_refresh
+    return _descriptor_to_payload(model_key)
 
 
 def verify_asr_model(model_key: str) -> dict[str, object]:
-    if model_key == STEPFUN_ASR_MODEL:
-        return _get_stepfun_status()
-    return _get_qwen_status()
+    return _descriptor_to_payload(model_key)
 
 
 def list_asr_models_with_status() -> list[dict[str, object]]:
-    return [_get_qwen_status(), _get_stepfun_status()]
+    return [_descriptor_to_payload(item.model_key) for item in filter_models_by_capability("asr")]
 
 
 def get_supported_upload_asr_model_keys() -> tuple[str, ...]:
@@ -249,8 +103,7 @@ def get_supported_asr_model_keys() -> tuple[str, ...]:
 
 
 def get_asr_display_meta(model_key: str) -> tuple[str, str]:
-    if model_key == QWEN_ASR_MODEL:
-        return "Bottle 2.0", "cloud"
-    if model_key == STEPFUN_ASR_MODEL:
-        return "StepAudio 2.5 ASR", "cloud"
-    return str(model_key or "").strip() or "Unnamed model", "cloud"
+    descriptor = get_model_descriptor(model_key)
+    if descriptor is None:
+        return str(model_key or "").strip() or "Unnamed model", "cloud"
+    return descriptor.display_name, "cloud"

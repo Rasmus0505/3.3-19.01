@@ -75,6 +75,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     sentenceIndex: 0,
     startTokenIndex: 0,
     endTokenIndex: 0,
+    selectedTokenIndexes: [],
     entryText: "",
   });
   const [clickTooltip, setClickTooltip] = useState(null);
@@ -271,13 +272,14 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     return gradeData?.interval || "";
   };
 
-  const openLessonPopup = useCallback((lessonId, sentenceIndex, startTokenIndex = 0, endTokenIndex = 0, entryText = "") => {
+  const openLessonPopup = useCallback((lessonId, sentenceIndex, startTokenIndex = 0, endTokenIndex = 0, entryText = "", selectedTokenIndexes = []) => {
     setLessonPopup({
       open: true,
       lessonId,
       sentenceIndex: sentenceIndex || 0,
       startTokenIndex,
       endTokenIndex,
+      selectedTokenIndexes: Array.isArray(selectedTokenIndexes) ? selectedTokenIndexes : [],
       entryText,
     });
   }, []);
@@ -289,6 +291,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
       sentenceIndex: 0,
       startTokenIndex: 0,
       endTokenIndex: 0,
+      selectedTokenIndexes: [],
       entryText: "",
     });
   }, []);
@@ -662,6 +665,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                     item.start_token_index,
                                     item.end_token_index,
                                     item.entry_text,
+                                    item.selected_token_indexes,
                                   )
                                 }
                               >
@@ -823,6 +827,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
                                   reviewItem.start_token_index,
                                   reviewItem.end_token_index,
                                   reviewItem.entry_text,
+                                  reviewItem.selected_token_indexes,
                                 )
                               }
                             >
@@ -888,6 +893,7 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
         sentenceIndex={lessonPopup.sentenceIndex}
         highlightStartTokenIndex={lessonPopup.startTokenIndex}
         highlightEndTokenIndex={lessonPopup.endTokenIndex}
+        selectedTokenIndexes={lessonPopup.selectedTokenIndexes}
         entryText={lessonPopup.entryText}
         apiCall={apiCall}
       />

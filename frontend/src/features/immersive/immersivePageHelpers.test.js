@@ -1,7 +1,17 @@
-﻿import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resolveReplayAssistance } from "./learningSettings";
-import { resolveImmersiveShellHeightPx, shouldAutoAdvanceSentence } from "./immersivePageHelpers";
+import {
+  isTouchPrimaryInputDevice,
+  resolveRequestedPlaybackRate,
+  resolveSessionPlaybackRate,
+  resolveImmersiveShellHeightPx,
+  shouldAutoAdvanceSentence,
+} from "./immersivePageHelpers";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("resolveReplayAssistance", () => {
   it("never reveals letters or words during replay", () => {
@@ -94,4 +104,52 @@ describe("resolveImmersiveShellHeightPx", () => {
   });
 });
 
+describe("resolveRequestedPlaybackRate", () => {
+  it("prefers the live input value before older selected or media rates", () => {
+    expect(resolveRequestedPlaybackRate("1.7", 1, 1)).toBe(1.7);
+  });
 
+  it("falls back through media and selected rates and clamps invalid values", () => {
+    expect(resolveRequestedPlaybackRate("", 2.8, 1.4)).toBe(2);
+    expect(resolveRequestedPlaybackRate("", null, 1.3, 1)).toBe(1.3);
+    expect(resolveRequestedPlaybackRate("", undefined, null, "bad")).toBe(1);
+  });
+});
+
+describe("resolveSessionPlaybackRate", () => {
+  it("prefers the latest session ref value over an older state fallback", () => {
+    expect(resolveSessionPlaybackRate(1.7, 1)).toBe(1.7);
+  });
+
+  it("falls back to session state and clamps invalid values", () => {
+    expect(resolveSessionPlaybackRate(undefined, 2.8)).toBe(2);
+    expect(resolveSessionPlaybackRate("bad", 1.3)).toBe(1.3);
+    expect(resolveSessionPlaybackRate(null, undefined)).toBe(1);
+  });
+});
+
+describe("isTouchPrimaryInputDevice", () => {
+  it("does not classify Windows touch laptops with a fine pointer as mobile touch layout", () => {
+    vi.stubGlobal("window", {
+      matchMedia: vi.fn(() => ({ matches: false })),
+    });
+    vi.stubGlobal("navigator", {
+      maxTouchPoints: 10,
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    });
+
+    expect(isTouchPrimaryInputDevice()).toBe(false);
+  });
+
+  it("classifies coarse pointer devices as touch primary", () => {
+    vi.stubGlobal("window", {
+      matchMedia: vi.fn((query) => ({ matches: query === "(pointer: coarse)" })),
+    });
+    vi.stubGlobal("navigator", {
+      maxTouchPoints: 5,
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    });
+
+    expect(isTouchPrimaryInputDevice()).toBe(true);
+  });
+});

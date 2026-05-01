@@ -51,6 +51,11 @@ from app.services.lessons.task_workspace import (
     subtitle_cache_seed_runtime,
     upsert_lesson_workspace_summary,
 )
+from app.services.lessons.recovery_contract import (
+    RESUME_MODE_UNAVAILABLE,
+    build_source_identity,
+    derive_resume_plan,
+)
 
 
 FAILURE_RETENTION_HOURS = 24
@@ -77,10 +82,11 @@ ORPHANED_TASK_RECOVERY_MESSAGE = "上次生成已中断，可继续生成或重�
 _STAGE_END_PERCENT = {
     "convert_audio": 15,
     "asr_transcribe": 45,
-    "build_lesson": 60,
-    "translate_zh": 85,
-    "vocabulary_annotation": 90,
-    "word_explanation": 95,
+    "forced_alignment": 60,
+    "build_lesson": 70,
+    "translate_zh": 88,
+    "vocabulary_annotation": 93,
+    "word_explanation": 97,
     "write_lesson": 100,
 }
 
@@ -89,6 +95,7 @@ logger = logging.getLogger(__name__)
 _STAGE_LABELS = (
     ("convert_audio", "转换音频格式"),
     ("asr_transcribe", "ASR转写字幕"),
+    ("forced_alignment", "时间戳对齐"),
     ("build_lesson", "生成课程结构"),
     ("translate_zh", "翻译中文字幕"),
     ("vocabulary_annotation", "生成生词标注"),
@@ -169,6 +176,7 @@ def _default_artifacts(
         "source_path": source_path,
         "opus_path": str(base / "lesson_input.opus"),
         "asr_result_path": str(base / "asr_result.json"),
+        "forced_alignment_path": str(base / "forced_alignment.json"),
         "variant_result_path": str(base / "variant_result.json"),
         "translation_checkpoint_path": str(base / "translation_checkpoint.json"),
         "segment_results_dir": str(base / "asr_segment_results"),
@@ -187,6 +195,7 @@ def _default_artifacts(
         "partial_failure_stage": "",
         "partial_failure_code": "",
         "partial_failure_message": "",
+        "resume_mode": RESUME_MODE_UNAVAILABLE,
         "requested_generation_options": normalize_generation_options(None),
         "effective_generation_options": normalize_generation_options(None),
         "generated_content_status": build_generated_content_status(effective_options=normalize_generation_options(None)),
@@ -197,6 +206,7 @@ def _default_artifacts(
         "max_active_tasks": 0,
         "max_queued_tasks": 0,
         "queued_at": "",
+        "source_identity": {},
     }
 
 
@@ -348,6 +358,38 @@ def _session_scope(
     return factory(), True
 
 
+def _derive_task_resume_plan(task: LessonGenerationTask):
+    artifacts = _copy_dict(task.artifacts_json)
+    effective_generation_options = normalize_generation_options(
+        artifacts.get("effective_generation_options"),
+        defaults=artifacts.get("requested_generation_options"),
+    )
+    return derive_resume_plan(
+        status=str(task.status or ""),
+        task_id=str(task.task_id or ""),
+        source_filename=str(task.source_filename or ""),
+        source_path=str(artifacts.get("source_path") or task.source_path or ""),
+        work_dir=str(artifacts.get("work_dir") or task.work_dir or ""),
+        artifacts=artifacts,
+        generation_options=effective_generation_options,
+    )
+
+
+def _sync_resume_contract_fields(task: LessonGenerationTask) -> None:
+    plan = _derive_task_resume_plan(task)
+    artifacts = _copy_dict(task.artifacts_json)
+    if not artifacts.get("source_identity"):
+        artifacts["source_identity"] = build_source_identity(
+            task_id=str(task.task_id or ""),
+            source_path=str(artifacts.get("source_path") or task.source_path or ""),
+            source_filename=str(task.source_filename or ""),
+        )
+    artifacts["resume_mode"] = str(plan.mode or RESUME_MODE_UNAVAILABLE)
+    task.artifacts_json = artifacts
+    task.resume_available = bool(plan.available)
+    task.resume_stage = str(plan.stage or "")
+
+
 def _task_to_dict(task: LessonGenerationTask) -> dict:
     failure_debug = _copy_dict(task.failure_debug_json) if isinstance(task.failure_debug_json, dict) else None
     if failure_debug is not None and task.failed_at is not None and not failure_debug.get("failed_at"):
@@ -371,6 +413,20 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         result_kind = ""
         result_label = ""
         result_message = ""
+    stages = _copy_list(task.stages_json)
+    stage_by_key = {str(item.get("key") or ""): item for item in stages if isinstance(item, dict)}
+    optional_stage_status = {
+        "translate_zh": effective_generation_options.get("zh_translation", False),
+        "vocabulary_annotation": effective_generation_options.get("vocabulary_annotation", False),
+        "word_explanation": effective_generation_options.get("word_explanation", False),
+        "forced_alignment": effective_generation_options.get("forced_alignment", False),
+    }
+    for stage_key, enabled in optional_stage_status.items():
+        stage = stage_by_key.get(stage_key)
+        if stage and stage.get("status") == "pending" and not enabled:
+            stage["status"] = "skipped"
+    resume_plan = _derive_task_resume_plan(task)
+
     return {
         "task_id": task.task_id,
         "owner_user_id": int(task.owner_user_id),
@@ -384,8 +440,9 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "status": status,
         "overall_percent": int(task.overall_percent or 0),
         "current_text": str(task.current_text or ""),
-        "stages": _copy_list(task.stages_json),
+        "stages": stages,
         "counters": _copy_dict(task.counters_json),
+        "events": _copy_list(task.events_json),
         "requested_generation_options": requested_generation_options,
         "effective_generation_options": effective_generation_options,
         "generated_content_status": generated_content_status,
@@ -403,8 +460,9 @@ def _task_to_dict(task: LessonGenerationTask) -> dict:
         "partial_failure_stage": str(artifacts.get("partial_failure_stage") or ""),
         "partial_failure_code": str(artifacts.get("partial_failure_code") or ""),
         "partial_failure_message": str(artifacts.get("partial_failure_message") or ""),
-        "resume_available": bool(task.resume_available),
-        "resume_stage": str(task.resume_stage or ""),
+        "resume_available": bool(resume_plan.available),
+        "resume_stage": str(resume_plan.stage or ""),
+        "resume_mode": str(resume_plan.mode or RESUME_MODE_UNAVAILABLE),
         "artifacts": artifacts,
         "artifact_expires_at": task.artifact_expires_at,
         "failed_at": task.failed_at,
@@ -556,8 +614,14 @@ def create_task(
         task.artifacts_json["generated_content_status"] = build_generated_content_status(
             effective_options=normalized_effective_generation_options,
         )
+        task.artifacts_json["source_identity"] = build_source_identity(
+            task_id=task_id,
+            source_path=source_path,
+            source_filename=source_filename,
+        )
         session.commit()
         session.refresh(task)
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
         return task_id
@@ -590,6 +654,7 @@ def update_task_progress(
     translation_debug: dict | None = None,
     asr_raw: dict | None = None,
     artifacts_patch: dict | None = None,
+    events: list[dict] | None = None,
     db: Session | None = None,
     session_factory: SessionFactory | None = None,
 ) -> None:
@@ -619,6 +684,10 @@ def update_task_progress(
             merged = _copy_dict(task.counters_json)
             merged.update(counters)
             task.counters_json = merged
+        if events:
+            current_events = _copy_list(task.events_json)
+            current_events.extend(events)
+            task.events_json = current_events
         if translation_debug is not None:
             task.translation_debug_json = dict(translation_debug)
         if asr_raw is not None:
@@ -640,6 +709,7 @@ def update_task_progress(
         task.message = ""
         task.resume_available = False
         task.artifact_expires_at = None
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
     except OperationalError as exc:
@@ -671,6 +741,7 @@ def patch_task_artifacts(
         merged_artifacts = _copy_dict(task.artifacts_json)
         merged_artifacts.update(artifacts_patch)
         task.artifacts_json = merged_artifacts
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         flag_modified(task, "artifacts_json")
         session.commit()
@@ -743,6 +814,7 @@ def mark_task_failed(
         if normalized_dashscope_recovery:
             next_artifacts["dashscope_recovery"] = normalized_dashscope_recovery
         task.artifacts_json = next_artifacts
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         flag_modified(task, "artifacts_json")
         flag_modified(task, "failure_debug_json")
@@ -836,6 +908,7 @@ def mark_task_succeeded(
         if normalized_dashscope_recovery:
             next_artifacts["dashscope_recovery"] = normalized_dashscope_recovery
         task.artifacts_json = next_artifacts
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         flag_modified(task, "artifacts_json")
         if normalized_partial_stage:
@@ -957,6 +1030,7 @@ def reset_failed_task_for_restart(
         task.artifacts_json = _clear_admission_fields(
             _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
         )
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
         session.refresh(task)
@@ -969,6 +1043,9 @@ def reset_failed_task_for_restart(
 def reset_task_for_resume(
     task_id: str,
     *,
+    resume_stage: str | None = None,
+    resume_mode: str | None = None,
+    force: bool = False,
     db: Session | None = None,
     session_factory: SessionFactory | None = None,
 ) -> dict | None:
@@ -977,30 +1054,39 @@ def reset_task_for_resume(
     try:
         ensure_lesson_task_storage_ready(session)
         task = session.scalar(select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id))
-        if not task or not task.resume_available:
+        if not task or (not force and not task.resume_available):
             return None
+        normalized_resume_mode = str(resume_mode or "").strip().lower()
+        normalized_resume_stage = str(resume_stage or task.resume_stage or "").strip()
         stages = _copy_list(task.stages_json)
-        resume_stage = str(task.resume_stage or _infer_resume_stage(stages))
-        reset_from_here = False
-        for stage in stages:
-            if stage.get("key") == resume_stage:
-                reset_from_here = True
-            if reset_from_here:
-                stage["status"] = "pending"
-            elif stage.get("status") != "completed":
-                stage["status"] = "pending"
+        if normalized_resume_mode == "restart_without_upload":
+            stages = _empty_stages()
+            task.counters_json = _empty_counters()
+            normalized_resume_stage = "convert_audio"
+        else:
+            normalized_resume_stage = normalized_resume_stage or _infer_resume_stage(stages)
+            reset_from_here = False
+            for stage in stages:
+                if stage.get("key") == normalized_resume_stage:
+                    reset_from_here = True
+                if reset_from_here:
+                    stage["status"] = "pending"
+                elif stage.get("status") != "completed":
+                    stage["status"] = "pending"
         task.stages_json = stages
         task.status = TASK_STATUS_PENDING
-        task.current_text = "准备继续生成"
+        task.current_text = "准备重新生成" if normalized_resume_mode == "restart_without_upload" else "准备继续生成"
         task.failure_debug_json = None
         task.error_code = ""
         task.message = ""
         task.resume_available = False
+        task.resume_stage = normalized_resume_stage
         task.artifact_expires_at = None
         task.failed_at = None
         task.artifacts_json = _clear_admission_fields(
             _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=None, terminated_at=None)
         )
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
         session.refresh(task)
@@ -1044,6 +1130,7 @@ def _apply_waiting_task_control(task: LessonGenerationTask, *, action: str, requ
         task.resume_stage = resume_stage
         task.artifact_expires_at = now_shanghai_naive()
     task.artifacts_json = next_artifacts
+    _sync_resume_contract_fields(task)
     _sync_task_workspace_summary(task)
 
 
@@ -1084,6 +1171,7 @@ def request_task_control(
         task.resume_available = False
         task.artifact_expires_at = None
         task.artifacts_json = _set_control_fields(task.artifacts_json, action=normalized_action, requested_at=requested_at)
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
         session.refresh(task)
@@ -1138,6 +1226,7 @@ def request_active_tasks_terminate_for_owner(
             task.resume_available = False
             task.artifact_expires_at = None
             task.artifacts_json = _set_control_fields(task.artifacts_json, action="terminate", requested_at=requested_at)
+            _sync_resume_contract_fields(task)
             task_id = str(task.task_id)
             requested_task_ids.append(task_id)
             if _is_task_active_in_current_process(task_id):
@@ -1202,6 +1291,7 @@ def mark_task_paused(
         task.artifacts_json = _clear_admission_fields(
             _set_control_fields(task.artifacts_json, action="", requested_at=None, paused_at=paused_at)
         )
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
     finally:
@@ -1240,6 +1330,7 @@ def mark_task_terminated(
         task.artifacts_json = _clear_admission_fields(
             _set_control_fields(task.artifacts_json, action="", requested_at=None, terminated_at=terminated_at)
         )
+        _sync_resume_contract_fields(task)
         _sync_task_workspace_summary(task)
         session.commit()
     finally:

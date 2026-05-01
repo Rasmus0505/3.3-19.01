@@ -1,7 +1,7 @@
 """API 集成测试: wordbook 模块。"""
 from __future__ import annotations
 
-from app.models import Lesson, LessonSentence, User, WordbookEntry
+from app.models import Lesson, LessonSentence, User, WordbookEntry, WordbookEntrySource
 from app.schemas.wordbook import WordbookEntryResponse
 from app.security import hash_password
 from app.repositories.user import canonicalize_username, normalize_username
@@ -58,12 +58,75 @@ def test_wordbook_collect_returns_review_metadata(authenticated_client, db_sessi
     assert entry.review_count == 0
     assert entry.start_token_index == 0
     assert entry.end_token_index == 0
+    assert entry.selected_token_indexes == []
 
     listing = authenticated_client.get("/api/wordbook")
     assert listing.status_code == 200
     listing_payload = listing.json()
     assert listing_payload["due_count"] >= 1
     assert len(listing_payload["items"]) == 1
+
+
+def test_wordbook_collect_accepts_discontinuous_selected_token_indexes(authenticated_client, db_session, test_user):
+    lesson = _seed_lesson_with_sentence(db_session, user_id=test_user.id)
+
+    response = authenticated_client.post(
+        "/api/wordbook/collect",
+        json={
+            "lesson_id": lesson.id,
+            "sentence_index": 0,
+            "entry_text": "hello world",
+            "entry_type": "phrase",
+            "start_token_index": 0,
+            "end_token_index": 2,
+            "selected_token_indexes": [2, 0],
+        },
+    )
+
+    assert response.status_code == 200
+    entry = WordbookEntryResponse.model_validate(response.json()["entry"])
+    assert entry.entry_text == "hello world"
+    assert entry.start_token_index == 0
+    assert entry.end_token_index == 2
+    assert entry.selected_token_indexes == [0, 2]
+
+    stored_entry = db_session.get(WordbookEntry, entry.id)
+    assert stored_entry is not None
+    assert stored_entry.selected_token_indexes_json == [0, 2]
+    source = db_session.query(WordbookEntrySource).filter(WordbookEntrySource.entry_id == entry.id).one()
+    assert source.selected_token_indexes_json == [0, 2]
+
+
+def test_wordbook_collect_rejects_invalid_selected_token_indexes(authenticated_client, db_session, test_user):
+    lesson = _seed_lesson_with_sentence(db_session, user_id=test_user.id)
+
+    mismatch = authenticated_client.post(
+        "/api/wordbook/collect",
+        json={
+            "lesson_id": lesson.id,
+            "sentence_index": 0,
+            "entry_text": "hello brave",
+            "entry_type": "phrase",
+            "start_token_index": 0,
+            "end_token_index": 1,
+            "selected_token_indexes": [0, 2],
+        },
+    )
+    assert mismatch.status_code == 400
+
+    out_of_range = authenticated_client.post(
+        "/api/wordbook/collect",
+        json={
+            "lesson_id": lesson.id,
+            "sentence_index": 0,
+            "entry_text": "hello",
+            "entry_type": "word",
+            "start_token_index": 0,
+            "end_token_index": 0,
+            "selected_token_indexes": [99],
+        },
+    )
+    assert out_of_range.status_code == 400
 
 
 def test_wordbook_review_queue_and_review_action(authenticated_client, db_session, test_user):

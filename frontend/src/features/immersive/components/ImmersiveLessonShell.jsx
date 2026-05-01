@@ -25,6 +25,7 @@ export default function ImmersiveLessonShell({
       singleSentenceLoopEnabled={videoPanelProps.singleSentenceLoopEnabled}
       handleToggleSingleSentenceLoop={videoPanelProps.handleToggleSingleSentenceLoop}
       playbackRateInputValue={videoPanelProps.playbackRateInputValue}
+      playbackRateInputRef={videoPanelProps.playbackRateInputRef}
       handlePlaybackRateInputChange={videoPanelProps.handlePlaybackRateInputChange}
       handlePlaybackRateInputBlur={videoPanelProps.handlePlaybackRateInputBlur}
       handlePlaybackRateInputKeyDown={videoPanelProps.handlePlaybackRateInputKeyDown}
@@ -46,6 +47,7 @@ export default function ImmersiveLessonShell({
 
   return (
     <ImmersiveLayout
+      containerRef={videoPanelProps.immersiveContainerRef}
       fullscreenStudyMode={fullscreenStudyMode}
       leftTopContent={
         <VideoPanel
