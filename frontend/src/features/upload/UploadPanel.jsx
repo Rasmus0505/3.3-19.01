@@ -1,4 +1,4 @@
-﻿import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
+﻿import { FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -10,6 +10,14 @@ export { UploadProgress } from "./components/UploadProgress";
 export { DiagnosticsDialog } from "./components/DiagnosticsDialog";
 export { DesktopGuidanceDialog } from "./components/DesktopGuidanceDialog";
 export { default as ActivityTimeline } from "./components/ActivityTimeline";
+export { UploadDesktopUpdateBanner } from "./components/UploadDesktopUpdateBanner";
+export { UploadBalanceAlert } from "./components/UploadBalanceAlert";
+export { UploadMediaPreview } from "./components/UploadMediaPreview";
+export { UploadTaskStatusCard } from "./components/UploadTaskStatusCard";
+export { UploadGenerationOptions } from "./components/UploadGenerationOptions";
+export { UploadProgressSection } from "./components/UploadProgressSection";
+export { UploadSuccessSection } from "./components/UploadSuccessSection";
+export { UploadPausedSection } from "./components/UploadPausedSection";
 
 // Hooks 导出
 export { useUploadPanelState, useActiveTaskState } from "./hooks";
@@ -18,6 +26,16 @@ export { useUploadWorkflow } from "./hooks";
 import { cn } from "../../lib/utils";
 import { api, parseResponse, toErrorText, uploadWithProgress } from "../../shared/api/client";
 import ActivityTimeline from "./components/ActivityTimeline";
+import {
+  UploadDesktopUpdateBanner,
+  UploadBalanceAlert,
+  UploadMediaPreview,
+  UploadTaskStatusCard,
+  UploadGenerationOptions,
+  UploadProgressSection,
+  UploadSuccessSection,
+  UploadPausedSection,
+} from "./components";
 import { buildUploadModelOptions } from "../../shared/lib/aiModels";
 import { buildAsrModelCatalogMap, getAsrModelCatalogItem, isAsrModelPreparing, isAsrModelReady } from "../../shared/lib/asrModels";
 import { formatMoneyCents } from "../../shared/lib/money";
@@ -30,7 +48,7 @@ import {
   saveActiveGenerationTask,
   saveUploadPanelSuccessSnapshot,
 } from "../../shared/media/localTaskStore.js";
-import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, MediaCover, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
+import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { ASR_STRATEGY_CLOUD, resolveAsrStrategy, mapCloudAsrFailureToMessage } from "./asrStrategy";
 import { UploadAsrOnlyPanel } from "./UploadAsrOnlyPanel";
@@ -4384,150 +4402,32 @@ function UploadPanel({
         ) : null}
       </CardHeader>
       <CardContent className="space-y-4">
-        {desktopUpdateState?.updateAvailable && !updateBannerDismissed && (
-          <div className="mb-3 flex items-start justify-between rounded-lg border border-blue-200 bg-blue-50 p-3">
-            {desktopUpdateState?.downloading ? (
-              <div className="w-full">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                  <span className="text-sm font-medium text-blue-900">正在下载更新</span>
-                  <span className="text-sm text-blue-700">{desktopUpdateState?.downloadProgress}%</span>
-                </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
-                  <div
-                    className="h-full rounded-full bg-blue-500 transition-all duration-300"
-                    style={{ width: `${desktopUpdateState?.downloadProgress || 0}%` }}
-                  />
-                </div>
-                <div className="mt-1 text-xs text-muted-foreground">{desktopUpdateState?.message}</div>
-              </div>
-            ) : desktopUpdateState?.installPending ? (
-              <div className="w-full">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  <span className="text-sm font-medium text-green-900">下载完成</span>
-                </div>
-                <div className="mt-1 text-xs text-green-700">点击「重启并安装」完成更新，或选择「稍后」</div>
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs text-muted-foreground"
-                    onClick={() => {
-                      setUpdateBannerDismissed(true);
-                      window.desktopRuntime?.acknowledgeClientUpdate?.();
-                    }}
-                  >
-                    稍后
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => window.desktopRuntime?.restartAndInstall?.()}
-                  >
-                    重启并安装
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-2 w-2 rounded-full bg-red-500"></span>
-                    <span className="text-sm font-medium text-blue-900">
-                      发现新版本 {desktopUpdateState?.remoteVersion}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-xs text-blue-700">
-                    {desktopUpdateState?.releaseName ? `${desktopUpdateState.releaseName} — ` : ""}
-                    点击"立即更新"下载并安装
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs text-muted-foreground"
-                    onClick={() => {
-                      setUpdateBannerDismissed(true);
-                      window.desktopRuntime?.acknowledgeClientUpdate?.();
-                    }}
-                  >
-                    稍后
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => window.desktopRuntime?.startClientUpdateDownload?.()}
-                  >
-                    立即更新
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {desktopUpdateState?.status === "error" && (
-          <div className="mb-3 flex items-start justify-between rounded-lg border border-red-200 bg-red-50 p-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-red-900">更新失败</span>
-              </div>
-              <div className="mt-1 text-xs text-red-700">
-                {desktopUpdateState?.lastError === "network_error" && "网络连接失败，请检查网络后重试"}
-                {desktopUpdateState?.lastError === "server_error" && "服务器暂时不可用，请稍后重试"}
-                {desktopUpdateState?.lastError === "disk_error" && "磁盘空间不足，请清理后重试"}
-                {(!desktopUpdateState?.lastError || desktopUpdateState?.lastError === "unknown") && "更新遇到问题，请重试或联系支持"}
-              </div>
-              {desktopUpdateState?.message && desktopUpdateState.message !== "下载失败，请重试" && (
-                <div className="mt-1 text-xs text-muted-foreground">{desktopUpdateState.message}</div>
-              )}
-            </div>
-            <div className="flex flex-col gap-1">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                onClick={() => window.desktopRuntime?.startClientUpdateDownload?.()}
-              >
-                重试
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 text-xs text-muted-foreground"
-                onClick={() => window.desktopRuntime?.openClientUpdateLink?.()}
-              >
-                官网下载
-              </Button>
-            </div>
-          </div>
-        )}
+        <UploadDesktopUpdateBanner
+          updateState={desktopUpdateState}
+          dismissed={updateBannerDismissed}
+          onDismiss={() => {
+            setUpdateBannerDismissed(true);
+            window.desktopRuntime?.acknowledgeClientUpdate?.();
+          }}
+          onRestartAndInstall={() => window.desktopRuntime?.restartAndInstall?.()}
+          onStartDownload={() => window.desktopRuntime?.startClientUpdateDownload?.()}
+          onOpenLink={() => window.desktopRuntime?.openClientUpdateLink?.()}
+        />
 
         {workspaceModeToggle}
 
-        <Alert className={cn("border", getUploadToneStyles("idle").surface)}>
-          <AlertDescription>
-            <p className="text-muted-foreground">余额：{desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}</p>
-            <p className="text-muted-foreground">预估消耗：{selectedRate ? durationSec != null ? formatMoneyCents(desktopClientBillingEnabled ? desktopClientEstimatedChargeCents : estimatedTotalChargeCents) : "选择文件后显示" : "该模型未配置单价"}</p>
-            <p className="text-xs text-muted-foreground">
-              本次内容：英文字幕
-              {effectiveGenerationOptions.zh_translation ? " + 中文翻译" : ""}
-              {effectiveGenerationOptions.vocabulary_annotation ? " + 生词标注" : ""}
-              {effectiveGenerationOptions.word_explanation ? " + 生词讲解" : ""}
-            </p>
-            {effectiveGenerationOptions.zh_translation ? (
-              <p className="text-xs text-muted-foreground">中文翻译使用 qwen-mt-flash，需配置 DASHSCOPE_API_KEY；ASR 模型只负责英文字幕识别。</p>
-            ) : null}
-            {generationOptionCostHint ? <p className="text-xs text-muted-foreground">{generationOptionCostHint}</p> : null}
-            {desktopClientBillingEnabled && desktopBillingState.message ? (
-              <p className={cn("text-xs", desktopBillingState.status === "insufficient" || desktopBillingState.status === "offline" || desktopBillingState.status === "error" ? getUploadToneStyles("recoverable").text : "text-muted-foreground")}>
-                {desktopBillingState.message}
-              </p>
-            ) : null}
-          </AlertDescription>
-        </Alert>
+        <UploadBalanceAlert
+          surfaceClassName={getUploadToneStyles("idle").surface}
+          balanceText={desktopClientBillingEnabled && desktopBillingState.status === "offline" ? "离线模式" : formatMoneyCents(desktopClientBalanceAmountCents)}
+          estimatedChargeText={selectedRate ? durationSec != null ? formatMoneyCents(desktopClientBillingEnabled ? desktopClientEstimatedChargeCents : estimatedTotalChargeCents) : "选择文件后显示" : "该模型未配置单价"}
+          contentDescription={`本次内容：英文字幕${effectiveGenerationOptions.zh_translation ? " + 中文翻译" : ""}${effectiveGenerationOptions.vocabulary_annotation ? " + 生词标注" : ""}${effectiveGenerationOptions.word_explanation ? " + 生词讲解" : ""}`}
+          zhTranslationHint={effectiveGenerationOptions.zh_translation ? "中文翻译使用 qwen-mt-flash，需配置 DASHSCOPE_API_KEY；ASR 模型只负责英文字幕识别。" : null}
+          costHint={generationOptionCostHint}
+          billingEnabled={desktopClientBillingEnabled}
+          billingStatus={desktopBillingState.status}
+          billingMessage={desktopBillingState.message || ""}
+          recoverableTextClassName={getUploadToneStyles("recoverable").text}
+        />
 
         <div className="space-y-3">
           <div className="space-y-1">
@@ -4815,81 +4715,37 @@ function UploadPanel({
           </Alert>
         ) : null}
 
-        {showMediaPreview ? (
-          <div className="relative overflow-hidden rounded-2xl border bg-muted/10 p-1">
-            <MediaCover
-              coverDataUrl={coverDataUrl}
-              alt={isVideoSource ? "视频封面" : "音频素材"}
-              aspectRatio={coverAspectRatio}
-              className="border-0 bg-muted/20"
-              fallback={<div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">{isVideoSource ? "封面提取中或失败" : "音频素材（无视频封面）"}</div>}
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="absolute right-4 top-4 h-8 rounded-full px-3 shadow-sm"
-              onClick={() => void resetSession()}
-              disabled={uploadActionBusy}
-            >
-              x 清空
-            </Button>
-          </div>
-        ) : null}
-
-        {showMediaPreview ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl border bg-muted/15 px-3 py-2">
-            <Badge variant="outline">{isVideoSource ? "视频" : "音频"}</Badge>
-            {durationSec != null ? <Badge variant="outline">{formatDurationLabel(durationSec)}</Badge> : null}
-            {sourceDisplayName ? <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{sourceDisplayName}</p> : null}
-          </div>
-        ) : null}
+        <UploadMediaPreview
+          showPreview={showMediaPreview}
+          coverDataUrl={coverDataUrl}
+          isVideoSource={isVideoSource}
+          coverAspectRatio={coverAspectRatio}
+          sourceDisplayName={sourceDisplayName}
+          durationSec={durationSec}
+          clearDisabled={uploadActionBusy}
+          onClear={() => void resetSession()}
+          formatDurationLabel={formatDurationLabel}
+        />
         {mode === "balanced" && balancedPerformanceWarning ? (
           <p className={cn("text-xs", getUploadToneStyles("recoverable").text)}>{simplifyLongAudioWarning(balancedPerformanceWarning)}</p>
         ) : null}
 
-        {showTaskStatusCard ? (
-          <div className={cn("space-y-3 rounded-2xl border p-4", taskStatusToneStyles.surface)}>
-            <div className="space-y-1">
-              <p className="text-sm font-medium">任务状态</p>
-              <p className={cn("text-sm", taskStatusToneStyles.text)}>
-                {restoreBannerMode === RESTORE_BANNER_MODES.NONE ? recoveryBannerText || taskStatusCardText : taskStatusCardText}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {((restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && canResumeServerTask) ||
-              canReconnectInterruptedTask ? (
-                <Button
-                  type="button"
-                  className={cn("h-9 px-3", getUploadToneStyles("recoverable").button)}
-                  onClick={() => void (canReconnectInterruptedTask ? reconnectTaskPolling() : resumeTask())}
-                >
-                  <RefreshCcw className="size-4" />
-                  {canReconnectInterruptedTask ? "继续查询" : "继续生成"}
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant={(restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused ? "outline" : "default"}
-                className={
-                  cn(
-                    "h-9 px-3",
-                    (restoreBannerMode === RESTORE_BANNER_MODES.INTERRUPTED || restoreBannerMode === RESTORE_BANNER_MODES.NONE) && taskPaused
-                      ? getUploadToneStyles("selected").buttonSubtle
-                      : getUploadToneStyles("selected").button,
-                  )
-                }
-                onClick={() => void clearTaskRuntime("已保留素材，可重新开始。")}
-              >
-                <RefreshCcw className="size-4" />
-                重新开始
-              </Button>
-              <Button type="button" variant="ghost" className="h-9 px-3" onClick={() => void clearTaskRuntime()}>
-                清空这次记录
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <UploadTaskStatusCard
+          show={showTaskStatusCard}
+          surfaceClassName={taskStatusToneStyles.surface}
+          textClassName={taskStatusToneStyles.text}
+          recoverableButtonClassName={getUploadToneStyles("recoverable").button}
+          selectedButtonSubtleClassName={getUploadToneStyles("selected").buttonSubtle}
+          selectedButtonClassName={getUploadToneStyles("selected").button}
+          statusText={restoreBannerMode === RESTORE_BANNER_MODES.NONE ? recoveryBannerText || taskStatusCardText : taskStatusCardText}
+          restoreBannerMode={restoreBannerMode}
+          canResumeServerTask={canResumeServerTask}
+          canReconnectInterruptedTask={canReconnectInterruptedTask}
+          taskPaused={taskPaused}
+          onResumeOrReconnect={() => void (canReconnectInterruptedTask ? reconnectTaskPolling() : resumeTask())}
+          onRestart={() => void clearTaskRuntime("已保留素材，可重新开始。")}
+          onClear={() => void clearTaskRuntime()}
+        />
 
         <form
           className="space-y-4"
@@ -5071,99 +4927,15 @@ function UploadPanel({
               </div>
             ) : null}
 
-            <div className="space-y-3 rounded-2xl border bg-muted/10 px-4 py-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">生成内容</p>
-                <p className="text-xs text-muted-foreground">英文字幕为必选项。关闭不需要的内容可以减少本次消耗。</p>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
-                  <input type="checkbox" checked readOnly disabled className="mt-0.5 size-4 rounded border-input accent-primary" />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-medium">英文字幕</span>
-                    <span className="block text-xs text-muted-foreground">课程最终使用句级时间戳；开启本地对齐后将覆盖 ASR 原始时间轴</span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={effectiveGenerationOptions.zh_translation}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setGenerationOptions((prev) => ({ ...prev, zh_translation: checked }));
-                    }}
-                    disabled={loading || localModeBusy}
-                    className="mt-0.5 size-4 rounded border-input accent-primary"
-                  />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-medium">中文翻译（qwen-mt-flash）</span>
-                    <span className="block text-xs text-muted-foreground">
-                      需要 DASHSCOPE_API_KEY，预计增加 {durationSec != null ? formatMoneyCents(estimatedMtChargeCents) : "翻译成本"} 的显性消耗
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={effectiveGenerationOptions.vocabulary_annotation}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setGenerationOptions((prev) => ({
-                        ...prev,
-                        vocabulary_annotation: checked,
-                        word_explanation: checked ? prev.word_explanation : false,
-                      }));
-                    }}
-                    disabled={loading || localModeBusy}
-                    className="mt-0.5 size-4 rounded border-input accent-primary"
-                  />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-medium">生词标注</span>
-                    <span className="block text-xs text-muted-foreground">生成 Collins 难度与重点词数据</span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={effectiveGenerationOptions.forced_alignment}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setGenerationOptions((prev) => ({
-                        ...prev,
-                        forced_alignment: checked,
-                      }));
-                    }}
-                    disabled={loading || localModeBusy}
-                    className="mt-0.5 size-4 rounded border-input accent-primary"
-                  />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-medium">启用本地时间戳对齐</span>
-                    <span className="block text-xs text-muted-foreground">使用本机 Qwen3-ForcedAligner 重算词级和句级时间戳；若失败，本次生成将直接失败</span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
-                  <input
-                    type="checkbox"
-                    checked={effectiveGenerationOptions.word_explanation}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setGenerationOptions((prev) => ({
-                        ...prev,
-                        word_explanation: checked,
-                        vocabulary_annotation: checked ? true : prev.vocabulary_annotation,
-                      }));
-                    }}
-                    disabled={loading || localModeBusy}
-                    className="mt-0.5 size-4 rounded border-input accent-primary"
-                  />
-                  <span className="space-y-1">
-                    <span className="block text-sm font-medium">生词讲解</span>
-                    <span className="block text-xs text-muted-foreground">自动依赖生词标注，生成关键词解释与听力提示</span>
-                  </span>
-                </label>
-              </div>
-              {generationOptionCostHint ? <p className="text-xs text-muted-foreground">{generationOptionCostHint}</p> : null}
-            </div>
+            <UploadGenerationOptions
+              options={effectiveGenerationOptions}
+              disabled={loading || localModeBusy}
+              mtCostHint={durationSec != null ? formatMoneyCents(estimatedMtChargeCents) : null}
+              costHint={generationOptionCostHint}
+              onOptionChange={(key, value) => {
+                setGenerationOptions((prev) => ({ ...prev, [key]: value }));
+              }}
+            />
           </div>
 
           {serviceTaskStopActionsVisible ? (
@@ -5244,87 +5016,36 @@ function UploadPanel({
           ) : null}
         </form>
 
-        {showProgress ? (
-          <div className={cn("space-y-3 rounded-2xl border p-4", taskToneStyles.surface)}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">{progressHeadline}</p>
-                <p className={cn("text-xs", taskToneStyles.text)}>总进度</p>
-              </div>
-              <span className={cn("text-sm font-semibold tabular-nums", taskToneStyles.text)}>{progressPercent}%</span>
-            </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-muted">
-              <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", taskToneStyles.progress)} style={{ width: `${progressPercent}%` }} />
-            </div>
-            <div className="grid grid-cols-7 gap-2 overflow-x-auto pb-1">
-              {stageItems.map((item, index) => {
-                const stageToneStyles = getUploadToneStyles(getUploadStageTone(item.status));
-                const stageLabel = desktopLinkImporting && item.key === "convert_audio" ? "下载素材" : item.label;
-                const isCompleted = item.status === "completed";
-                const isRunning = item.status === "running";
-                const isFailed = item.status === "failed";
-                return (
-                  <div key={item.key} className={cn("min-w-[104px] space-y-1.5 rounded-lg border px-2 py-2", stageToneStyles.surface)}>
-                    <div className="flex items-center gap-1.5">
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular-nums">
-                        {isCompleted ? <CheckCircle2 className="size-3.5" /> : isRunning ? <Loader2 className="size-3.5 animate-spin" /> : isFailed ? "!" : index + 1}
-                      </span>
-                      <p className="min-w-0 truncate text-xs font-semibold leading-4">{stageLabel}</p>
-                    </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-background/60">
-                      <div className={cn("h-full rounded-full transition-[width,background-color] duration-300", stageToneStyles.progress)} style={{ width: `${item.progressPercent}%` }} />
-                    </div>
-                    <p className="truncate text-[11px] leading-4 opacity-85">{item.detailText || item.statusText}</p>
-                  </div>
-                );
-              })}
-            </div>
+        <UploadProgressSection
+          show={showProgress}
+          surfaceClassName={taskToneStyles.surface}
+          textClassName={taskToneStyles.text}
+          progressClassName={taskToneStyles.progress}
+          headline={progressHeadline}
+          percent={progressPercent}
+          stageItems={stageItems}
+          events={displayTaskSnapshot?.events || []}
+          linkImporting={desktopLinkImporting}
+          getStageTone={getUploadStageTone}
+          getToneStyles={getUploadToneStyles}
+        />
 
-            <ActivityTimeline events={displayTaskSnapshot?.events || []} />
-          </div>
-        ) : null}
-
-        {phase === "success" && displayTaskSnapshot?.lesson ? (
-          <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles("success").surface)}>
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className={cn("mt-0.5 size-5", getUploadToneStyles("success").text)} />
-              <div className="space-y-1">
-                <p className={cn("text-sm font-semibold", getUploadToneStyles("success").text)}>{taskSucceededPartially ? "生成成功（仅原文字幕）" : "生成成功"}</p>
-                <p className={cn("text-sm", getUploadToneStyles("success").text)}>
-                  {status || taskResultMessage || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}
-                </p>
-                {taskSucceededPartially && (taskPartialFailureStageLabel || taskPartialFailureSummary) ? (
-                  <div className="space-y-1">
-                    {taskPartialFailureStageLabel ? <p className="text-xs font-semibold">未完成阶段：{taskPartialFailureStageLabel}</p> : null}
-                    {taskPartialFailureSummary ? <p className="text-xs opacity-85 break-words">{taskPartialFailureSummary}</p> : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                className={cn("h-9 px-3", getUploadToneStyles("success").button)}
-                onClick={() => onNavigateToLesson?.(displayTaskSnapshot.lesson.id)}
-              >
-                去学习
-              </Button>
-              {taskSucceededPartially ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={cn("h-9 px-3", getUploadToneStyles("selected").buttonSubtle)}
-                  onClick={() => void copyTaskDebugReport(taskId || displayTaskSnapshot?.task_id || taskSnapshot?.task_id)}
-                >
-                  复制排错信息
-                </Button>
-              ) : null}
-              <Button type="button" variant="outline" className={cn("h-9 px-3", getUploadToneStyles("selected").buttonSubtle)} onClick={() => void resetSession()}>
-                继续上传
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <UploadSuccessSection
+          show={phase === "success" && Boolean(displayTaskSnapshot?.lesson)}
+          surfaceClassName={getUploadToneStyles("success").surface}
+          textClassName={getUploadToneStyles("success").text}
+          buttonClassName={getUploadToneStyles("success").button}
+          selectedButtonSubtleClassName={getUploadToneStyles("selected").buttonSubtle}
+          title={taskSucceededPartially ? "生成成功（仅原文字幕）" : "生成成功"}
+          message={status || taskResultMessage || "课程已写入历史记录，你可以现在开始学习，或继续上传下一份素材。"}
+          partialFailureStageLabel={taskPartialFailureStageLabel}
+          partialFailureSummary={taskPartialFailureSummary}
+          hasCopyButton={taskSucceededPartially}
+          lessonId={displayTaskSnapshot?.lesson?.id || null}
+          onNavigateToLesson={(id) => onNavigateToLesson?.(id)}
+          onCopyDebugReport={() => void copyTaskDebugReport(taskId || displayTaskSnapshot?.task_id || taskSnapshot?.task_id)}
+          onResetSession={() => void resetSession()}
+        />
 
         {phase === "error" && status ? (
           <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles(taskTone).surface)}>
@@ -5407,27 +5128,17 @@ function UploadPanel({
           </div>
         ) : null}
 
-        {phase === "upload_paused" ? (
-          <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles("recoverable").surface)}>
-            <p className={cn("text-sm", getUploadToneStyles("recoverable").text)}>{status || "上传已暂停，可继续上传当前素材。"}</p>
-            <div className="flex flex-wrap gap-2">
-              {hasLocalFile ? (
-                <Button type="button" className={getUploadToneStyles("recoverable").button} onClick={() => void submit()}>
-                  <RefreshCcw className="size-4" />
-                  继续上传当前素材
-                </Button>
-              ) : null}
-              {hasLocalFile ? (
-                <Button type="button" variant="ghost" onClick={() => void clearTaskRuntime()}>
-                  保留素材并清空状态
-                </Button>
-              ) : null}
-              <Button type="button" variant="outline" onClick={() => void resetSession()}>
-                更换素材
-              </Button>
-            </div>
-          </div>
-        ) : null}
+        <UploadPausedSection
+          show={phase === "upload_paused"}
+          surfaceClassName={getUploadToneStyles("recoverable").surface}
+          textClassName={getUploadToneStyles("recoverable").text}
+          recoverableButtonClassName={getUploadToneStyles("recoverable").button}
+          statusText={status || ""}
+          hasLocalFile={Boolean(file)}
+          onSubmit={() => void submit()}
+          onClearTask={() => void clearTaskRuntime()}
+          onResetSession={() => void resetSession()}
+        />
 
         <Dialog
           open={Boolean(pendingPersistedRestore)}
