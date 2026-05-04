@@ -12,7 +12,6 @@ from app.services.lessons.task_runtime import (
     is_task_active_in_current_process,
 )
 
-
 logger = logging.getLogger(__name__)
 
 TASK_CONTROL_ACTIONS: tuple[str, ...] = ("pause", "terminate")

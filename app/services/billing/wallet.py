@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import date, datetime
-from decimal import Decimal, ROUND_CEILING
+from decimal import ROUND_CEILING, Decimal
 from math import ceil
-from typing import Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import BillingModelRate, TranslationRequestLog, WalletAccount, WalletLedger
+from app.models import (
+    BillingModelRate,
+    TranslationRequestLog,
+    WalletAccount,
+    WalletLedger,
+)
 
-from .common import BillingError, logger, normalize_rate_yuan, now_local
+from .common import BillingError, normalize_rate_yuan, now_local
 from .constants import (
     EVENT_CONSUME,
     EVENT_MANUAL_ADJUST,

@@ -1,14 +1,24 @@
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
-from app.models import BillingModelRate, LLMUsageLog, TranslationRequestLog, WalletLedger
+from app.models import (
+    BillingModelRate,
+    LLMUsageLog,
+    TranslationRequestLog,
+    WalletLedger,
+)
 from app.repositories.billing_rates import list_billing_rates as query_billing_rates
 
-from .common import build_rate_payload, logger, normalize_rate_yuan, yuan_to_compat_cents
+from .common import (
+    build_rate_payload,
+    logger,
+    normalize_rate_yuan,
+    yuan_to_compat_cents,
+)
 from .constants import (
     ADMIN_BILLING_MODEL_ORDER,
     DEFAULT_MODEL_RATES,

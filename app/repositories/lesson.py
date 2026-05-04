@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Lesson, LessonProgress, LessonSentence, MediaAsset, LessonGenerationTask
+from app.models import (
+    Lesson,
+    LessonGenerationTask,
+    LessonProgress,
+    LessonSentence,
+    MediaAsset,
+)
 from app.repositories.base import Repository
 
 if TYPE_CHECKING:
@@ -18,7 +24,7 @@ class LessonRepository(Repository[Lesson]):
     def __init__(self, session: Session):
         super().__init__(Lesson, session)
 
-    def get_by_user(self, user_id: int, skip: int = 0, limit: int = 100) -> List[Lesson]:
+    def get_by_user(self, user_id: int, skip: int = 0, limit: int = 100) -> list[Lesson]:
         return list(
             self.session.scalars(
                 select(Lesson)
@@ -29,7 +35,7 @@ class LessonRepository(Repository[Lesson]):
             )
         )
 
-    def get_by_user_and_status(self, user_id: int, status: str, skip: int = 0, limit: int = 100) -> List[Lesson]:
+    def get_by_user_and_status(self, user_id: int, status: str, skip: int = 0, limit: int = 100) -> list[Lesson]:
         return list(
             self.session.scalars(
                 select(Lesson)
@@ -40,7 +46,7 @@ class LessonRepository(Repository[Lesson]):
             )
         )
 
-    def get_with_sentences(self, lesson_id: int) -> Optional[Lesson]:
+    def get_with_sentences(self, lesson_id: int) -> Lesson | None:
         return self.session.scalar(
             select(Lesson).options(joinedload(Lesson.sentences)).where(Lesson.id == lesson_id)
         )
@@ -48,7 +54,7 @@ class LessonRepository(Repository[Lesson]):
     def count_by_user(self, user_id: int) -> int:
         return int(self.session.scalar(select(func.count(Lesson.id)).where(Lesson.user_id == user_id)) or 0)
 
-    def get_sentences_for_lesson(self, lesson_id: int) -> List[LessonSentence]:
+    def get_sentences_for_lesson(self, lesson_id: int) -> list[LessonSentence]:
         return list(
             self.session.scalars(
                 select(LessonSentence)
@@ -57,7 +63,7 @@ class LessonRepository(Repository[Lesson]):
             )
         )
 
-    def update_status(self, lesson_id: int, status: str) -> Optional[Lesson]:
+    def update_status(self, lesson_id: int, status: str) -> Lesson | None:
         lesson = self.get(lesson_id)
         if lesson:
             lesson.status = status
@@ -76,12 +82,12 @@ class LessonRepository(Repository[Lesson]):
         self.session.flush()
         return True
 
-    def get_for_user(self, lesson_id: int, user_id: int) -> Optional[Lesson]:
+    def get_for_user(self, lesson_id: int, user_id: int) -> Lesson | None:
         return self.session.scalar(
             select(Lesson).where(Lesson.id == lesson_id, Lesson.user_id == user_id)
         )
 
-    def get_progress(self, lesson_id: int, user_id: int) -> Optional[LessonProgress]:
+    def get_progress(self, lesson_id: int, user_id: int) -> LessonProgress | None:
         return self.session.scalar(
             select(LessonProgress).where(
                 LessonProgress.lesson_id == lesson_id,
@@ -89,7 +95,7 @@ class LessonRepository(Repository[Lesson]):
             )
         )
 
-    def get_generation_tasks_for_user(self, user_id: int, skip: int = 0, limit: int = 50) -> List[LessonGenerationTask]:
+    def get_generation_tasks_for_user(self, user_id: int, skip: int = 0, limit: int = 50) -> list[LessonGenerationTask]:
         return list(
             self.session.scalars(
                 select(LessonGenerationTask)
@@ -100,7 +106,7 @@ class LessonRepository(Repository[Lesson]):
             )
         )
 
-    def get_generation_task(self, task_id: str) -> Optional[LessonGenerationTask]:
+    def get_generation_task(self, task_id: str) -> LessonGenerationTask | None:
         return self.session.scalar(
             select(LessonGenerationTask).where(LessonGenerationTask.task_id == task_id)
         )

@@ -6,7 +6,6 @@ from pathlib import Path
 
 from app.core.config import PROJECT_DIR
 
-
 _EXECUTABLE_SUFFIX = ".exe" if os.name == "nt" else ""
 _LOCAL_FFMPEG_BIN_DIR = PROJECT_DIR / "tools" / "ffmpeg" / "bin"
 _LOCAL_YTDLP_DIR = PROJECT_DIR / "tools" / "yt-dlp"

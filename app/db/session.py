@@ -1,12 +1,12 @@
 from __future__ import annotations
-from typing import Generator
+
+from collections.abc import Generator
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import resolve_database_url
 from app.db.base import is_sqlite_url, sqlite_schema_translate_map
-
 
 DATABASE_URL = resolve_database_url()
 

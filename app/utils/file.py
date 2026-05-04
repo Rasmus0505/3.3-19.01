@@ -1,10 +1,8 @@
 """文件操作工具。"""
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
-from typing import Optional
 
 
 def ensure_dir(path: str | Path) -> Path:
@@ -24,18 +22,18 @@ def sanitize_filename(filename: str, replacement: str = "_") -> str:
     """清理文件名，移除或替换非法字符。"""
     if not filename:
         return "unnamed"
-    
+
     # Windows 非法字符
     illegal_chars = r'[<>:"/\\|?*\x00-\x1f]'
     filename = re.sub(illegal_chars, replacement, filename)
-    
+
     # 移除前后空格和点
     filename = filename.strip(". ")
-    
+
     # 确保不为空
     if not filename:
         return "unnamed"
-    
+
     return filename
 
 
@@ -83,7 +81,7 @@ def list_files(
     d = Path(directory)
     if not d.is_dir():
         return []
-    
+
     if recursive:
         return sorted(d.rglob(pattern))
     return sorted(d.glob(pattern))

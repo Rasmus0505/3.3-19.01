@@ -9,7 +9,6 @@ from typing import Any
 from app.core.config import APP_DIR
 from app.services.collins_levels import classify_collins_band
 
-
 VOCABULARY_SQLITE_PATH = APP_DIR / "data" / "vocab" / "vocabulary.sqlite"
 TOKEN_RE = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)?")
 APOSTROPHE_RE = re.compile(r"[']")

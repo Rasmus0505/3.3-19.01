@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ class WalletRepository(Repository[WalletAccount]):
     def __init__(self, session: Session):
         super().__init__(WalletAccount, session)
 
-    def get_account(self, user_id: int) -> Optional[WalletAccount]:
+    def get_account(self, user_id: int) -> WalletAccount | None:
         return self.session.get(WalletAccount, user_id)
 
     def get_or_create_account(self, user_id: int) -> WalletAccount:
@@ -30,7 +30,7 @@ class WalletRepository(Repository[WalletAccount]):
         self.session.flush()
         return account
 
-    def get_ledger(self, user_id: int, skip: int = 0, limit: int = 50) -> List[WalletLedger]:
+    def get_ledger(self, user_id: int, skip: int = 0, limit: int = 50) -> list[WalletLedger]:
         return list(
             self.session.scalars(
                 select(WalletLedger)

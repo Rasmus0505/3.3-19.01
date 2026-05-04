@@ -15,10 +15,16 @@ from app.schemas import (
     AdminSubtitleSettingsUpdateRequest,
     ErrorResponse,
 )
-from app.services.billing import append_admin_operation_log, get_subtitle_settings, list_admin_rates
+from app.services.billing import (
+    append_admin_operation_log,
+    get_subtitle_settings,
+    list_admin_rates,
+)
 
-from .shared import load_subtitle_settings_rollback_candidate, subtitle_settings_item_with_meta
-
+from .shared import (
+    load_subtitle_settings_rollback_candidate,
+    subtitle_settings_item_with_meta,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

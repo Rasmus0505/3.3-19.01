@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Optional
+from typing import Any
 
 import dashscope
 
@@ -19,7 +19,6 @@ from app.infra.image_generation.base import (
     ImageGenerationProvider,
     ImageGenerationResult,
 )
-
 
 DEFAULT_MODEL = QWEN_IMAGE_MODEL
 SUPPORTED_MODELS = {
@@ -45,7 +44,7 @@ def setup_dashscope(api_key: str, *, base_url: str = QWEN_IMAGE_BASE_URL) -> Non
     dashscope.base_http_api_url = str(base_url or QWEN_IMAGE_BASE_URL).strip() or QWEN_IMAGE_BASE_URL
 
 
-def _ensure_api_key(api_key: Optional[str] = None) -> str:
+def _ensure_api_key(api_key: str | None = None) -> str:
     key = str(api_key or getattr(dashscope, "api_key", "") or DASHSCOPE_API_KEY or "").strip()
     if key:
         return key
@@ -150,8 +149,8 @@ def _extract_images(raw: dict[str, Any]) -> list[GeneratedImage]:
 def generate_image(
     prompt: str,
     *,
-    config: Optional[ImageGenerationConfig] = None,
-    api_key: Optional[str] = None,
+    config: ImageGenerationConfig | None = None,
+    api_key: str | None = None,
     base_url: str = QWEN_IMAGE_BASE_URL,
 ) -> ImageGenerationResult:
     """Generate images with qwen-image-2.0-pro."""
@@ -221,7 +220,7 @@ class QwenImageProvider(ImageGenerationProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         *,
         base_url: str = QWEN_IMAGE_BASE_URL,
     ):
@@ -242,7 +241,7 @@ class QwenImageProvider(ImageGenerationProvider):
     def generate(
         self,
         prompt: str,
-        config: Optional[ImageGenerationConfig] = None,
+        config: ImageGenerationConfig | None = None,
     ) -> ImageGenerationResult:
         effective_config = config or self.get_default_config()
         if not self.supports_model(effective_config.model_name):

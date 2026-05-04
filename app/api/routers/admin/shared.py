@@ -16,8 +16,18 @@ from app.core.config import (
 )
 from app.core.errors import error_response
 from app.core.timezone import now_shanghai_naive, to_shanghai_aware, to_shanghai_naive
-from app.models import AdminOperationLog, RedeemCode, RedeemCodeBatch, SubtitleSetting, User
-from app.schemas import AdminRedeemBatchItem, AdminSubtitleSettingsHistoryItem, AdminSubtitleSettingsItem
+from app.models import (
+    AdminOperationLog,
+    RedeemCode,
+    RedeemCodeBatch,
+    SubtitleSetting,
+    User,
+)
+from app.schemas import (
+    AdminRedeemBatchItem,
+    AdminSubtitleSettingsHistoryItem,
+    AdminSubtitleSettingsItem,
+)
 
 
 def now() -> datetime:

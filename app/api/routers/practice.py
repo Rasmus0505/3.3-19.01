@@ -14,7 +14,13 @@ from app.models import Lesson, LessonProgress, User
 from app.repositories.lessons import get_sentence
 from app.repositories.progress import get_progress_for_user
 from app.schemas import ErrorResponse
-from app.schemas.practice import ProgressResponse, ProgressUpdateRequest, TokenCheckRequest, TokenCheckResponse, TokenResult
+from app.schemas.practice import (
+    ProgressResponse,
+    ProgressUpdateRequest,
+    TokenCheckRequest,
+    TokenCheckResponse,
+    TokenResult,
+)
 from app.services.practice_service import check_tokens
 
 logger = logging.getLogger(__name__)
@@ -53,7 +59,6 @@ def upsert_progress(
     current_user: User = Depends(get_current_user),
 ):
     require_lesson_owner(db, lesson_id, current_user.id)
-    from app.core.timezone import now_shanghai_naive
     progress = get_progress_for_user(db, lesson_id, current_user.id)
     if not progress:
         lesson = db.query(Lesson).filter(Lesson.id == lesson_id, Lesson.user_id == current_user.id).first()
@@ -127,6 +132,7 @@ def update_progress(
 )
 def get_all_progress(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from sqlalchemy import select
+
     from app.models import LessonProgress as LP
     rows = db.scalars(
         select(LP).where(LP.user_id == current_user.id).order_by(LP.updated_at.desc())

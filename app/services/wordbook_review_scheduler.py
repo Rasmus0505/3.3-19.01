@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 
 from app.core.timezone import now_shanghai_naive
 
-
 REVIEW_GRADES: tuple[str, ...] = ("again", "hard", "good", "easy")
 TARGET_MEMORY_SCORE = 0.85
 DEFAULT_MEMORY_SCORE = 0.35

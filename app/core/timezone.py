@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.core.config import APP_TIMEZONE
 
-
 logger = logging.getLogger(__name__)
 
 

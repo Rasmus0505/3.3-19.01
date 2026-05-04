@@ -21,9 +21,13 @@ from app.core.config import (
 )
 from app.infra.asr_stepfun import STEPFUN_ASR_MODEL
 from app.infra.llm.deepseek import DEEPSEEK_MODEL_FAST
-from app.services.ai_platform.types import AiCapabilityDescriptor, AiModelAction, AiModelDescriptor, AiPlatformError
+from app.services.ai_platform.types import (
+    AiCapabilityDescriptor,
+    AiModelAction,
+    AiModelDescriptor,
+    AiPlatformError,
+)
 from app.services.translation_qwen_mt import MT_MODEL
-
 
 QWEN_ASR_MODEL = "qwen3-asr-flash-filetrans"
 COSYVOICE_TTS_MODEL = "cosyvoice-v1"

@@ -1,9 +1,9 @@
 ﻿from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable
 from uuid import uuid4
 
 from sqlalchemy import func, inspect, select, update
@@ -19,7 +19,11 @@ from app.services.lessons.content_options import (
     normalize_generated_content_status,
     normalize_generation_options,
 )
-from app.services.media import cleanup_dir
+from app.services.lessons.recovery_contract import (
+    RESUME_MODE_UNAVAILABLE,
+    build_source_identity,
+    derive_resume_plan,
+)
 from app.services.lessons.task_recovery import (
     _build_result_label,
     _build_result_message,
@@ -35,28 +39,16 @@ from app.services.lessons.task_recovery import (
     _set_control_fields,
 )
 from app.services.lessons.task_runtime import (
-    bind_task_terminate_runtime,
-    clear_task_terminate_runtime,
-    configure_task_runtime_probe,
     is_task_active_in_current_process as _is_task_active_in_current_process,
-    is_task_terminate_requested,
+)
+from app.services.lessons.task_runtime import (
     signal_task_terminate,
-    wait_for_task_terminate_request,
 )
 from app.services.lessons.task_workspace import (
     _load_workspace_summary_from_artifacts,
     _sync_task_workspace_summary,
-    get_lesson_workspace,
-    persist_lesson_workspace_summary,
-    subtitle_cache_seed_runtime,
-    upsert_lesson_workspace_summary,
 )
-from app.services.lessons.recovery_contract import (
-    RESUME_MODE_UNAVAILABLE,
-    build_source_identity,
-    derive_resume_plan,
-)
-
+from app.services.media import cleanup_dir
 
 FAILURE_RETENTION_HOURS = 24
 FAILURE_EXCEPTION_TYPE_LIMIT = 120

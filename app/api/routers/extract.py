@@ -11,10 +11,8 @@ OCR 消耗用户积分（调用外部 AI API）。
 from __future__ import annotations
 
 import base64
-import io
 import logging
 import re
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, field_validator
@@ -87,8 +85,8 @@ def extract_url_endpoint(
     """
     url = body.url
     try:
-        import trafilatura
         import requests as req_lib
+        import trafilatura
 
         headers = {
             "User-Agent": (
@@ -142,7 +140,7 @@ def extract_url_endpoint(
         raise HTTPException(status_code=502, detail=f"提取失败：{str(exc)[:100]}")
 
 
-def _extract_title_from_html(html: str) -> Optional[str]:
+def _extract_title_from_html(html: str) -> str | None:
     """从 HTML 提取 <title> 或 <h1> 标签内容作为页面标题"""
     match = re.search(r"<title[^>]*>([^<]+)</title>", html, re.IGNORECASE)
     if match:
@@ -189,7 +187,11 @@ async def extract_ocr_endpoint(
         raise HTTPException(status_code=400, detail="请上传有效的图片文件（JPEG、PNG、WEBP 等）")
 
     # 余额检查
-    from app.services.billing import get_or_create_wallet_account, consume_points, BillingError
+    from app.services.billing import (
+        BillingError,
+        consume_points,
+        get_or_create_wallet_account,
+    )
     account = get_or_create_wallet_account(db, current_user.id)
     if account.balance_points < OCR_FIXED_POINTS:
         raise HTTPException(
@@ -200,6 +202,7 @@ async def extract_ocr_endpoint(
     # 调用 DashScope 视觉 API
     try:
         import dashscope
+
         from app.core.config import DASHSCOPE_API_KEY
         if not DASHSCOPE_API_KEY:
             raise HTTPException(status_code=503, detail="OCR 服务未配置（DASHSCOPE_API_KEY 缺失）")

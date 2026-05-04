@@ -44,7 +44,6 @@ from app.services.wordbook_service import (
     update_wordbook_entry_status,
 )
 
-
 router = APIRouter(prefix="/api/wordbook", tags=["wordbook"])
 
 

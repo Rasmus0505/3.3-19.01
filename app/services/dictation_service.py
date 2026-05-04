@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from app.core.config import DASHSCOPE_API_KEY
-from app.core.timezone import now_shanghai_naive
 from app.models.lesson import Lesson, LessonSentence
 from app.services.collins_levels import normalize_collins_level
-from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
+from app.services.lesson_builder import (
+    normalize_learning_english_text,
+    tokenize_learning_sentence,
+)
 from app.services.lessons.vocabulary import extract_vocabulary_analysis_from_sentences
-from app.services.tts_service import synthesize_speech, get_available_voices
+from app.services.tts_service import get_available_voices, synthesize_speech
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ def generate_dictation_lesson(
     sentences: list[str],
     target_level: int,
     article_title: str,
-    voice: Optional[str] = None,
+    voice: str | None = None,
 ) -> Lesson:
     """Create a Lesson + LessonSentences from reading pack sentences via TTS.
 

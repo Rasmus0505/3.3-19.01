@@ -6,14 +6,16 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Iterable
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.models import LLMUsageLog
 from app.models.billing import BillingModelRate
-from app.services.billing import calculate_llm_charge_by_tokens, calculate_llm_cost_by_tokens
+from app.services.billing import (
+    calculate_llm_charge_by_tokens,
+    calculate_llm_cost_by_tokens,
+)
 
 
 def _now() -> datetime:

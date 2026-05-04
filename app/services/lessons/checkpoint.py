@@ -12,8 +12,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from app.services.lesson_task_manager import patch_task_artifacts, persist_lesson_workspace_summary
-
+from app.services.lesson_task_manager import (
+    patch_task_artifacts,
+    persist_lesson_workspace_summary,
+)
 
 logger = logging.getLogger(__name__)
 

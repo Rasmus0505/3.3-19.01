@@ -13,11 +13,17 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from app.core.config import ASR_SEGMENT_SEARCH_WINDOW_SECONDS, ASR_SEGMENT_TARGET_SECONDS
-from app.services.asr_dashscope import AsrError, transcribe_audio_file, transcribe_signed_url
-from app.infra.dashscope_storage import get_file_signed_url, normalize_dashscope_file_url
-from app.services.media import MediaError, run_cmd, resolve_media_command
-
+from app.core.config import (
+    ASR_SEGMENT_TARGET_SECONDS,
+)
+from app.infra.dashscope_storage import (
+    get_file_signed_url,
+    normalize_dashscope_file_url,
+)
+from app.services.asr_dashscope import (
+    AsrError,
+)
+from app.services.media import MediaError, resolve_media_command, run_cmd
 
 logger = logging.getLogger(__name__)
 

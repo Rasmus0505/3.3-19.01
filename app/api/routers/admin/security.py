@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_admin_user
-from app.core.config import BASE_DATA_DIR, get_app_environment, is_production_environment, is_weak_confirm_text
+from app.core.config import (
+    BASE_DATA_DIR,
+    get_app_environment,
+    is_production_environment,
+    is_weak_confirm_text,
+)
 from app.db import DATABASE_URL, get_db, is_sqlite_url
 from app.models import User
 from app.schemas import (
@@ -20,7 +25,6 @@ from app.services.admin_bootstrap import count_admin_users, get_admin_bootstrap_
 from app.services.media import get_controlled_media_roots
 
 from .shared import export_confirm_text
-
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

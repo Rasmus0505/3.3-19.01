@@ -8,17 +8,13 @@ Supports two modes:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import re
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Generator
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
-
-from app.core.timezone import now_shanghai_naive
 
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
 DEEPSEEK_MODEL_THINKING = "deepseek-v3.2"

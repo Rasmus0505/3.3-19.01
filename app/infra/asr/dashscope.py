@@ -1,23 +1,17 @@
 """DashScope ASR provider implementation."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import dashscope
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
 from app.exceptions.asr import (
-    AsrError,
     AsrCancellationRequested,
-    AsrApiKeyMissingError,
-    AsrUploadError,
-    AsrTaskCreateError,
-    AsrTaskWaitError,
-    AsrResultError,
+    AsrError,
 )
 from app.infra.asr.base import ASRConfig, ASRProvider, ASRResult
-
 
 DEFAULT_MODEL = "qwen-audio"
 SUPPORTED_MODELS: set = set()
@@ -114,7 +108,6 @@ def _extract_transcription_url(wait_out: dict[str, Any]) -> str:
 
 
 def _extract_usage_seconds(wait_out: dict[str, Any], wait_resp: Any) -> int | None:
-    import json
     candidates: list[Any] = []
     resp_usage = _to_dict(getattr(wait_resp, "usage", None))
     if resp_usage:
@@ -217,6 +210,7 @@ def _transcribe_with_qwen(
 ) -> dict[str, Any]:
     import json
     import time
+
     import requests
     _ensure_dashscope_api_key()
     request_timeout = max(5, int(requests_timeout or 120))
@@ -418,7 +412,7 @@ class DashScopeASRProvider(ASRProvider):
     def transcribe(
         self,
         audio_path: str,
-        config: Optional[ASRConfig] = None,
+        config: ASRConfig | None = None,
     ) -> ASRResult:
         """Transcribe audio file using DashScope.
 

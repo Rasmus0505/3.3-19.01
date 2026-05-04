@@ -436,7 +436,7 @@ async def _soe_assessment_file_async(
         if exc.rcvd is not None:
             detail = f"{exc.rcvd.code} {exc.rcvd.reason or ''}".strip()
         raise SOEAssessmentError(0, detail or str(exc) or "评测连接已关闭") from exc
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         if last_result is not None:
             return last_result
         raise SOEAssessmentError(0, "评测超时，未收到结果") from exc

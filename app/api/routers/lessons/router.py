@@ -10,58 +10,59 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from .helpers import require_lesson_owner
 from app.api.serializers import to_lesson_detail_response, to_lesson_item_response
 from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS, UPLOAD_MAX_BYTES
 from app.core.errors import error_response, map_billing_error, map_media_error
-from app.db import SessionLocal, get_db
+from app.db import get_db
 from app.models import Lesson, User
 from app.repositories.lessons import get_lesson_sentences, list_lessons_for_user
 from app.schemas import (
     ErrorResponse,
-    LessonCatalogResponse,
-    LessonCreateResponse,
+    GeneratedContentStatusResponse,
     LessonBulkDeleteRequest,
     LessonBulkDeleteResponse,
+    LessonCatalogResponse,
+    LessonCreateResponse,
     LessonDeleteResponse,
     LessonDetailResponse,
-    GeneratedContentStatusResponse,
     LessonGenerateMissingRequest,
     LessonGenerationOptions,
     LessonItemResponse,
     LessonRenameRequest,
+    LessonTaskBatchTerminateResponse,
+    LessonTaskControlResponse,
     LessonTaskCreateResponse,
     LessonTaskDebugReportResponse,
-    LessonTaskControlResponse,
-    LessonTaskBatchTerminateResponse,
-    LocalAsrLessonTaskCreateRequest,
-    LessonTaskResumeResponse,
     LessonTaskResponse,
+    LessonTaskResumeResponse,
+    LocalAsrLessonTaskCreateRequest,
 )
+from app.services.asr_dashscope import AsrError
 from app.services.asr_model_registry import (
     get_supported_local_browser_asr_model_keys,
     get_supported_local_desktop_asr_model_keys,
     get_supported_upload_asr_model_keys,
 )
-from app.services.asr_dashscope import AsrError
 from app.services.billing_service import BillingError, get_default_asr_model
 from app.services.lesson_command_service import (
     LessonTaskAdmissionError,
     LessonTaskConfigurationError,
+    bulk_delete_lessons_for_user,
     create_completed_lesson_from_local_generation,
     create_lesson_task_from_dashscope_file,
-    create_lesson_task_from_upload_file,
     create_lesson_task_from_local_asr,
-    bulk_delete_lessons_for_user,
+    create_lesson_task_from_upload_file,
     delete_lesson_for_user,
     invalidate_lesson_related_queries,
-    request_lesson_task_control_for_user,
     rename_lesson_for_user,
+    request_lesson_task_control_for_user,
     resume_lesson_task_for_user,
     terminate_active_lesson_tasks_for_user,
-    run_lesson_generation_task as _run_lesson_generation_task,
 )
-from app.services.lesson_query_service import get_lesson_catalog_payload, get_lesson_detail_payload
+from app.services.lesson_query_service import (
+    get_lesson_catalog_payload,
+    get_lesson_detail_payload,
+)
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
     LessonTaskStorageNotReadyError,
@@ -71,8 +72,15 @@ from app.services.lesson_task_manager import (
     upsert_lesson_workspace_summary,
 )
 from app.services.lessons.content_options import normalize_generation_options
-from app.services.media import MediaError, cleanup_dir, create_request_dir, extract_audio_for_asr, save_upload_file_stream
+from app.services.media import (
+    MediaError,
+    cleanup_dir,
+    create_request_dir,
+    extract_audio_for_asr,
+    save_upload_file_stream,
+)
 
+from .helpers import require_lesson_owner
 
 router = APIRouter(prefix="/api/lessons", tags=["lessons"])
 logger = logging.getLogger(__name__)
@@ -190,7 +198,7 @@ async def create_lesson(
         invalidate_lesson_related_queries(current_user.id)
         sentences = get_lesson_sentences(db, lesson.id)
         return LessonCreateResponse(ok=True, lesson=to_lesson_detail_response(lesson, sentences))
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return error_response(504, "REQUEST_TIMEOUT", "课程生成超时", f"超过 {REQUEST_TIMEOUT_SECONDS} 秒")
     except BillingError as exc:
         return map_billing_error(exc)

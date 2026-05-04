@@ -5,19 +5,16 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import dashscope
 
 from app.core.config import (
     DASHSCOPE_API_KEY,
     QWEN_OCR_BASE_URL,
-    QWEN_OCR_DEFAULT_MAX_PIXELS,
-    QWEN_OCR_DEFAULT_MIN_PIXELS,
     QWEN_OCR_MODEL,
 )
 from app.infra.ocr.base import OCRConfig, OCRProvider, OCRResult, OCRWordInfo
-
 
 DEFAULT_MODEL = QWEN_OCR_MODEL
 SUPPORTED_MODELS = {
@@ -44,7 +41,7 @@ def setup_dashscope(api_key: str, *, base_url: str = QWEN_OCR_BASE_URL) -> None:
     dashscope.base_http_api_url = str(base_url or QWEN_OCR_BASE_URL).strip() or QWEN_OCR_BASE_URL
 
 
-def _ensure_api_key(api_key: Optional[str] = None) -> str:
+def _ensure_api_key(api_key: str | None = None) -> str:
     key = str(api_key or getattr(dashscope, "api_key", "") or DASHSCOPE_API_KEY or "").strip()
     if key:
         return key
@@ -263,8 +260,8 @@ def _extract_result(raw: dict[str, Any], model_name: str) -> OCRResult:
 def extract_ocr(
     image_source: str,
     *,
-    config: Optional[OCRConfig] = None,
-    api_key: Optional[str] = None,
+    config: OCRConfig | None = None,
+    api_key: str | None = None,
     base_url: str = QWEN_OCR_BASE_URL,
 ) -> OCRResult:
     effective_config = config or OCRConfig(model_name=DEFAULT_MODEL)
@@ -293,7 +290,7 @@ class DashScopeOCRProvider(OCRProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         *,
         base_url: str = QWEN_OCR_BASE_URL,
     ):
@@ -313,7 +310,7 @@ class DashScopeOCRProvider(OCRProvider):
     def extract(
         self,
         image_source: str,
-        config: Optional[OCRConfig] = None,
+        config: OCRConfig | None = None,
     ) -> OCRResult:
         effective_config = config or self.get_default_config()
         return extract_ocr(

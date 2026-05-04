@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,7 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.routers.llm_quiz import _validate_question
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, strip_json_fences
+from app.api.routers.llm_shared import (
+    _require_api_key,
+    recover_json_payload,
+    strip_json_fences,
+)
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
@@ -62,7 +66,7 @@ class ReadingCourseDiscussionResponse(BaseModel):
 
 
 def _utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _safe_dict(value: object) -> dict:
@@ -254,7 +258,7 @@ def _build_fallback_course(body: ReadingCourseGenerateRequest) -> dict:
         },
         "source": {"primary_text": "rewritten", "segment_count": len(segments), "keywords": keywords, "word_counts": {"original": len(_split_sentences(body.original_text)), "rewritten": len(_split_sentences(body.rewritten_text))}},
         "scenes": scenes,
-        "runtime": {"activeSceneIndex": 0, "revealCountsByScene": {"entry": 1}, "completedSceneIds": [], "quiz": {}, "output": {}, "discussion": {}, "completedAt": None, "lastViewedAt": int(datetime.now(timezone.utc).timestamp() * 1000), "totalScenes": len(scenes)},
+        "runtime": {"activeSceneIndex": 0, "revealCountsByScene": {"entry": 1}, "completedSceneIds": [], "quiz": {}, "output": {}, "discussion": {}, "completedAt": None, "lastViewedAt": int(datetime.now(UTC).timestamp() * 1000), "totalScenes": len(scenes)},
     }
 
 
@@ -666,7 +670,7 @@ def _build_v3_fallback(body: V3CourseGenerateRequest, rewritten_paragraphs: list
             "activeSectionIndex": 0,
             "activePhase": "read",
             "completedSections": [],
-            "lastViewedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "lastViewedAt": int(datetime.now(UTC).timestamp() * 1000),
         },
     }
 

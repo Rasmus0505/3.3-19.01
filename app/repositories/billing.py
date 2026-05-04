@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,13 +19,13 @@ class BillingRepository(Repository[BillingModelRate]):
     def __init__(self, session: Session):
         super().__init__(BillingModelRate, session)
 
-    def get_rate(self, model_name: str) -> Optional[BillingModelRate]:
+    def get_rate(self, model_name: str) -> BillingModelRate | None:
         return self.session.get(BillingModelRate, model_name)
 
-    def get_all_rates(self) -> List[BillingModelRate]:
+    def get_all_rates(self) -> list[BillingModelRate]:
         return list(self.session.scalars(select(BillingModelRate).order_by(BillingModelRate.model_name.asc())))
 
-    def get_active_rates(self) -> List[BillingModelRate]:
+    def get_active_rates(self) -> list[BillingModelRate]:
         return list(
             self.session.scalars(
                 select(BillingModelRate)
@@ -61,7 +61,7 @@ class BillingRepository(Repository[BillingModelRate]):
             self.session.flush()
             return rate
 
-    def get_redeem_batch(self, batch_id: int) -> Optional[RedeemCodeBatch]:
+    def get_redeem_batch(self, batch_id: int) -> RedeemCodeBatch | None:
         return self.session.get(RedeemCodeBatch, batch_id)
 
     def create_redeem_batch(
@@ -70,10 +70,10 @@ class BillingRepository(Repository[BillingModelRate]):
         face_value: int,
         count: int,
         expire_at: datetime,
-        active_from: Optional[datetime] = None,
-        daily_limit_per_user: Optional[int] = None,
+        active_from: datetime | None = None,
+        daily_limit_per_user: int | None = None,
         remark: str = "",
-        created_by_user_id: Optional[int] = None,
+        created_by_user_id: int | None = None,
     ) -> RedeemCodeBatch:
         batch = RedeemCodeBatch(
             batch_name=batch_name,
@@ -90,11 +90,11 @@ class BillingRepository(Repository[BillingModelRate]):
         self.session.flush()
         return batch
 
-    def generate_redeem_codes(self, batch_id: int, count: int) -> List[RedeemCode]:
+    def generate_redeem_codes(self, batch_id: int, count: int) -> list[RedeemCode]:
         batch = self.get_redeem_batch(batch_id)
         if not batch:
             return []
-        codes: List[RedeemCode] = []
+        codes: list[RedeemCode] = []
         for _ in range(count):
             code = RedeemCode(
                 batch_id=batch_id,
@@ -108,15 +108,15 @@ class BillingRepository(Repository[BillingModelRate]):
         self.session.flush()
         return codes
 
-    def get_redeem_code_by_hash(self, code_hash: str) -> Optional[RedeemCode]:
+    def get_redeem_code_by_hash(self, code_hash: str) -> RedeemCode | None:
         return self.session.scalar(
             select(RedeemCode).where(RedeemCode.code_hash == code_hash)
         )
 
-    def get_redeem_code_by_id(self, code_id: int) -> Optional[RedeemCode]:
+    def get_redeem_code_by_id(self, code_id: int) -> RedeemCode | None:
         return self.session.get(RedeemCode, code_id)
 
-    def mark_redeem_code_used(self, code_id: int, user_id: int) -> Optional[RedeemCode]:
+    def mark_redeem_code_used(self, code_id: int, user_id: int) -> RedeemCode | None:
         code = self.get_redeem_code_by_id(code_id)
         if code:
             code.status = "redeemed"
@@ -129,10 +129,10 @@ class BillingRepository(Repository[BillingModelRate]):
     def update_redeem_code(
         self,
         code_id: int,
-        status: Optional[str] = None,
-        redeemed_by_user_id: Optional[int] = None,
-        redeemed_at: Optional[datetime] = None,
-    ) -> Optional[RedeemCode]:
+        status: str | None = None,
+        redeemed_by_user_id: int | None = None,
+        redeemed_at: datetime | None = None,
+    ) -> RedeemCode | None:
         code = self.get_redeem_code_by_id(code_id)
         if code:
             if status is not None:
@@ -150,7 +150,7 @@ class BillingRepository(Repository[BillingModelRate]):
         batch_id: int,
         skip: int = 0,
         limit: int = 100,
-    ) -> List[RedeemCode]:
+    ) -> list[RedeemCode]:
         return list(
             self.session.scalars(
                 select(RedeemCode)

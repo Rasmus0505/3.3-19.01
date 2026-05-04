@@ -1,10 +1,9 @@
 """兑换码服务单元测试。"""
-import pytest
 
 from app.services.billing.redeem import (
-    normalize_redeem_code_input,
     hash_redeem_code,
     mask_redeem_code,
+    normalize_redeem_code_input,
 )
 
 

@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.security import JWT_SECRET
 
-
 logger = logging.getLogger(__name__)
 
 SQL_RESULT_LIMIT = 200

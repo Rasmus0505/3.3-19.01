@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -16,10 +16,10 @@ class VisionConfig:
     max_pixels: int = 2621440
     enable_thinking: bool = False
     vl_high_resolution_images: bool = False
-    max_tokens: Optional[int] = None
+    max_tokens: int | None = None
     temperature: float = 0.01
     top_p: float = 0.001
-    seed: Optional[int] = None
+    seed: int | None = None
     request_timeout: int = 45
 
 
@@ -35,7 +35,7 @@ class VisionResult:
     completion_tokens: int = 0
     total_tokens: int = 0
     image_tokens: int = 0
-    raw_result: Optional[dict[str, Any]] = None
+    raw_result: dict[str, Any] | None = None
 
 
 class VisionProvider(ABC):
@@ -51,7 +51,7 @@ class VisionProvider(ABC):
     def analyze(
         self,
         image_source: str,
-        config: Optional[VisionConfig] = None,
+        config: VisionConfig | None = None,
     ) -> VisionResult:
         """Analyze an image and return text output."""
         pass

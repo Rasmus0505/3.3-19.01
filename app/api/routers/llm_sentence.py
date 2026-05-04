@@ -8,10 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.routers.llm_shared import LLM_MODEL_DEEPSEEK_FAST
-from app.services.collins_levels import normalize_collins_level
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse
+from app.services.collins_levels import normalize_collins_level
 
 router = APIRouter()
 
@@ -43,8 +43,8 @@ def explain_sentence(
     返回简化句和关键词解释，用于听力前的讲解展示。
     """
     from app.api.routers import llm as llm_root
-    from app.services.vocabulary_explain_service import VocabularyExplainService
     from app.services.llm_usage_service import log_llm_usage
+    from app.services.vocabulary_explain_service import VocabularyExplainService
 
     llm_root.ensure_default_billing_rates(db)
     if len(body.sentence) > 3000:

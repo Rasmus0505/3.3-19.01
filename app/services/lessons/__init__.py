@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from importlib import import_module
 
-
 _EXPORT_MAP = {
     "LessonGenerationService": ("app.services.lessons.generation", "LessonGenerationService"),
     "resolve_dashscope_asr_source_url": ("app.services.lessons.asr_handler", "resolve_dashscope_asr_source_url"),

@@ -9,13 +9,34 @@ from app.api.serializers import to_user_response
 from app.core.errors import error_response
 from app.db import get_db
 from app.models import User
-from app.repositories.user import UserRepository, canonicalize_username, normalize_username
-from app.schemas import AuthRequest, AuthResponse, ErrorResponse, LogoutResponse, ProfileUpdateRequest, RefreshRequest, RegisterRequest, UserResponse
-from app.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
+from app.repositories.user import (
+    UserRepository,
+    canonicalize_username,
+    normalize_username,
+)
+from app.schemas import (
+    AuthRequest,
+    AuthResponse,
+    ErrorResponse,
+    LogoutResponse,
+    ProfileUpdateRequest,
+    RefreshRequest,
+    RegisterRequest,
+    UserResponse,
+)
+from app.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 from app.services.billing import get_or_create_wallet_account
 from app.services.collins_levels import normalize_collins_level
-from app.services.user_activity import ensure_user_activity_schema, record_user_login_event
-
+from app.services.user_activity import (
+    ensure_user_activity_schema,
+    record_user_login_event,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

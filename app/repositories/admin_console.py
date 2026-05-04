@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
+from app.core.query_cache import query_cache
+from app.db.schema_guards import (
+    ensure_lesson_task_storage_ready,
+    ensure_user_activity_schema,
+)
 from app.models import (
     AdminOperationLog,
     Lesson,
@@ -18,8 +23,6 @@ from app.models import (
     WalletAccount,
     WalletLedger,
 )
-from app.core.query_cache import query_cache
-from app.db.schema_guards import ensure_lesson_task_storage_ready, ensure_user_activity_schema
 from app.repositories.admin import admin_storage_ready, list_redeem_batches
 
 CHART_COLORS = {

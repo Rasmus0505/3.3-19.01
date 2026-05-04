@@ -10,11 +10,19 @@ from dashscope.audio.qwen_asr import QwenTranscription
 from dashscope.files import Files
 
 from app.core.config import ASR_TASK_POLL_SECONDS
-from app.infra.asr_stepfun import STEPFUN_ASR_MODEL, transcribe_audio_file as _transcribe_audio_file_with_stepfun
-from app.services.asr_model_registry import QWEN_ASR_MODEL, get_supported_transcribe_asr_model_keys
-from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
-from app.exceptions.asr import AsrError, AsrCancellationRequested
-
+from app.exceptions.asr import AsrCancellationRequested, AsrError
+from app.infra.asr_stepfun import STEPFUN_ASR_MODEL
+from app.infra.asr_stepfun import (
+    transcribe_audio_file as _transcribe_audio_file_with_stepfun,
+)
+from app.services.asr_model_registry import (
+    QWEN_ASR_MODEL,
+    get_supported_transcribe_asr_model_keys,
+)
+from app.services.lesson_task_manager import (
+    is_task_terminate_requested,
+    wait_for_task_terminate_request,
+)
 
 DEFAULT_MODEL = QWEN_ASR_MODEL
 QWEN_DEFAULT_MODEL = QWEN_ASR_MODEL

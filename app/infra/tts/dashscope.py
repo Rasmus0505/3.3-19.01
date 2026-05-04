@@ -3,14 +3,17 @@ from __future__ import annotations
 
 import base64
 import json
-import os
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any
 
 import dashscope
 import requests
 
-from app.core.config import TTS_VC_ENROLLMENT_MODEL, TTS_VC_REALTIME_MODEL, TTS_VC_TARGET_MODEL
+from app.core.config import (
+    TTS_VC_ENROLLMENT_MODEL,
+    TTS_VC_TARGET_MODEL,
+)
 from app.infra.tts.base import (
     TTSConfig,
     TTSProvider,
@@ -79,8 +82,8 @@ def create_voice(
     audio_file_path: str,
     preferred_name: str,
     target_model: str = TTS_VC_TARGET_MODEL,
-    language: Optional[str] = None,
-    api_key: Optional[str] = None,
+    language: str | None = None,
+    api_key: str | None = None,
 ) -> VoiceCloningResult:
     """Create a voice profile from audio file.
 
@@ -141,7 +144,7 @@ def create_voice(
 def list_voices(
     page_size: int = 10,
     page_index: int = 0,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """List voice profiles.
 
@@ -180,7 +183,7 @@ def list_voices(
 
 def delete_voice(
     voice_name: str,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> bool:
     """Delete a voice profile.
 
@@ -221,7 +224,7 @@ def synthesize_text(
     model: str = TTS_VC_TARGET_MODEL,
     language_type: str = "Auto",
     stream: bool = False,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> TTSResult:
     """Synthesize speech from text using DashScope API.
 
@@ -279,7 +282,7 @@ def synthesize_text_stream(
     voice: str,
     model: str = TTS_VC_TARGET_MODEL,
     language_type: str = "Auto",
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> Generator[dict[str, Any], None, None]:
     """Synthesize speech from text with streaming (yields base64 audio chunks).
 
@@ -314,7 +317,7 @@ def synthesize_text_stream(
 class DashScopeTTSProvider(TTSProvider):
     """DashScope TTS provider implementation."""
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         if api_key:
             setup_dashscope(api_key)
 
@@ -328,7 +331,7 @@ class DashScopeTTSProvider(TTSProvider):
     def synthesize(
         self,
         text: str,
-        config: Optional[TTSConfig] = None,
+        config: TTSConfig | None = None,
     ) -> TTSResult:
         if config is None:
             config = self.get_default_config()
@@ -344,7 +347,7 @@ class DashScopeTTSProvider(TTSProvider):
     def synthesize_stream(
         self,
         text: str,
-        config: Optional[TTSConfig] = None,
+        config: TTSConfig | None = None,
     ):
         if config is None:
             config = self.get_default_config()

@@ -1,9 +1,10 @@
 ﻿from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -22,9 +23,9 @@ from app.services.billing_service import (
     reserve_points,
     settle_reserved_points,
 )
-from app.services.lesson_builder import estimate_duration_ms
 from app.services.collins_levels import normalize_collins_level
-from app.services.lessons.vocabulary import process_sentences_with_vocabulary
+from app.services.lesson_builder import estimate_duration_ms
+from app.services.lesson_task_manager import persist_lesson_workspace_summary
 from app.services.lessons.content_options import (
     CONTENT_STATE_GENERATED,
     CONTENT_STATE_PENDING_REGENERATE,
@@ -33,11 +34,10 @@ from app.services.lessons.content_options import (
     clear_sentence_generated_content,
     normalize_generation_options,
 )
-from app.services.lesson_task_manager import persist_lesson_workspace_summary
+from app.services.lessons.vocabulary import process_sentences_with_vocabulary
 from app.services.llm_usage_service import log_llm_usage
 from app.services.media import MediaError
 from app.services.translation_qwen_mt import MT_MODEL
-
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,6 @@ from app.repositories.media_assets import get_media_asset_for_lesson
 from app.schemas import ErrorResponse
 from app.services.media import MediaError, resolve_controlled_media_path
 
-
 router = APIRouter(prefix="/api/lessons", tags=["media"])
 logger = logging.getLogger(__name__)
 LOCAL_MEDIA_REQUIRED_MESSAGE = "该课程仅支持本地绑定媒体，请先在浏览器绑定本地文件"

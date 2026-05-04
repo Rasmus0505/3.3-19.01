@@ -12,10 +12,13 @@ from app.core.errors import error_response
 from app.core.timezone import to_shanghai_aware, to_shanghai_naive
 from app.db import get_db
 from app.models import BillingModelRate, User
-from app.repositories.wallet_ledger import list_translation_request_rows, list_wallet_ledger_rows
+from app.repositories.wallet_ledger import (
+    list_translation_request_rows,
+    list_wallet_ledger_rows,
+)
 from app.schemas import (
-    AdminBillingRateUpdateRequest,
     AdminBillingRatesResponse,
+    AdminBillingRateUpdateRequest,
     AdminRuntimeReadinessItem,
     AdminRuntimeReadinessResponse,
     AdminTranslationLogItem,
@@ -35,7 +38,6 @@ from app.services.billing import (
 from app.services.llm_usage_service import get_llm_usage_summary, list_all_llm_usage
 
 from .shared import parse_optional_lesson_id
-
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)

@@ -4,7 +4,6 @@ import os
 import tempfile
 from pathlib import Path
 
-
 SERVICE_NAME = "zeabur3.3-min-asr"
 REQUEST_TIMEOUT_SECONDS = 480
 UPLOAD_MAX_BYTES = 200 * 1024 * 1024

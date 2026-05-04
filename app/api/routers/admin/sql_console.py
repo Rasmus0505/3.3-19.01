@@ -16,15 +16,14 @@ from app.schemas.admin_sql_console import (
     AdminSqlPrepareResponse,
 )
 from app.services.admin_sql_console import (
-    AdminSqlConsoleError,
     SQL_RESULT_LIMIT,
     WRITE_CONFIRM_TEXT,
+    AdminSqlConsoleError,
     execute_sql,
     issue_confirm_token,
     prepare_sql,
 )
 from app.services.billing import append_admin_operation_log
-
 
 router = APIRouter(prefix="/api/admin/sql-console", tags=["admin"])
 logger = logging.getLogger(__name__)

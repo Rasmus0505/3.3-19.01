@@ -6,7 +6,7 @@ import os
 import re
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Request
@@ -20,33 +20,31 @@ from app.api.routers.admin.announcements import router as admin_announcements_ro
 from app.api.routers.admin.console import router as admin_console_router
 from app.api.routers.admin.router import router as admin_router
 from app.api.routers.admin.sql_console import router as admin_sql_console_router
-from app.api.routers.announcement_public import router as announcement_public_router
-from app.api.routers.asr_records import router as asr_records_router
-from app.api.routers.asr_models import router as asr_models_router
 from app.api.routers.ai import router as ai_router
+from app.api.routers.announcement_public import router as announcement_public_router
+from app.api.routers.asr_models import router as asr_models_router
+from app.api.routers.asr_records import router as asr_records_router
 from app.api.routers.auth.router import router as auth_router
 from app.api.routers.billing.router import router as billing_router
 from app.api.routers.billing.wallet import router as wallet_router
 from app.api.routers.dashscope_upload import router as dashscope_upload_router
+from app.api.routers.dictation import router as dictation_router
 from app.api.routers.dictionary import router as dictionary_router
-
+from app.api.routers.extract import router as extract_router
 from app.api.routers.learning_dashboard import router as dashboard_router
 from app.api.routers.lesson_chat import router as lesson_chat_router
-from app.api.routers.reading_packs import router as reading_packs_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.api.routers.lessons.router import router as lessons_router
-from app.api.routers.dictation import router as dictation_router
-from app.api.routers.extract import router as extract_router
-from app.api.routers.vocab_cards import router as vocab_cards_router
 from app.api.routers.llm import router as llm_router
 from app.api.routers.media import router as media_router
 from app.api.routers.practice import router as practice_router
+from app.api.routers.reading_packs import router as reading_packs_router
 from app.api.routers.soe import router as soe_router
 from app.api.routers.transcribe import router as transcribe_router
 from app.api.routers.tts import router as tts_router
+from app.api.routers.vocab_cards import router as vocab_cards_router
 from app.api.routers.voice_cloning import router as voice_cloning_router
 from app.core.config import (
-    APP_DIR,
     BASE_DATA_DIR,
     BASE_TMP_DIR,
     DASHSCOPE_API_KEY,
@@ -60,7 +58,13 @@ from app.core.config import (
 )
 from app.core.errors import error_response
 from app.core.logging import setup_logging
-from app.db import BUSINESS_TABLES, DATABASE_URL, SessionLocal, engine, schema_name_for_url
+from app.db import (
+    BUSINESS_TABLES,
+    DATABASE_URL,
+    SessionLocal,
+    engine,
+    schema_name_for_url,
+)
 from app.models import LessonGenerationTask
 from app.services.admin_bootstrap import ensure_admin_users
 from app.services.asr_dashscope import setup_dashscope
@@ -68,7 +72,6 @@ from app.services.asr_model_registry import list_asr_models_with_status
 from app.services.billing import ensure_default_billing_rates
 from app.services.media import get_media_runtime_status
 from app.services.user_activity import ensure_user_activity_schema
-
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -173,7 +176,7 @@ class RuntimeStatus:
 
 
 def _utc_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _ensure_runtime_status(app: FastAPI) -> RuntimeStatus:
@@ -515,7 +518,7 @@ def _load_desktop_release_registry() -> dict[str, object]:
     configured_json = _trim_text(os.getenv("DESKTOP_CLIENT_RELEASES_JSON"))
     try:
         if configured_file and os.path.exists(configured_file):
-            with open(configured_file, "r", encoding="utf-8") as file_handle:
+            with open(configured_file, encoding="utf-8") as file_handle:
                 payload = json.load(file_handle)
                 return payload if isinstance(payload, dict) else {}
         if configured_json:
@@ -757,7 +760,6 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app.include_router(ai_router)
     app.include_router(asr_records_router)
     app.include_router(asr_models_router)
-    # app.include_router(local_asr_assets_router)  # TODO: 创建缺失模块
     app.include_router(practice_router)
     app.include_router(media_router)
     app.include_router(soe_router)

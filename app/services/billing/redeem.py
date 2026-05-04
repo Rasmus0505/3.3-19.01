@@ -7,7 +7,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import REDEEM_CODE_DEFAULT_DAILY_LIMIT, REDEEM_CODE_DEFAULT_VALID_DAYS
+from app.core.config import (
+    REDEEM_CODE_DEFAULT_DAILY_LIMIT,
+    REDEEM_CODE_DEFAULT_VALID_DAYS,
+)
 from app.core.timezone import to_shanghai_aware, to_shanghai_naive
 from app.models import RedeemCode, RedeemCodeAttempt, RedeemCodeBatch, WalletLedger
 

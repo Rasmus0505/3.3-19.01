@@ -1,15 +1,13 @@
 """Service layer for OCR operations."""
 from __future__ import annotations
 
-from typing import Optional
-
 from app.core.config import (
     DASHSCOPE_API_KEY,
     QWEN_OCR_DEFAULT_MAX_PIXELS,
     QWEN_OCR_DEFAULT_MIN_PIXELS,
     QWEN_OCR_MODEL,
 )
-from app.infra.ocr import OCRConfig, OCRError, OCRResult, DashScopeOCRProvider
+from app.infra.ocr import DashScopeOCRProvider, OCRConfig, OCRError, OCRResult
 
 
 class OCRServiceError(RuntimeError):
@@ -34,8 +32,8 @@ def get_default_ocr_config() -> OCRConfig:
 def extract_text_from_image(
     image_source: str,
     *,
-    config: Optional[OCRConfig] = None,
-    api_key: Optional[str] = None,
+    config: OCRConfig | None = None,
+    api_key: str | None = None,
 ) -> OCRResult:
     """Extract text or structured data from an image."""
     provider = DashScopeOCRProvider(api_key=api_key or DASHSCOPE_API_KEY)

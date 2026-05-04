@@ -4,11 +4,10 @@ import base64
 import hashlib
 import hmac
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
-
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-change-me").strip()
 JWT_ALGORITHM = "HS256"
@@ -39,7 +38,7 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
 
 
 def _build_token(subject: str, token_type: str, expires_delta: timedelta) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": subject,
         "type": token_type,

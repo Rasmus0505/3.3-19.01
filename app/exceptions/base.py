@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.schemas import ErrorResponse
 
 if TYPE_CHECKING:
-    from app.services.media import MediaError as _MediaError
+    pass
 
 
 class AppError(Exception):

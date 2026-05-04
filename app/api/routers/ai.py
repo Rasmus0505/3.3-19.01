@@ -15,7 +15,6 @@ from app.services.ai_platform import (
     list_model_descriptors,
 )
 
-
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 

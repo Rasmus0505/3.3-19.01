@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
 
 from app.core.config import (
     TTS_PLATFORM_VOICES_JSON,
 )
-from app.infra.tts import TTSError as InfraTTSError, TTSResult
+from app.infra.tts import TTSError as InfraTTSError
+from app.infra.tts import TTSResult
 from app.infra.tts.base import VoiceInfo
 from app.services.ai_platform import resolve_default_model, synthesize_tts
 
@@ -55,7 +55,7 @@ def get_available_voices() -> list[VoiceInfo]:
 def synthesize_speech(
     text: str,
     voice: str,
-    model: Optional[str] = None,
+    model: str | None = None,
     language_type: str = "Auto",
 ) -> TTSResult:
     """Synthesize speech from text.

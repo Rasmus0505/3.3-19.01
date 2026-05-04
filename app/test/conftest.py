@@ -6,12 +6,12 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
+from app.models.billing import BillingModelRate, WalletAccount
 from app.models.user import User
-from app.models.billing import WalletAccount, BillingModelRate
 
 
 @pytest.fixture

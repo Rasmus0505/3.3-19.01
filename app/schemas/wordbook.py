@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 WordbookEntryType = Literal["word", "phrase"]
 WordbookEntryStatus = Literal["active", "mastered"]
 WordbookSortOrder = Literal["recent", "oldest"]

@@ -1,16 +1,15 @@
 """钱包服务单元测试。"""
-import pytest
 from decimal import Decimal
 
 from app.services.billing.wallet import (
     BillingError,
-    get_or_create_wallet_account,
     calculate_amount_by_duration_ms,
     calculate_cost_by_tokens,
+    calculate_llm_charge_by_tokens,
+    calculate_llm_cost_by_tokens,
     calculate_points,
     calculate_token_points,
-    calculate_llm_cost_by_tokens,
-    calculate_llm_charge_by_tokens,
+    get_or_create_wallet_account,
 )
 
 

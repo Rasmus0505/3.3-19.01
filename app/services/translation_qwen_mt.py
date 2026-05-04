@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from app.infra import translation_qwen_mt as _infra
-from app.services.lesson_task_manager import is_task_terminate_requested, wait_for_task_terminate_request
-
+from app.services.lesson_task_manager import (
+    is_task_terminate_requested,
+    wait_for_task_terminate_request,
+)
 
 MT_MODEL = _infra.MT_MODEL
 SemanticSplitError = _infra.SemanticSplitError

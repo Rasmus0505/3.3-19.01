@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 import logging
+from datetime import datetime
 from types import SimpleNamespace
 
 from sqlalchemy import case, delete, desc, func, inspect, select, update
@@ -21,7 +21,6 @@ from app.models import (
     RedeemCodeBatch,
     TranslationRequestLog,
     User,
-    UserLoginEvent,
     WalletAccount,
     WalletLedger,
 )

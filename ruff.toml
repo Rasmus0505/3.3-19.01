@@ -1,0 +1,24 @@
+target-version = "py311"
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports, undefined names)
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "B",   # flake8-bugbear (common bugs)
+    "UP",  # pyupgrade (modern Python syntax)
+]
+ignore = [
+    "E501", # line too long (let formatter handle it)
+    "B008", # do not perform function calls in argument defaults (common pattern in FastAPI)
+]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[lint.per-file-ignores]
+"migrations/**" = ["E", "F", "I"]
+"tests/**" = ["B018"]

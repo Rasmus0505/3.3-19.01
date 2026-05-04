@@ -6,13 +6,15 @@ from fastapi import APIRouter
 
 from app.api.routers.llm_discussion import router as discussion_router
 from app.api.routers.llm_quiz import router as quiz_router
+from app.api.routers.llm_reading import generate_reading_material_endpoint
+from app.api.routers.llm_reading import router as reading_router
 from app.api.routers.llm_reading_course import router as reading_course_router
-from app.api.routers.llm_writing import router as writing_router
-from app.api.routers.llm_reading import generate_reading_material_endpoint, router as reading_router
 from app.api.routers.llm_sentence import (
     SentenceExplanationRequest,
     SentenceExplanationResponse,
     explain_sentence,
+)
+from app.api.routers.llm_sentence import (
     router as sentence_router,
 )
 from app.api.routers.llm_shared import (
@@ -22,11 +24,12 @@ from app.api.routers.llm_shared import (
     LLM_VALID_MODELS,
     _require_api_key,
 )
-from app.services.collins_levels import VALID_COLLINS_LEVELS
 from app.api.routers.llm_usage import (
     estimate_tokens_endpoint,
     list_llm_models_endpoint,
     list_llm_usage_endpoint,
+)
+from app.api.routers.llm_usage import (
     router as usage_router,
 )
 from app.api.routers.llm_vocabulary import (
@@ -36,9 +39,12 @@ from app.api.routers.llm_vocabulary import (
     _do_filter_and_simplify,
     extract_lemmas_endpoint,
     filter_and_simplify_words_endpoint,
-    router as vocabulary_router,
     simplify_words_endpoint,
 )
+from app.api.routers.llm_vocabulary import (
+    router as vocabulary_router,
+)
+from app.api.routers.llm_writing import router as writing_router
 from app.infra.llm.deepseek import generate_reading_material
 from app.services.ai_platform import call_llm_chat as call_deepseek
 from app.services.billing_service import (
@@ -48,6 +54,7 @@ from app.services.billing_service import (
     ensure_default_billing_rates,
     get_model_rate,
 )
+from app.services.collins_levels import VALID_COLLINS_LEVELS
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 router.include_router(reading_router)

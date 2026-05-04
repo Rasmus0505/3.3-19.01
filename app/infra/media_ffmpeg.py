@@ -2,15 +2,25 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import subprocess
-import re
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
-from app.core.config import BASE_TMP_DIR, MEDIA_STORAGE_ROOT_DIR, PERSISTENT_DATA_DIR, PROJECT_DIR
-from app.infra.runtime_tools import describe_command_candidates, get_ffmpeg_bin_dir, get_ytdlp_command, resolve_command_path
+from app.core.config import (
+    BASE_TMP_DIR,
+    MEDIA_STORAGE_ROOT_DIR,
+    PERSISTENT_DATA_DIR,
+    PROJECT_DIR,
+)
+from app.infra.runtime_tools import (
+    describe_command_candidates,
+    get_ffmpeg_bin_dir,
+    get_ytdlp_command,
+    resolve_command_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +173,7 @@ def ensure_ffmpeg_for_transcribe() -> None:
     output = (proc.stdout or "") + "\n" + (proc.stderr or "")
     if "libopus" not in output:
         logger.warning("[DEBUG] media_ffmpeg.libopus_missing ffmpeg=%s output_preview=%s", ffmpeg_executable, output[:200])
-        raise MediaError("FFMPEG_LIBOPUS_MISSING", "ffmpeg 缺少 libopus 编码器支持", f"当前 ffmpeg 不支持 libopus 编码器，请重新安装 ffmpeg（建议：conda install ffmpeg libopus）")
+        raise MediaError("FFMPEG_LIBOPUS_MISSING", "ffmpeg 缺少 libopus 编码器支持", "当前 ffmpeg 不支持 libopus 编码器，请重新安装 ffmpeg（建议：conda install ffmpeg libopus）")
     logger.info("[DEBUG] media_ffmpeg.libopus_ok ffmpeg=%s", ffmpeg_executable)
 
 

@@ -6,7 +6,6 @@ from app.core.config import LESSON_DEFAULT_ASR_MODEL
 from app.services.asr_model_registry import QWEN_ASR_MODEL as FAST_CLOUD_MODEL
 from app.services.asr_model_registry import STEPFUN_ASR_MODEL
 
-
 EVENT_RESERVE = "reserve"
 EVENT_CONSUME = "consume"
 EVENT_REFUND = "refund"

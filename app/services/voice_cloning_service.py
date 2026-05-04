@@ -1,16 +1,16 @@
 """Voice cloning service — creates and manages user voice profiles."""
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from app.core.config import TTS_MAX_VOICES_PER_USER, TTS_VC_TARGET_MODEL
 from app.core.timezone import now_shanghai_naive
 from app.infra.tts import TTSError
 from app.models.voice_profile import VoiceProfile
-from app.services.ai_platform import create_voice_profile_runtime, delete_voice_profile_runtime
+from app.services.ai_platform import (
+    create_voice_profile_runtime,
+    delete_voice_profile_runtime,
+)
 
 
 class VoiceCloningError(RuntimeError):
@@ -29,8 +29,8 @@ def create_user_voice_profile(
     audio_file_path: str,
     preferred_name: str,
     target_model: str = TTS_VC_TARGET_MODEL,
-    language: Optional[str] = None,
-    db: Optional[Session] = None,
+    language: str | None = None,
+    db: Session | None = None,
 ) -> VoiceProfile:
     """Create a voice profile for a user.
 
@@ -98,7 +98,7 @@ def create_user_voice_profile(
 
 def list_user_voices(
     user_id: int,
-    db: Optional[Session] = None,
+    db: Session | None = None,
 ) -> list[VoiceProfile]:
     """List all voice profiles for a user.
 
@@ -127,8 +127,8 @@ def list_user_voices(
 def get_voice_profile(
     user_id: int,
     voice_name: str,
-    db: Optional[Session] = None,
-) -> Optional[VoiceProfile]:
+    db: Session | None = None,
+) -> VoiceProfile | None:
     """Get a specific voice profile for a user.
 
     Args:
@@ -156,7 +156,7 @@ def get_voice_profile(
 
 def update_voice_used_time(
     voice_profile: VoiceProfile,
-    db: Optional[Session] = None,
+    db: Session | None = None,
 ) -> None:
     """Update the last used timestamp of a voice profile.
 
@@ -180,7 +180,7 @@ def update_voice_used_time(
 def delete_user_voice_profile(
     user_id: int,
     voice_name: str,
-    db: Optional[Session] = None,
+    db: Session | None = None,
 ) -> bool:
     """Delete a user's voice profile.
 

@@ -1,14 +1,24 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 from datetime import datetime
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
 from app.db import Base, schema_fk, table_args
-
 
 _RATE_YUAN_QUANTIZER = Decimal("0.0001")
 _RATE_CENT_QUANTIZER = Decimal("0.01")
@@ -55,7 +65,7 @@ class WalletAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
-    user: Mapped["User"] = relationship(back_populates="wallet_account")
+    user: Mapped[User] = relationship(back_populates="wallet_account")
 
     @property
     def balance_points(self) -> int:
@@ -72,7 +82,8 @@ class WalletLedger(Base):
         CheckConstraint(
             "event_type IN ('reserve','consume','refund','manual_adjust','redeem_code','consume_translate','refund_translate','consume_llm')",
             name="ck_wallet_ledger_event_type",
-        )
+        ),
+        Index("ix_wallet_ledger_user_lesson", "user_id", "lesson_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

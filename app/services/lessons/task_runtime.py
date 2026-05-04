@@ -3,12 +3,11 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from app.core.timezone import now_shanghai_naive
-
 
 logger = logging.getLogger(__name__)
 

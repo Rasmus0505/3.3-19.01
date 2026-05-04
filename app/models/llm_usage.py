@@ -7,7 +7,15 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
@@ -44,8 +52,8 @@ class LLMUsageLog(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
 
-    user: Mapped["User"] = relationship(back_populates="llm_usage_logs")
-    lesson: Mapped["Lesson | None"] = relationship(back_populates="llm_usage_logs")
+    user: Mapped[User] = relationship(back_populates="llm_usage_logs")
+    lesson: Mapped[Lesson | None] = relationship(back_populates="llm_usage_logs")
 
     @property
     def profit_per_request(self) -> int:

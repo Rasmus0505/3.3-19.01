@@ -9,8 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.db import APP_SCHEMA
 from app.models import BillingModelRate
-from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yuan_to_compat_cents
-
+from app.models.billing import (
+    cents_to_rate_yuan,
+    normalize_rate_yuan,
+    rate_yuan_to_compat_cents,
+)
 
 logger = logging.getLogger(__name__)
 

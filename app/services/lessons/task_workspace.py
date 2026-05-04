@@ -7,7 +7,6 @@ from app.core.config import LESSON_WORKSPACE_ROOT_DIR
 from app.core.timezone import now_shanghai_naive
 from app.models import LessonGenerationTask
 
-
 WORKSPACE_EVENT_LIMIT = 20
 WORKSPACE_SUBTITLE_PREVIEW_LIMIT = 3
 TASK_STATUS_SUCCEEDED = "succeeded"

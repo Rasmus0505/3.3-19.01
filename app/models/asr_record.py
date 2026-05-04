@@ -2,7 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
@@ -29,7 +38,7 @@ class AsrRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
-    items: Mapped[list["AsrRecordItem"]] = relationship(back_populates="record", cascade="all, delete-orphan", order_by="AsrRecordItem.file_index")
+    items: Mapped[list[AsrRecordItem]] = relationship(back_populates="record", cascade="all, delete-orphan", order_by="AsrRecordItem.file_index")
 
 
 class AsrRecordItem(Base):

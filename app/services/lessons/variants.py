@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -18,10 +19,13 @@ from app.services.lesson_builder import (
     normalize_learning_english_text,
     tokenize_learning_sentence,
 )
-from app.services.media import MediaError
 from app.services.lessons.content_options import normalize_generation_options
-from app.services.translation_qwen_mt import TranslationError, translate_sentences_to_zh, translation_batch_chars_scope
-
+from app.services.media import MediaError
+from app.services.translation_qwen_mt import (
+    TranslationError,
+    translate_sentences_to_zh,
+    translation_batch_chars_scope,
+)
 
 logger = logging.getLogger(__name__)
 

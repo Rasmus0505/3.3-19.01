@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from .admin_logs import append_admin_operation_log
-from .common import BillingError, SubtitleSettingsSnapshot, build_rate_payload, normalize_rate_yuan, yuan_to_compat_cents
+from .common import (
+    BillingError,
+    SubtitleSettingsSnapshot,
+    build_rate_payload,
+    normalize_rate_yuan,
+    yuan_to_compat_cents,
+)
 from .constants import (
     ADMIN_BILLING_MODEL_ORDER,
     DEFAULT_MODEL_RATES,
@@ -30,7 +36,12 @@ from .constants import (
     REDEEM_CODE_STATUS_DISABLED,
     REDEEM_CODE_STATUS_REDEEMED,
 )
-from .rates import enforce_mt_flash_only_rates, ensure_default_billing_rates, list_admin_rates, list_public_rates
+from .rates import (
+    enforce_mt_flash_only_rates,
+    ensure_default_billing_rates,
+    list_admin_rates,
+    list_public_rates,
+)
 from .redeem import (
     abandon_redeem_batch,
     abandon_redeem_code_with_refund,

@@ -1,11 +1,10 @@
 """Service layer for image understanding operations."""
 from __future__ import annotations
 
-from typing import Optional
-
 from app.core.config import QWEN_VISION_MODEL, QWEN_VISION_TIMEOUT_SECONDS
 from app.infra.vision import VisionConfig, VisionError, VisionResult
-from app.services.ai_platform import AiPlatformError, analyze_image as analyze_image_via_platform
+from app.services.ai_platform import AiPlatformError
+from app.services.ai_platform import analyze_image as analyze_image_via_platform
 
 
 class VisionServiceError(RuntimeError):
@@ -28,8 +27,8 @@ def analyze_image_with_qwen(
     image_source: str,
     *,
     prompt: str = "",
-    config: Optional[VisionConfig] = None,
-    api_key: Optional[str] = None,
+    config: VisionConfig | None = None,
+    api_key: str | None = None,
 ) -> VisionResult:
     """Analyze an image without exposing provider-specific details to callers."""
     try:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -22,8 +22,8 @@ class ImageGenerationConfig:
     image_count: int = 1
     prompt_extend: bool = True
     watermark: bool = False
-    negative_prompt: Optional[str] = None
-    seed: Optional[int] = None
+    negative_prompt: str | None = None
+    seed: int | None = None
     request_timeout: int = 180
 
 
@@ -35,9 +35,9 @@ class ImageGenerationResult:
     provider: str = ""
     model: str = ""
     request_id: str = ""
-    width: Optional[int] = None
-    height: Optional[int] = None
-    raw_result: Optional[dict[str, Any]] = None
+    width: int | None = None
+    height: int | None = None
+    raw_result: dict[str, Any] | None = None
 
 
 class ImageGenerationProvider(ABC):
@@ -53,7 +53,7 @@ class ImageGenerationProvider(ABC):
     def generate(
         self,
         prompt: str,
-        config: Optional[ImageGenerationConfig] = None,
+        config: ImageGenerationConfig | None = None,
     ) -> ImageGenerationResult:
         """Generate one or more images from a text prompt."""
         pass

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 VALID_COLLINS_LEVELS: tuple[int, ...] = (1, 2, 3, 4, 5)
 _LEGACY_LEARNING_LEVEL_TO_COLLINS: dict[str, int] = {
     "A1": 5,

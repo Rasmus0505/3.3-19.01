@@ -1,14 +1,25 @@
-﻿import { useMemo } from "react";
+﻿import { lazy, useMemo } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 
-import { AdminAnnouncementsPage } from "./features/admin-pages/AdminAnnouncementsPage";
-import { AdminRedeemPage } from "./features/admin-pages/AdminRedeemPage";
-import { AdminSecurityPage } from "./features/admin-pages/AdminSecurityPage";
-import { AdminUsersPage } from "./features/admin-pages/AdminUsersPage";
-import { AdminMonitoringWorkspace } from "./features/admin-workspaces/AdminMonitoringWorkspace";
 import { useErrorCopyShortcut } from "./shared/hooks/useErrorCopyShortcut";
 import { resolveAdminNavItem } from "./shared/lib/adminSearchParams";
 import { Badge } from "./shared/ui";
+
+const AdminAnnouncementsPage = lazy(() =>
+  import("./features/admin-pages/AdminAnnouncementsPage").then((m) => ({ default: m.AdminAnnouncementsPage })),
+);
+const AdminRedeemPage = lazy(() =>
+  import("./features/admin-pages/AdminRedeemPage").then((m) => ({ default: m.AdminRedeemPage })),
+);
+const AdminSecurityPage = lazy(() =>
+  import("./features/admin-pages/AdminSecurityPage").then((m) => ({ default: m.AdminSecurityPage })),
+);
+const AdminUsersPage = lazy(() =>
+  import("./features/admin-pages/AdminUsersPage").then((m) => ({ default: m.AdminUsersPage })),
+);
+const AdminMonitoringWorkspace = lazy(() =>
+  import("./features/admin-workspaces/AdminMonitoringWorkspace").then((m) => ({ default: m.AdminMonitoringWorkspace })),
+);
 
 export function AdminApp({ apiCall }) {
   const location = useLocation();

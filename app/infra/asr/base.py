@@ -3,26 +3,25 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 
 @dataclass
 class ASRResult:
     """Result of ASR transcription."""
     text: str
-    language: Optional[str] = None
-    duration_seconds: Optional[float] = None
-    segments: List[dict] = field(default_factory=list)
+    language: str | None = None
+    duration_seconds: float | None = None
+    segments: list[dict] = field(default_factory=list)
     provider: str = ""
     model: str = ""
-    raw_result: Optional[dict] = None
+    raw_result: dict | None = None
 
 
 @dataclass
 class ASRConfig:
     """ASR configuration."""
     model_name: str
-    language: Optional[str] = None
+    language: str | None = None
     requests_timeout: int = 120
 
 
@@ -39,7 +38,7 @@ class ASRProvider(ABC):
     def transcribe(
         self,
         audio_path: str,
-        config: Optional[ASRConfig] = None,
+        config: ASRConfig | None = None,
     ) -> ASRResult:
         """
         Transcribe audio file.

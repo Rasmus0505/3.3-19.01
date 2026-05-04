@@ -8,10 +8,11 @@ from decimal import Decimal
 from app.core.timezone import now_shanghai_naive
 from app.models.billing import (
     cents_to_rate_yuan,
-    normalize_rate_yuan as model_normalize_rate_yuan,
     rate_yuan_to_compat_cents,
 )
-
+from app.models.billing import (
+    normalize_rate_yuan as model_normalize_rate_yuan,
+)
 
 logger = logging.getLogger(__name__)
 

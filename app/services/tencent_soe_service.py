@@ -6,15 +6,15 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.core.config import TENCENT_SECRET_ID, TENCENT_SECRET_KEY, TENCENT_SOE_APP_ID
-from app.db import SessionLocal
 from app.core.timezone import now_shanghai_naive
+from app.db import SessionLocal
 from app.infra.tencent_soe import (
     ENGINE_EN,
     EVAL_MODE_SENTENCE,
+    VOICE_FORMAT_WAV,
     SOEAssessmentError,
     SOEConfigError,
     SOEResult,
-    VOICE_FORMAT_WAV,
     soe_assessment_file,
 )
 from app.models import SOEResult as SOEResultModel

@@ -5,15 +5,21 @@ from fastapi import APIRouter, Depends, Query
 from app.api.deps.auth import get_current_user
 from app.core.errors import error_response
 from app.models import User
-from app.schemas import AsrModelListResponse, AsrModelPrepareResponse, AsrModelStatusResponse, ErrorResponse
+from app.schemas import (
+    AsrModelListResponse,
+    AsrModelPrepareResponse,
+    AsrModelStatusResponse,
+    ErrorResponse,
+)
 from app.services.asr_model_registry import (
     get_asr_model_status,
     get_supported_asr_model_keys,
     list_asr_models_with_status,
-    prepare_asr_model as prepare_registered_asr_model,
     verify_asr_model,
 )
-
+from app.services.asr_model_registry import (
+    prepare_asr_model as prepare_registered_asr_model,
+)
 
 router = APIRouter(prefix="/api/asr-models", tags=["asr-models"])
 

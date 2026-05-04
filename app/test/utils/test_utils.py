@@ -1,18 +1,16 @@
 """工具函数单元测试。"""
-import pytest
-from datetime import datetime
 from pathlib import Path
 
+from app.utils.file import get_file_extension, sanitize_filename
 from app.utils.text import (
-    normalize_whitespace,
-    truncate_text,
-    remove_control_characters,
-    remove_zero_width_chars,
     clean_text_for_display,
     normalize_for_search,
+    normalize_whitespace,
+    remove_control_characters,
+    remove_zero_width_chars,
     split_into_chunks,
+    truncate_text,
 )
-from app.utils.file import sanitize_filename, get_file_extension
 
 
 class TestTextUtils:
@@ -135,5 +133,4 @@ class TestFileUtils:
 
     def test_get_file_extension_with_pathlib(self):
         """测试 pathlib 路径的扩展名获取。"""
-        from pathlib import Path
         assert get_file_extension(Path("document.pdf")) == "pdf"

@@ -23,7 +23,6 @@ from app.core.config import (
 from app.exceptions.asr import AsrCancellationRequested, AsrError
 from app.services.media import resolve_media_command
 
-
 STEPFUN_ASR_MODEL = "stepaudio-2.5-asr"
 STEPFUN_ASR_STREAM_MODEL = "step-asr-1.1-stream"
 PCM_RATE = 16000
@@ -168,7 +167,7 @@ async def _run_stepfun_realtime_asr(
                 _raise_if_cancel_requested(audio_path=audio_path_for_cancel)
                 try:
                     raw_event = await asyncio.wait_for(websocket.recv(), timeout=max(5, int(request_timeout or 120)))
-                except asyncio.TimeoutError as exc:
+                except TimeoutError as exc:
                     raise AsrError("ASR_REQUEST_TIMEOUT", "StepAudio 2.5 ASR 等待识别结果超时") from exc
                 try:
                     event = json.loads(str(raw_event or ""))

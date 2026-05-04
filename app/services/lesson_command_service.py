@@ -14,33 +14,46 @@ from fastapi import UploadFile
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import BASE_DATA_DIR, BASE_TMP_DIR, DASHSCOPE_API_KEY, LESSON_TASK_MAX_ACTIVE, LESSON_TASK_MAX_QUEUED, UPLOAD_MAX_BYTES
+from app.core.config import (
+    BASE_DATA_DIR,
+    BASE_TMP_DIR,
+    DASHSCOPE_API_KEY,
+    LESSON_TASK_MAX_ACTIVE,
+    LESSON_TASK_MAX_QUEUED,
+    UPLOAD_MAX_BYTES,
+)
 from app.core.timezone import now_shanghai_naive
 from app.models import Lesson, LessonGenerationTask, WalletLedger
-from app.repositories.admin_console import invalidate_admin_overview_cache, invalidate_admin_user_activity_summary_cache
+from app.repositories.admin_console import (
+    invalidate_admin_overview_cache,
+    invalidate_admin_user_activity_summary_cache,
+)
 from app.repositories.lessons import update_lesson_title_for_user
-from app.services.course_generation.pipeline import CourseGenerationError, GenerationJobSpec, run_generation_job
 from app.services.asr_dashscope import AsrCancellationRequested, AsrError
 from app.services.billing_service import (
     BillingError,
     calculate_points,
     ensure_default_billing_rates,
-    get_default_asr_model,
     get_model_rate,
     get_or_create_wallet_account,
+)
+from app.services.course_generation.pipeline import (
+    CourseGenerationError,
+    GenerationJobSpec,
+    run_generation_job,
 )
 from app.services.lesson_query_service import invalidate_lesson_catalog_cache
 from app.services.lesson_service import LessonService
 from app.services.lesson_task_manager import (
-    LessonTaskStorageNotReadyError,
     TASK_ADMISSION_STATE_ADMITTED,
     TASK_ADMISSION_STATE_QUEUED,
     TASK_STATUS_PAUSING,
     TASK_STATUS_PENDING,
     TASK_STATUS_RUNNING,
     TASK_STATUS_TERMINATING,
-    build_task_id,
+    LessonTaskStorageNotReadyError,
     bind_task_terminate_runtime,
+    build_task_id,
     clear_task_terminate_runtime,
     configure_task_runtime_probe,
     create_task,
@@ -59,15 +72,26 @@ from app.services.lesson_task_manager import (
     signal_task_terminate,
     update_task_progress,
 )
+from app.services.lessons.content_options import (
+    build_generated_content_status,
+    normalize_generation_options,
+)
 from app.services.lessons.recovery_contract import (
     RESUME_MODE_RESTART_WITHOUT_UPLOAD,
     RESUME_MODE_UNAVAILABLE,
     derive_resume_plan,
 )
-from app.services.lessons.content_options import build_generated_content_status, normalize_generation_options
-from app.services.media import MediaError, cleanup_dir, probe_audio_duration_ms, save_upload_file_stream, validate_suffix
-from app.services.translation_qwen_mt import TranslationCancellationRequested, TranslationError
-
+from app.services.media import (
+    MediaError,
+    cleanup_dir,
+    probe_audio_duration_ms,
+    save_upload_file_stream,
+    validate_suffix,
+)
+from app.services.translation_qwen_mt import (
+    TranslationCancellationRequested,
+    TranslationError,
+)
 
 logger = logging.getLogger(__name__)
 PROCESS_STARTED_AT = now_shanghai_naive()

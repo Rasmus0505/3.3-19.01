@@ -12,8 +12,15 @@ from app.models.billing import (
     WalletAccount,
     WalletLedger,
 )
-
-from app.models.lesson import Lesson, LessonGenerationTask, LessonProgress, LessonSentence, MediaAsset, WordbookEntry, WordbookEntrySource
+from app.models.lesson import (
+    Lesson,
+    LessonGenerationTask,
+    LessonProgress,
+    LessonSentence,
+    MediaAsset,
+    WordbookEntry,
+    WordbookEntrySource,
+)
 from app.models.llm_usage import LLMUsageLog
 from app.models.reading_pack import ReadingPack
 from app.models.soe_result import SOEResult

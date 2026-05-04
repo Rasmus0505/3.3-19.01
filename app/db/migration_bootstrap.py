@@ -15,7 +15,6 @@ from sqlalchemy import inspect, text
 from app.db.base import is_sqlite_url, schema_name_for_url
 from app.db.session import create_database_engine
 
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_LOCK_ID = 33190114

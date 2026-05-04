@@ -8,10 +8,9 @@ from fastapi import APIRouter, File, Form, UploadFile
 from app.core.config import BASE_TMP_DIR, REQUEST_TIMEOUT_SECONDS
 from app.core.errors import error_response, map_media_error
 from app.schemas import ErrorResponse, SuccessResponse
-from app.services.asr_dashscope import AsrError, DEFAULT_MODEL, SUPPORTED_MODELS
+from app.services.asr_dashscope import DEFAULT_MODEL, SUPPORTED_MODELS, AsrError
 from app.services.media import cleanup_dir, create_request_dir
 from app.services.transcription_service import transcribe_uploaded_file
-
 
 router = APIRouter(prefix="/api/transcribe", tags=["transcribe"])
 
@@ -45,7 +44,7 @@ async def transcribe_file_with_model(
             asr_result_json=asr_result["asr_result_json"],
             elapsed_ms=elapsed_ms,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return error_response(504, "REQUEST_TIMEOUT", "请求处理超时", f"超过 {REQUEST_TIMEOUT_SECONDS} 秒")
     except AsrError as exc:
         if exc.code == "INVALID_MODEL":

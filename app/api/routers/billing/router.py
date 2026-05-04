@@ -6,8 +6,12 @@ from sqlalchemy.orm import Session
 from app.api.serializers import to_public_subtitle_settings, to_rate_item
 from app.db import get_db
 from app.schemas import BillingRatesResponse
-from app.services.billing import enforce_mt_flash_only_rates, ensure_default_billing_rates, get_subtitle_settings, list_public_rates
-
+from app.services.billing import (
+    enforce_mt_flash_only_rates,
+    ensure_default_billing_rates,
+    get_subtitle_settings,
+    list_public_rates,
+)
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 

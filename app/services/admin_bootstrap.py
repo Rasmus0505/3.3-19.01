@@ -5,7 +5,11 @@ import os
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_admin_bootstrap_password, is_admin_bootstrap_password_strong, is_production_environment
+from app.core.config import (
+    get_admin_bootstrap_password,
+    is_admin_bootstrap_password_strong,
+    is_production_environment,
+)
 from app.models import User
 from app.security import hash_password
 from app.services.billing_service import get_or_create_wallet_account

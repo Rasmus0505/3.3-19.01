@@ -7,11 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.db import Base, engine, get_db
+from app.db import engine, get_db
 from app.models.reading_pack import ReadingPack
 from app.models.user import User
 

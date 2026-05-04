@@ -3,18 +3,18 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.config import BASE_DATA_DIR, DASHSCOPE_API_KEY
-from app.services.forced_alignment import ForcedAlignmentError, align_transcript_timestamps
-from app.services.ai_platform import transcribe_audio, translate_sentences
 from app.models import Lesson, LessonSentence, MediaAsset
 from app.repositories.progress import create_progress
+from app.services.ai_platform import transcribe_audio, translate_sentences
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
     append_translation_request_logs,
@@ -28,6 +28,10 @@ from app.services.billing_service import (
     settle_reserved_points,
 )
 from app.services.collins_levels import normalize_collins_level
+from app.services.forced_alignment import (
+    ForcedAlignmentError,
+    align_transcript_timestamps,
+)
 from app.services.lesson_builder import (
     estimate_duration_ms,
     extract_sentences,
@@ -58,7 +62,6 @@ from app.services.lessons.vocabulary import process_sentences_with_vocabulary
 from app.services.llm_usage_service import log_llm_usage
 from app.services.media import extract_audio_for_asr, probe_audio_duration_ms
 from app.services.translation_qwen_mt import MT_MODEL, TranslationError
-
 
 logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[dict[str, Any]], None]

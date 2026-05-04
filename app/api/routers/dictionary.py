@@ -13,7 +13,6 @@ from app.schemas.dictionary import (
 from app.services.collins_levels import normalize_collins_level
 from app.services.dictionary_service import classify_tokens, dictionary_db_exists
 
-
 router = APIRouter(prefix="/api/dictionary", tags=["dictionary"])
 
 

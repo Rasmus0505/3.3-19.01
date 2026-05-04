@@ -4,7 +4,6 @@ from typing import Any
 
 from sqlalchemy.orm import DeclarativeBase
 
-
 APP_SCHEMA = "app"
 BUSINESS_TABLES = (
     "users",

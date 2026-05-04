@@ -6,13 +6,12 @@ import math
 import re
 import shutil
 import subprocess
-import threading
-import time
-from datetime import date, datetime
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from fastapi import UploadFile
@@ -26,47 +25,39 @@ from app.core.config import (
     DASHSCOPE_API_KEY,
     UPLOAD_MAX_BYTES,
 )
+from app.infra.dashscope_storage import (
+    get_file_signed_url,
+    normalize_dashscope_file_url,
+)
 from app.models import Lesson, LessonSentence, MediaAsset, TranslationRequestLog
 from app.models.billing import BillingModelRate
 from app.repositories.progress import create_progress
-from app.services.asr_dashscope import AsrError, transcribe_audio_file, transcribe_signed_url
-from app.infra.dashscope_storage import get_file_signed_url, normalize_dashscope_file_url
+from app.services.asr_dashscope import (
+    AsrError,
+    transcribe_audio_file,
+    transcribe_signed_url,
+)
 from app.services.billing_service import (
     EVENT_CONSUME_TRANSLATE,
     append_translation_request_logs,
-    calculate_llm_charge_by_tokens,
     calculate_llm_cost_by_tokens,
     calculate_points,
     calculate_token_points,
     consume_points,
     get_model_rate,
-    get_subtitle_settings_snapshot,
-    record_consume,
     refund_points,
     reserve_points,
     settle_reserved_points,
 )
-from app.services.llm_usage_service import log_llm_usage
 from app.services.collins_levels import normalize_collins_level
 from app.services.lesson_builder import (
-    build_lesson_sentences,
     compose_text_from_words,
     estimate_duration_ms,
     extract_sentences,
     extract_word_items,
-    normalize_learning_english_text,
-    tokenize_learning_sentence,
-    tokenize_sentence,
 )
-from app.services.lessons.vocabulary import (
-    extract_vocabulary_analysis_from_sentences as _extract_vocabulary_analysis_from_sentences_impl,
-    generate_vocabulary_explanation as _generate_vocabulary_explanation_impl,
-    process_sentences_with_vocabulary as _process_sentences_with_vocabulary_impl,
-)
-from app.services.lessons.persistence import (
-    attach_task_result_metadata as _attach_task_result_metadata_impl,
-    build_one_lesson as _build_one_lesson_impl,
-    create_lesson_from_local_generation_result as _create_lesson_from_local_generation_result_impl,
+from app.services.lesson_task_manager import (
+    persist_lesson_workspace_summary,
 )
 from app.services.lessons.content_options import (
     CONTENT_STATE_GENERATED,
@@ -77,22 +68,54 @@ from app.services.lessons.content_options import (
     normalize_generated_content_status,
     normalize_generation_options,
 )
+from app.services.lessons.persistence import (
+    attach_task_result_metadata as _attach_task_result_metadata_impl,
+)
+from app.services.lessons.persistence import (
+    build_one_lesson as _build_one_lesson_impl,
+)
+from app.services.lessons.persistence import (
+    create_lesson_from_local_generation_result as _create_lesson_from_local_generation_result_impl,
+)
 from app.services.lessons.variants import (
     build_local_generation_result as _build_local_generation_result_impl,
+)
+from app.services.lessons.variants import (
     build_subtitle_cache_seed as _build_subtitle_cache_seed_impl,
+)
+from app.services.lessons.variants import (
     build_subtitle_variant as _build_subtitle_variant_impl,
+)
+from app.services.lessons.variants import (
     build_task_result_meta as _build_task_result_meta_impl,
+)
+from app.services.lessons.variants import (
     normalize_runtime_sentences as _normalize_runtime_sentences_impl,
 )
-from app.services.lesson_task_manager import patch_task_artifacts, persist_lesson_workspace_summary
-from app.services.media import MediaError, extract_audio_for_asr, probe_audio_duration_ms, resolve_media_command, run_cmd, save_upload_file_stream, validate_suffix
+from app.services.lessons.vocabulary import (
+    extract_vocabulary_analysis_from_sentences as _extract_vocabulary_analysis_from_sentences_impl,
+)
+from app.services.lessons.vocabulary import (
+    generate_vocabulary_explanation as _generate_vocabulary_explanation_impl,
+)
+from app.services.lessons.vocabulary import (
+    process_sentences_with_vocabulary as _process_sentences_with_vocabulary_impl,
+)
+from app.services.llm_usage_service import log_llm_usage
+from app.services.media import (
+    MediaError,
+    extract_audio_for_asr,
+    probe_audio_duration_ms,
+    resolve_media_command,
+    run_cmd,
+    save_upload_file_stream,
+    validate_suffix,
+)
 from app.services.translation_qwen_mt import (
     MT_MODEL,
     TranslationError,
     translate_sentences_to_zh,
-    translation_batch_chars_scope,
 )
-
 
 logger = logging.getLogger(__name__)
 

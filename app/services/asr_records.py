@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.models import AsrRecord, AsrRecordItem
 from app.services.lesson_builder import extract_sentences
 
-
 ASR_RECORD_OUTPUT_MODES = {"per_file", "merged"}
 ASR_RECORD_STATUS_SUCCEEDED = "succeeded"
 ASR_RECORD_STATUS_PARTIAL = "partial"

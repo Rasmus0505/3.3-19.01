@@ -5,7 +5,6 @@ import re
 import unicodedata
 from typing import Any
 
-
 # 控制字符正则
 CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
@@ -66,18 +65,18 @@ def split_into_chunks(text: str, chunk_size: int, overlap: int = 0) -> list[str]
         return []
     if overlap < 0 or overlap >= chunk_size:
         raise ValueError("overlap must be non-negative and less than chunk_size")
-    
+
     chunks = []
     start = 0
     text_len = len(text)
-    
+
     while start < text_len:
         end = start + chunk_size
         chunks.append(text[start:end])
         if end >= text_len:
             break
         start = end - overlap
-    
+
     return chunks
 
 

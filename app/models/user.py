@@ -23,12 +23,12 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
-    lessons: Mapped[list["Lesson"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    reading_packs: Mapped[list["ReadingPack"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    wallet_account: Mapped["WalletAccount | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
-    login_events: Mapped[list["UserLoginEvent"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    llm_usage_logs: Mapped[list["LLMUsageLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    voice_profiles: Mapped[list["VoiceProfile"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    lessons: Mapped[list[Lesson]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    reading_packs: Mapped[list[ReadingPack]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    wallet_account: Mapped[WalletAccount | None] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")
+    login_events: Mapped[list[UserLoginEvent]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    llm_usage_logs: Mapped[list[LLMUsageLog]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    voice_profiles: Mapped[list[VoiceProfile]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class UserLoginEvent(Base):
@@ -40,5 +40,5 @@ class UserLoginEvent(Base):
     event_type: Mapped[str] = mapped_column(String(32), nullable=False, default="login", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False, index=True)
 
-    user: Mapped["User"] = relationship(back_populates="login_events")
+    user: Mapped[User] = relationship(back_populates="login_events")
 

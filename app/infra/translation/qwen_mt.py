@@ -1,19 +1,19 @@
 """Qwen-MT Translation provider implementation."""
 from __future__ import annotations
 
-from typing import Any, Callable, List
+from collections.abc import Callable
 
-from app.infra.translation.base import TranslationProvider, TranslationRequest, TranslationResult
+from app.infra.translation.base import (
+    TranslationProvider,
+    TranslationRequest,
+    TranslationResult,
+)
 from app.infra.translation_qwen_mt import (
     MT_MODEL,
     SemanticSplitError,
-    TranslationAttemptRecord,
-    TranslationBatchResult,
     TranslationError,
-    current_translation_batch_max_chars,
     split_sentence_by_semantic,
     translate_sentences_to_zh,
-    translation_batch_chars_scope,
 )
 
 
@@ -85,11 +85,11 @@ class QwenMTProvider(TranslationProvider):
 
     def translate_batch(
         self,
-        requests: List[TranslationRequest],
+        requests: list[TranslationRequest],
         progress_callback: Callable[[int, int], None] | None = None,
         resume_state: dict[str, object] | None = None,
         checkpoint_callback: Callable[[dict[str, object]], None] | None = None,
-    ) -> List[TranslationResult]:
+    ) -> list[TranslationResult]:
         """Translate multiple texts in batch.
 
         Args:
@@ -127,7 +127,7 @@ class QwenMTProvider(TranslationProvider):
                 checkpoint_callback=checkpoint_callback,
             )
 
-            results: List[TranslationResult] = []
+            results: list[TranslationResult] = []
             for i, sentence in enumerate(sentences):
                 source_lang = source_langs[i] if i < len(source_langs) else "en"
                 target_lang = target_langs[i] if i < len(target_langs) else "zh"
@@ -164,7 +164,7 @@ class QwenMTProvider(TranslationProvider):
         text: str,
         *,
         timeout_seconds: int = 30,
-    ) -> List[str]:
+    ) -> list[str]:
         """Split a sentence into shorter subtitle lines.
 
         Args:

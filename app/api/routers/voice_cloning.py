@@ -1,7 +1,6 @@
 """Voice cloning API endpoints."""
 from __future__ import annotations
 
-import os
 import time
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.core.config import BASE_TMP_DIR, UPLOAD_MAX_BYTES
+from app.core.config import BASE_TMP_DIR
 from app.core.errors import error_response
 from app.db import get_db
 from app.models import User
@@ -27,7 +26,6 @@ from app.services.voice_cloning_service import (
     delete_user_voice_profile,
     list_user_voices,
 )
-
 
 router = APIRouter(prefix="/api/voice-cloning", tags=["voice-cloning"])
 

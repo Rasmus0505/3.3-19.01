@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, date
+from collections.abc import Callable
+from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Callable
 from pathlib import Path
+from typing import Any
 
 
 def safe_json_dumps(
@@ -17,7 +18,7 @@ def safe_json_dumps(
     **kwargs,
 ) -> str:
     """安全的 JSON 序列化，处理特殊类型。"""
-    
+
     def default_handler(o: Any) -> Any:
         if isinstance(o, datetime):
             return o.isoformat()
@@ -30,7 +31,7 @@ def safe_json_dumps(
         if default:
             return default(o)
         return str(o)
-    
+
     return json.dumps(
         obj,
         default=default_handler,
@@ -47,7 +48,7 @@ def safe_json_loads(s: str | bytes) -> Any:
 
 def read_json_file(path: str | Path) -> Any:
     """读取 JSON 文件。"""
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -86,17 +87,17 @@ def to_dict(value: Any) -> dict[str, Any]:
 
 class JsonFileCache:
     """简单的 JSON 文件缓存。"""
-    
+
     def __init__(self, cache_dir: str | Path):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, Any] = {}
-    
+
     def get(self, key: str) -> Any | None:
         """获取缓存值。"""
         if key in self._cache:
             return self._cache[key]
-        
+
         cache_file = self.cache_dir / f"{key}.json"
         if cache_file.is_file():
             try:
@@ -106,13 +107,13 @@ class JsonFileCache:
             except Exception:
                 return None
         return None
-    
+
     def set(self, key: str, value: Any) -> None:
         """设置缓存值。"""
         self._cache[key] = value
         cache_file = self.cache_dir / f"{key}.json"
         write_json_file(cache_file, value)
-    
+
     def delete(self, key: str) -> bool:
         """删除缓存值。"""
         if key in self._cache:
@@ -122,7 +123,7 @@ class JsonFileCache:
             cache_file.unlink()
             return True
         return False
-    
+
     def clear(self) -> None:
         """清空所有缓存。"""
         self._cache.clear()

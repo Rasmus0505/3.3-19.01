@@ -4,7 +4,11 @@ from decimal import Decimal
 
 from app.core.timezone import to_shanghai_aware
 from app.models import BillingModelRate, Lesson, LessonSentence, SubtitleSetting, User
-from app.models.billing import cents_to_rate_yuan, normalize_rate_yuan, rate_yuan_to_compat_cents
+from app.models.billing import (
+    cents_to_rate_yuan,
+    normalize_rate_yuan,
+    rate_yuan_to_compat_cents,
+)
 from app.schemas import (
     AdminSubtitleSettingsItem,
     BillingRateItem,
@@ -21,7 +25,10 @@ from app.schemas import (
 )
 from app.services.asr_model_registry import get_asr_display_meta
 from app.services.collins_levels import normalize_collins_level
-from app.services.lesson_builder import normalize_learning_english_text, tokenize_learning_sentence
+from app.services.lesson_builder import (
+    normalize_learning_english_text,
+    tokenize_learning_sentence,
+)
 from app.services.lessons.content_options import (
     infer_generated_content_status_from_lesson,
     infer_generation_options_from_lesson,

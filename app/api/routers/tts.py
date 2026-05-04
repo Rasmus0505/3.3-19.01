@@ -16,12 +16,16 @@ from app.schemas.tts import (
     VoiceInfoResponse,
     VoiceListResponse,
 )
-from app.services.ai_platform import AiPlatformError, build_tts_data_uri, resolve_default_model, synthesize_tts_streaming
+from app.services.ai_platform import (
+    AiPlatformError,
+    build_tts_data_uri,
+    resolve_default_model,
+    synthesize_tts_streaming,
+)
 from app.services.tts_service import (
     TTSError,
     get_available_voices,
 )
-
 
 router = APIRouter(prefix="/api/tts", tags=["tts"])
 
@@ -130,7 +134,6 @@ async def synthesize_text_stream(
         )
 
         async def generate_sse():
-            from fastapi.responses import StreamingResponse
             import json
 
             for chunk in audio_stream:

@@ -16,7 +16,8 @@
 """
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -46,7 +47,6 @@ class LessonGenerationService:
         Returns:
             生成结果字典
         """
-        # TODO: 迁移 lesson_service.py 中的 generate_lesson 逻辑
         raise NotImplementedError("重构中")
 
     @staticmethod
@@ -63,7 +63,6 @@ class LessonGenerationService:
 
         迁移自 LessonService.build_subtitle_variant
         """
-        # TODO: 迁移 lesson_service.py 中的 build_subtitle_variant 逻辑
         raise NotImplementedError("重构中")
 
 __all__ = [

@@ -3,7 +3,7 @@
 import re
 import unicodedata
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -39,19 +39,19 @@ class UserRepository(Repository[User]):
     def __init__(self, session: Session):
         super().__init__(User, session)
 
-    def get_by_email(self, email: str) -> Optional[User]:
+    def get_by_email(self, email: str) -> User | None:
         return self.session.scalar(select(User).where(User.email == email))
 
-    def get_by_normalized_username(self, username: str) -> Optional[User]:
+    def get_by_normalized_username(self, username: str) -> User | None:
         normalized = normalize_username(username)
         if not normalized:
             return None
         return self.session.scalar(select(User).where(User.username_normalized == normalized))
 
-    def get_admin_users(self) -> List[User]:
+    def get_admin_users(self) -> list[User]:
         return list(self.session.scalars(select(User).where(User.is_admin == True).order_by(User.id.asc())))
 
-    def update_last_login(self, user_id: int) -> Optional[User]:
+    def update_last_login(self, user_id: int) -> User | None:
         user = self.get(user_id)
         if user:
             user.last_login_at = datetime.now()
@@ -59,7 +59,7 @@ class UserRepository(Repository[User]):
             self.session.flush()
         return user
 
-    def get_user_with_wallet(self, user_id: int) -> Optional[Tuple[User, Optional[WalletAccount]]]:
+    def get_user_with_wallet(self, user_id: int) -> tuple[User, WalletAccount | None] | None:
         user = self.session.scalar(
             select(User).options(joinedload(User.wallet_account)).where(User.id == user_id)
         )
@@ -67,7 +67,7 @@ class UserRepository(Repository[User]):
             return (user, user.wallet_account)
         return None
 
-    def get_user_login_events(self, user_id: int, skip: int = 0, limit: int = 50) -> List[UserLoginEvent]:
+    def get_user_login_events(self, user_id: int, skip: int = 0, limit: int = 50) -> list[UserLoginEvent]:
         return list(
             self.session.scalars(
                 select(UserLoginEvent)
@@ -84,7 +84,7 @@ class UserRepository(Repository[User]):
         self.session.flush()
         return event
 
-    def update_username(self, user_id: int, username: str) -> Optional[User]:
+    def update_username(self, user_id: int, username: str) -> User | None:
         user = self.get(user_id)
         if not user:
             return None
@@ -94,7 +94,7 @@ class UserRepository(Repository[User]):
         self.session.flush()
         return user
 
-    def update_collins_level(self, user_id: int, collins_level: int) -> Optional[User]:
+    def update_collins_level(self, user_id: int, collins_level: int) -> User | None:
         user = self.get(user_id)
         if not user:
             return None

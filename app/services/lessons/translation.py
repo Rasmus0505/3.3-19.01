@@ -8,22 +8,14 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable, Iterable
 from datetime import datetime
-from typing import Any, Callable, Iterable
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.timezone import now_shanghai_naive
 from app.models import TranslationRequestLog
-from app.services.billing import EVENT_CONSUME_TRANSLATE
-from app.services.translation_qwen_mt import (
-    MT_MODEL,
-    SemanticSplitError,
-    TranslationError,
-    split_sentence_by_semantic,
-    translate_sentences_to_zh,
-)
-
 
 logger = logging.getLogger(__name__)
 

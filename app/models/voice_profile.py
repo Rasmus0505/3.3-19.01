@@ -33,4 +33,4 @@ class VoiceProfile(Base):
     gmt_create: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     gmt_used: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    user: Mapped["User"] = relationship(back_populates="voice_profiles")
+    user: Mapped[User] = relationship(back_populates="voice_profiles")

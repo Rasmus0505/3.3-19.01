@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -24,12 +24,12 @@ class OCRConfig:
     min_pixels: int = 32 * 32 * 3
     max_pixels: int = 32 * 32 * 8192
     enable_rotate: bool = False
-    max_tokens: Optional[int] = None
+    max_tokens: int | None = None
     temperature: float = 0.01
     top_p: float = 0.001
-    seed: Optional[int] = None
-    task: Optional[str] = None
-    task_config: Optional[dict[str, Any]] = None
+    seed: int | None = None
+    task: str | None = None
+    task_config: dict[str, Any] | None = None
     request_timeout: int = 180
 
 
@@ -38,7 +38,7 @@ class OCRResult:
     """OCR extraction result."""
 
     text: str = ""
-    structured_result: Optional[dict[str, Any]] = None
+    structured_result: dict[str, Any] | None = None
     words_info: list[OCRWordInfo] = field(default_factory=list)
     provider: str = ""
     model: str = ""
@@ -47,7 +47,7 @@ class OCRResult:
     completion_tokens: int = 0
     total_tokens: int = 0
     image_tokens: int = 0
-    raw_result: Optional[dict[str, Any]] = None
+    raw_result: dict[str, Any] | None = None
 
 
 class OCRProvider(ABC):
@@ -63,7 +63,7 @@ class OCRProvider(ABC):
     def extract(
         self,
         image_source: str,
-        config: Optional[OCRConfig] = None,
+        config: OCRConfig | None = None,
     ) -> OCRResult:
         """Extract text or structured data from an image."""
         pass

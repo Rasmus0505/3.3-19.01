@@ -20,7 +20,6 @@ from app.repositories.admin import (
     list_lesson_ids_for_user,
 )
 
-
 logger = logging.getLogger(__name__)
 
 

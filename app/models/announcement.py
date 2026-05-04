@@ -5,8 +5,8 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
 from app.core.timezone import now_shanghai_naive
+from app.db.base import Base
 
 
 class Announcement(Base):

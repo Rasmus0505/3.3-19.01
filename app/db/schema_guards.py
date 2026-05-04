@@ -9,7 +9,6 @@ from app.core.timezone import now_shanghai_naive
 from app.db import APP_SCHEMA
 from app.models import LessonGenerationTask, User, UserLoginEvent
 
-
 logger = logging.getLogger(__name__)
 
 LESSON_TASK_REQUIRED_COLUMNS: tuple[str, ...] = tuple(str(column.name) for column in LessonGenerationTask.__table__.columns)

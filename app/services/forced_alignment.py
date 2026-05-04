@@ -3,14 +3,14 @@ from __future__ import annotations
 import logging
 import re
 import tempfile
+from collections.abc import Iterable
 from contextlib import suppress
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from app.core.config import QWEN_FORCED_ALIGNER_DEVICE, QWEN_FORCED_ALIGNER_MODEL_DIR
 from app.services.media import MediaError, run_cmd
-
 
 logger = logging.getLogger(__name__)
 _TOKEN_EDGE_RE = re.compile(r"^[\s\.,!?;:\"'`~\-\(\)\[\]\{\}]+|[\s\.,!?;:\"'`~\-\(\)\[\]\{\}]+$")
@@ -83,8 +83,8 @@ def _resolve_model_dir(model_dir: str | Path | None = None) -> Path:
 @lru_cache(maxsize=1)
 def _load_aligner(model_dir_text: str, device: str):
     try:
-        from qwen_asr import Qwen3ForcedAligner  # type: ignore
         import torch  # type: ignore
+        from qwen_asr import Qwen3ForcedAligner  # type: ignore
     except Exception as exc:
         raise ForcedAlignmentError(
             "FORCED_ALIGNER_DEPENDENCY_MISSING",

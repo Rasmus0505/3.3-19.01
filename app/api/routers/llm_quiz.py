@@ -10,7 +10,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, require_collins_level, strip_json_fences
+from app.api.routers.llm_shared import (
+    _require_api_key,
+    recover_json_payload,
+    require_collins_level,
+    strip_json_fences,
+)
 from app.db import get_db
 from app.models import User
 from app.schemas import ErrorResponse

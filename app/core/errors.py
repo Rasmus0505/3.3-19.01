@@ -16,18 +16,13 @@ from fastapi.responses import JSONResponse
 from app.schemas import ErrorResponse
 
 if TYPE_CHECKING:
-    from app.services.media import MediaError as _MediaError
+    pass
 
 
 # ── 重新导出异常类（从 app.exceptions）────────────────────────────────────
 
 from app.exceptions.base import (
     AppError,
-    AuthError,
-    NotFoundError,
-    ValidationError,
-    LessonError,
-    AdminError,
 )
 
 

@@ -1,11 +1,10 @@
 """费率服务单元测试。"""
-import pytest
 from decimal import Decimal
 
 from app.services.billing.rates import (
+    build_rate_payload,
     normalize_rate_yuan,
     yuan_to_compat_cents,
-    build_rate_payload,
 )
 
 

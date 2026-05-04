@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from app.infra.asr_stepfun import STEPFUN_ASR_MODEL
-from app.services.ai_platform.registry import QWEN_ASR_MODEL, filter_models_by_capability, get_model_descriptor
-
+from app.services.ai_platform.registry import (
+    QWEN_ASR_MODEL,
+    filter_models_by_capability,
+    get_model_descriptor,
+)
 
 UPLOAD_ASR_MODEL_KEYS: tuple[str, ...] = (
     QWEN_ASR_MODEL,

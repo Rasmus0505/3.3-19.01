@@ -1,14 +1,27 @@
 from __future__ import annotations
 
-import base64
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from app.core.config import DASHSCOPE_API_KEY, QWEN_VISION_TIMEOUT_SECONDS, TTS_VC_TARGET_MODEL
-from app.infra.asr_dashscope import transcribe_audio_file as transcribe_audio_file_with_cloud
-from app.infra.image_generation import ImageGenerationConfig, generate_image as generate_image_with_qwen
+from app.core.config import (
+    DASHSCOPE_API_KEY,
+    QWEN_VISION_TIMEOUT_SECONDS,
+    TTS_VC_TARGET_MODEL,
+)
+from app.infra.asr_dashscope import (
+    transcribe_audio_file as transcribe_audio_file_with_cloud,
+)
+from app.infra.image_generation import ImageGenerationConfig
+from app.infra.image_generation import generate_image as generate_image_with_qwen
 from app.infra.llm.deepseek import LLMTokenUsage, call_deepseek
-from app.infra.tts import create_voice, delete_voice, synthesize_text, synthesize_text_stream
-from app.infra.vision import VisionConfig, analyze_image as analyze_image_with_qwen
+from app.infra.tts import (
+    create_voice,
+    delete_voice,
+    synthesize_text,
+    synthesize_text_stream,
+)
+from app.infra.vision import VisionConfig
+from app.infra.vision import analyze_image as analyze_image_with_qwen
 from app.services.ai_platform.registry import (
     COSYVOICE_TTS_MODEL,
     MT_MODEL,

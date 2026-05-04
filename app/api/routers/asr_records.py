@@ -35,7 +35,6 @@ from app.services.billing_service import get_default_asr_model
 from app.services.media import MediaError, cleanup_dir, create_request_dir
 from app.services.transcription_service import transcribe_uploaded_file
 
-
 router = APIRouter(prefix="/api/asr-records", tags=["asr-records"])
 
 
@@ -156,7 +155,7 @@ async def transcribe_asr_record_batch(
                         include_filename_headers=bool(include_filename_headers),
                     )
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 item_payloads.append(
                     build_asr_record_failure_payload(
                         file_index=file_index,

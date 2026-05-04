@@ -23,7 +23,12 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
 from app.api.serializers import to_lesson_detail_response
-from app.core.config import BASE_TMP_DIR, DASHSCOPE_API_KEY, REQUEST_TIMEOUT_SECONDS, UPLOAD_MAX_BYTES
+from app.core.config import (
+    BASE_TMP_DIR,
+    DASHSCOPE_API_KEY,
+    REQUEST_TIMEOUT_SECONDS,
+    UPLOAD_MAX_BYTES,
+)
 from app.core.errors import error_response, map_billing_error, map_media_error
 from app.db import get_db
 from app.models import User
@@ -32,8 +37,15 @@ from app.schemas import ErrorResponse, LessonCreateResponse
 from app.services.ai_platform import transcribe_audio
 from app.services.asr_dashscope import AsrCancellationRequested, AsrError
 from app.services.billing_service import BillingError
-from app.services.lesson_command_service import create_completed_lesson_from_local_generation
-from app.services.media import MediaError, cleanup_dir, create_request_dir, save_upload_file_stream
+from app.services.lesson_command_service import (
+    create_completed_lesson_from_local_generation,
+)
+from app.services.media import (
+    MediaError,
+    cleanup_dir,
+    create_request_dir,
+    save_upload_file_stream,
+)
 
 router = APIRouter(prefix="/api/lessons/tasks", tags=["lessons-cloud"])
 logger = logging.getLogger(__name__)

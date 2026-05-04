@@ -7,15 +7,18 @@ import os
 import re
 import threading
 import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Iterator
 
 from openai import OpenAI
 
-from app.core.config import MT_BATCH_MAX_CHARS, MT_MIN_REQUEST_INTERVAL_MS, MT_RETRY_MAX_ATTEMPTS
+from app.core.config import (
+    MT_BATCH_MAX_CHARS,
+    MT_MIN_REQUEST_INTERVAL_MS,
+    MT_RETRY_MAX_ATTEMPTS,
+)
 from app.core.timezone import now_shanghai_naive
-
 
 MT_BASE_URL = os.getenv("MT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1").strip()
 FORCED_MT_MODEL = "qwen-mt-flash"

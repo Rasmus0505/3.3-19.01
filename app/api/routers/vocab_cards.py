@@ -9,9 +9,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
-from app.api.routers.llm_shared import _require_api_key, recover_json_payload, require_collins_level, strip_json_fences
+from app.api.routers.llm_shared import (
+    _require_api_key,
+    recover_json_payload,
+    require_collins_level,
+    strip_json_fences,
+)
 from app.db import get_db
 from app.models import User
+from app.schemas import ErrorResponse
 from app.schemas.vocab_cards import (
     VocabCardGenerateRequest,
     VocabCardGenerateResponse,
@@ -19,7 +25,6 @@ from app.schemas.vocab_cards import (
     VocabCardImageResponse,
     VocabCardResult,
 )
-from app.schemas import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +206,10 @@ def generate_vocab_card_image(
 ):
     from app.api.routers import llm as llm_root
     from app.infra.image_generation import ImageGenerationConfig
-    from app.services.image_generation_service import ImageGenerationServiceError, generate_image
+    from app.services.image_generation_service import (
+        ImageGenerationServiceError,
+        generate_image,
+    )
 
     prompt = (
         f"Educational vocabulary illustration for the English word \"{body.word}\". "

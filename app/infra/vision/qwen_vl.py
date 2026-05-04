@@ -5,7 +5,7 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from openai import OpenAI
 
@@ -16,7 +16,6 @@ from app.core.config import (
     QWEN_VISION_TIMEOUT_SECONDS,
 )
 from app.infra.vision.base import VisionConfig, VisionProvider, VisionResult
-
 
 DEFAULT_MODEL = QWEN_VISION_MODEL
 SUPPORTED_MODEL_PREFIXES = ("qwen3-vl-flash",)
@@ -37,7 +36,7 @@ def _client(api_key: str, *, base_url: str = QWEN_VISION_BASE_URL) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
 
 
-def _ensure_api_key(api_key: Optional[str] = None) -> str:
+def _ensure_api_key(api_key: str | None = None) -> str:
     key = str(api_key or DASHSCOPE_API_KEY or "").strip()
     if key:
         return key
@@ -186,8 +185,8 @@ def _extract_text(raw: dict[str, Any]) -> str:
 def analyze_image(
     image_source: str,
     *,
-    config: Optional[VisionConfig] = None,
-    api_key: Optional[str] = None,
+    config: VisionConfig | None = None,
+    api_key: str | None = None,
     base_url: str = QWEN_VISION_BASE_URL,
 ) -> VisionResult:
     """Analyze an image with qwen3-vl-flash."""
@@ -259,7 +258,7 @@ class QwenVisionProvider(VisionProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         *,
         base_url: str = QWEN_VISION_BASE_URL,
     ):
@@ -279,7 +278,7 @@ class QwenVisionProvider(VisionProvider):
     def analyze(
         self,
         image_source: str,
-        config: Optional[VisionConfig] = None,
+        config: VisionConfig | None = None,
     ) -> VisionResult:
         effective_config = config or self.get_default_config()
         if not self.supports_model(effective_config.model_name):

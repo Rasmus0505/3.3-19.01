@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 import time
 from pathlib import Path
-import subprocess
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -14,13 +14,21 @@ from app.core.config import BASE_TMP_DIR
 from app.core.errors import error_response
 from app.core.timezone import to_shanghai_aware
 from app.db import get_db
+from app.infra.tencent_soe import SOEConfigError
 from app.models import LessonSentence, User
-from app.schemas import SOEAssessResponse, SOEErrorResponse, SOEHistoryItem, SOEHistoryResponse, SOEPhoneResult, SOEWordResult
+from app.schemas import (
+    SOEAssessResponse,
+    SOEErrorResponse,
+    SOEHistoryItem,
+    SOEHistoryResponse,
+    SOEWordResult,
+)
 from app.services.ai_platform import assess_sentence as assess_sentence_with_ai
 from app.services.media import cleanup_dir, create_request_dir, probe_audio_duration_ms
-from app.services.tencent_soe_service import SOEServiceResult, assess_sentence_practice, list_soe_results
-from app.infra.tencent_soe import SOEConfigError
-
+from app.services.tencent_soe_service import (
+    SOEServiceResult,
+    list_soe_results,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +84,7 @@ def _convert_to_wav(audio_path: Path, req_dir: Path) -> Path:
     output_wav = req_dir / f"{audio_path.stem}_soe.wav"
     ffmpeg_bin = None
     try:
-        from app.infra.runtime_tools import get_ffmpeg_bin_dir, resolve_command_path
+        from app.infra.runtime_tools import get_ffmpeg_bin_dir
         resolved = get_ffmpeg_bin_dir()
         if resolved:
             ffmpeg_bin = str(resolved / "ffmpeg")
@@ -226,7 +234,7 @@ async def assess_audio(
             saved_result_id=result.saved_result_id,
         )
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(
             "soe assess timeout user_id=%s lesson_id=%s sentence_id=%s",
             current_user.id,

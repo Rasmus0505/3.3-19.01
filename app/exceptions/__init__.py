@@ -10,16 +10,16 @@
 - media: 媒体处理相关异常
 """
 
+from app.exceptions.asr import AsrCancellationRequested, AsrError
 from app.exceptions.base import (
+    AdminError,
     AppError,
     AuthError,
     NotFoundError,
     ValidationError,
-    AdminError,
 )
 from app.exceptions.billing import BillingError
 from app.exceptions.lesson import LessonError
-from app.exceptions.asr import AsrError, AsrCancellationRequested
 
 __all__ = [
     # 基础异常

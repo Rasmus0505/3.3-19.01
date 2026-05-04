@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -19,6 +19,7 @@ from app.repositories.wordbook import (
     list_due_wordbook_entries,
     list_wordbook_entries,
 )
+from app.services.lesson_builder import tokenize_learning_sentence
 from app.services.wordbook_review_scheduler import (
     REVIEW_GRADES,
     _resolve_interval_hours,
@@ -26,8 +27,6 @@ from app.services.wordbook_review_scheduler import (
     build_initial_review_state,
     clamp_memory_score,
 )
-from app.services.lesson_builder import tokenize_learning_sentence
-
 
 WORD_ENTRY_TYPE = "word"
 PHRASE_ENTRY_TYPE = "phrase"
@@ -335,6 +334,7 @@ def collect_wordbook_entry_freeform(
 def schedule_async_translation(entry_id: int) -> None:
     """Schedule async translation for a wordbook entry in background."""
     import threading
+
     from app.infra.translation_qwen_mt import translate_to_zh
 
     def _translate():

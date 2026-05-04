@@ -1,8 +1,6 @@
 """Service layer for image generation operations."""
 from __future__ import annotations
 
-from typing import Optional
-
 from app.core.config import (
     QWEN_IMAGE_DEFAULT_SIZE,
     QWEN_IMAGE_MODEL,
@@ -35,8 +33,8 @@ def get_default_image_generation_config() -> ImageGenerationConfig:
 def generate_image(
     prompt: str,
     *,
-    config: Optional[ImageGenerationConfig] = None,
-    api_key: Optional[str] = None,
+    config: ImageGenerationConfig | None = None,
+    api_key: str | None = None,
 ) -> ImageGenerationResult:
     """Generate images without exposing provider-specific details to callers."""
     try:

@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -13,9 +12,9 @@ class TranslationResult:
     translated_text: str
     source_lang: str = "en"
     target_lang: str = "zh"
-    tokens_used: Optional[int] = None
+    tokens_used: int | None = None
     provider: str = ""
-    raw_result: Optional[dict] = None
+    raw_result: dict | None = None
 
 
 @dataclass
@@ -46,8 +45,8 @@ class TranslationProvider(ABC):
     @abstractmethod
     def translate_batch(
         self,
-        requests: List[TranslationRequest],
-    ) -> List[TranslationResult]:
+        requests: list[TranslationRequest],
+    ) -> list[TranslationResult]:
         """Translate multiple texts in batch."""
         pass
 

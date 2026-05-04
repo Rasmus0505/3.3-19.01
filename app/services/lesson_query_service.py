@@ -1,9 +1,15 @@
 from __future__ import annotations
 
-from app.api.serializers import to_lesson_catalog_item_response, to_lesson_detail_response
-from app.repositories.lessons import get_lesson_for_user, get_lesson_sentences, list_lesson_catalog_for_user
+from app.api.serializers import (
+    to_lesson_catalog_item_response,
+    to_lesson_detail_response,
+)
+from app.repositories.lessons import (
+    get_lesson_for_user,
+    get_lesson_sentences,
+    list_lesson_catalog_for_user,
+)
 from app.services.query_cache import query_cache
-
 
 LESSON_CATALOG_TTL_SECONDS = 300
 

@@ -2,7 +2,17 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
@@ -29,11 +39,11 @@ class Lesson(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
-    user: Mapped["User"] = relationship(back_populates="lessons")
-    sentences: Mapped[list["LessonSentence"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
-    progress_records: Mapped[list["LessonProgress"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
-    media_assets: Mapped[list["MediaAsset"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
-    llm_usage_logs: Mapped[list["LLMUsageLog"]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
+    user: Mapped[User] = relationship(back_populates="lessons")
+    sentences: Mapped[list[LessonSentence]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
+    progress_records: Mapped[list[LessonProgress]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
+    media_assets: Mapped[list[MediaAsset]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
+    llm_usage_logs: Mapped[list[LLMUsageLog]] = relationship(back_populates="lesson", cascade="all, delete-orphan")
 
 
 class LessonSentence(Base):
@@ -79,7 +89,10 @@ class LessonProgress(Base):
 
 class LessonGenerationTask(Base):
     __tablename__ = "lesson_generation_tasks"
-    __table_args__ = table_args()
+    __table_args__ = table_args(
+        Index("ix_lesson_gen_tasks_owner_status", "owner_user_id", "status"),
+        Index("ix_lesson_gen_tasks_status_updated", "status", "updated_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task_id: Mapped[str] = mapped_column(String(80), nullable=False, unique=True, index=True)
@@ -158,7 +171,7 @@ class WordbookEntry(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now_shanghai_naive, onupdate=now_shanghai_naive, nullable=False)
 
     latest_lesson: Mapped[Lesson | None] = relationship(foreign_keys=[latest_lesson_id])
-    source_links: Mapped[list["WordbookEntrySource"]] = relationship(back_populates="entry", cascade="all, delete-orphan")
+    source_links: Mapped[list[WordbookEntrySource]] = relationship(back_populates="entry", cascade="all, delete-orphan")
 
 
 class WordbookEntrySource(Base):

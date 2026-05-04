@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Any, Optional
+from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -13,7 +13,7 @@ class TTSConfig:
     model_name: str = "qwen3-tts-vc-2026-01-22"
     voice: str = ""
     language_type: str = "Auto"
-    instructions: Optional[str] = None
+    instructions: str | None = None
     optimize_instructions: bool = False
     stream: bool = False
     request_timeout: int = 120
@@ -23,14 +23,14 @@ class TTSConfig:
 class TTSResult:
     """Result of TTS synthesis."""
 
-    audio_url: Optional[str] = None
-    audio_data: Optional[str] = None
+    audio_url: str | None = None
+    audio_data: str | None = None
     model: str = ""
     voice: str = ""
     characters: int = 0
-    finish_reason: Optional[str] = None
+    finish_reason: str | None = None
     provider: str = ""
-    raw_result: Optional[dict[str, Any]] = None
+    raw_result: dict[str, Any] | None = None
 
 
 @dataclass
@@ -40,7 +40,7 @@ class VoiceCloningResult:
     voice: str
     target_model: str
     request_id: str = ""
-    raw_result: Optional[dict[str, Any]] = None
+    raw_result: dict[str, Any] | None = None
 
 
 @dataclass
@@ -49,8 +49,8 @@ class VoiceInfo:
 
     voice: str
     name: str
-    language: Optional[str] = None
-    target_model: Optional[str] = None
+    language: str | None = None
+    target_model: str | None = None
     is_custom: bool = False
     is_platform: bool = False
 
@@ -73,7 +73,7 @@ class TTSProvider(ABC):
     def synthesize(
         self,
         text: str,
-        config: Optional[TTSConfig] = None,
+        config: TTSConfig | None = None,
     ) -> TTSResult:
         """Synthesize speech from text."""
         pass
@@ -82,7 +82,7 @@ class TTSProvider(ABC):
     def synthesize_stream(
         self,
         text: str,
-        config: Optional[TTSConfig] = None,
+        config: TTSConfig | None = None,
     ):
         """Synthesize speech from text with streaming (yields audio chunks)."""
         pass

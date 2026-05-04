@@ -2,7 +2,6 @@
 
 from typing import Any
 
-
 GENERATION_OPTION_KEYS: tuple[str, ...] = (
     "core_subtitles",
     "zh_translation",

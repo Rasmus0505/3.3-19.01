@@ -4,7 +4,11 @@ from fastapi import UploadFile
 
 from app.core.config import UPLOAD_MAX_BYTES
 from app.services.ai_platform import transcribe_audio
-from app.services.media import extract_audio_for_asr, save_upload_file_stream, validate_suffix
+from app.services.media import (
+    extract_audio_for_asr,
+    save_upload_file_stream,
+    validate_suffix,
+)
 
 
 def transcribe_uploaded_file(upload_file: UploadFile, req_dir, model: str) -> dict:
