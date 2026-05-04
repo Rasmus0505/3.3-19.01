@@ -107,6 +107,6 @@ if errorlevel 1 (
 echo.
 echo [3/3] Starting local site...
 start "" "http://127.0.0.1:%LOCAL_PORT%"
-python -m uvicorn app.main:app --host 127.0.0.1 --port %LOCAL_PORT%
+python -m uvicorn app.main:app --host 127.0.0.1 --port %LOCAL_PORT% --reload
 
 endlocal

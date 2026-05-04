@@ -122,4 +122,33 @@ describe("useSentencePlayback playback rate", () => {
     expect(media.playbackRate).toBe(1.6);
     expect(media.defaultPlaybackRate).toBe(1.6);
   });
+
+  it("does not pause media when selectedPlaybackRate changes during active playback", async () => {
+    const { result, rerender, media, props } = renderPlaybackHook({ selectedPlaybackRate: 1 });
+
+    await act(async () => {
+      await result.current.playSentence({ begin_ms: 0, end_ms: 10000 });
+    });
+
+    expect(media.paused).toBe(false);
+    const pauseCallCountBefore = media.pause.mock.calls.length;
+
+    rerender({
+      ...props,
+      selectedPlaybackRate: 1.5,
+    });
+
+    expect(media.pause.mock.calls.length).toBe(pauseCallCountBefore);
+    expect(media.playbackRate).toBe(1.5);
+    expect(media.paused).toBe(false);
+
+    rerender({
+      ...props,
+      selectedPlaybackRate: 0.7,
+    });
+
+    expect(media.pause.mock.calls.length).toBe(pauseCallCountBefore);
+    expect(media.playbackRate).toBe(0.7);
+    expect(media.paused).toBe(false);
+  });
 });

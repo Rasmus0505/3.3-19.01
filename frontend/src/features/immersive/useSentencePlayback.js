@@ -143,6 +143,11 @@ export function useSentencePlayback({
     clearClipUrl();
   }, [clearClipUrl, clipAudioRef, mediaElementRef, readSelectedPlaybackRate, syncPlaybackRate]);
 
+  const stopPlaybackRef = useRef(stopPlayback);
+  useEffect(() => {
+    stopPlaybackRef.current = stopPlayback;
+  });
+
   const togglePausePlayback = useCallback(async () => {
     const media = mode === "clip" ? clipAudioRef.current : mediaElementRef.current;
     if (!media || !hasActivePlaybackRef.current) {
@@ -324,9 +329,9 @@ export function useSentencePlayback({
 
   useEffect(() => {
     return () => {
-      stopPlayback();
+      stopPlaybackRef.current?.();
     };
-  }, [stopPlayback]);
+  }, []);
 
   return {
     isPlaying,
