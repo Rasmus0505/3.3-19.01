@@ -18,7 +18,6 @@ import hmac
 import json
 import logging
 import random
-import sys
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -92,10 +91,9 @@ class SOEAssessmentError(RuntimeError):
 
 
 def _quote_autho(s: str) -> str:
-    if sys.version_info >= (3, 0):
-        import urllib.parse as urlparse
+    import urllib.parse as urlparse
 
-        return urlparse.quote(s)
+    return urlparse.quote(s)
     import urllib
 
     return urllib.quote(s)

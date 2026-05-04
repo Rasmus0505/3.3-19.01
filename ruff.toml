@@ -22,3 +22,5 @@ skip-magic-trailing-comma = false
 [lint.per-file-ignores]
 "migrations/**" = ["E", "F", "I"]
 "tests/**" = ["B018"]
+"app/infra/tencent_soe.py" = ["E402"]
+"app/schemas/common.py" = ["E402"]

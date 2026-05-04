@@ -25,28 +25,22 @@ from app.services.lessons.recovery_contract import (
     derive_resume_plan,
 )
 from app.services.lessons.task_recovery import (
-    _build_result_label,
-    _build_result_message,
-    _clear_admission_fields,
-    _clear_control_fields,
-    _find_stage,
-    _get_control_action,
-    _infer_resume_stage,
-    _normalize_admission_state,
-    _normalize_result_kind,
     _recover_orphaned_task_if_needed,
-    _set_admission_fields,
-    _set_control_fields,
 )
 from app.services.lessons.task_runtime import (
+    bind_task_terminate_runtime,
+    clear_task_terminate_runtime,
+    configure_task_runtime_probe,
     is_task_active_in_current_process as _is_task_active_in_current_process,
-)
-from app.services.lessons.task_runtime import (
+    is_task_terminate_requested,
     signal_task_terminate,
+    wait_for_task_terminate_request,
 )
 from app.services.lessons.task_workspace import (
     _load_workspace_summary_from_artifacts,
     _sync_task_workspace_summary,
+    persist_lesson_workspace_summary,
+    upsert_lesson_workspace_summary,
 )
 from app.services.media import cleanup_dir
 

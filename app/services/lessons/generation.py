@@ -1,18 +1,9 @@
-"""课程生成服务 - 模块化重构起点。
+"""课程生成服务 - 模块化重构。
 
-此文件定义了重构后课程服务的接口和核心逻辑框架。
-随着重构的推进，各功能模块将从 lesson_service.py 迁移到此处。
+底层函数已迁移至 app/services/lessons/ 各模块（variants.py, persistence.py 等），
+入口编排逻辑仍位于 app/services/lesson_service.py 中待迁移。
 
-当前状态：定义接口契约，实际逻辑仍在 lesson_service.py 中。
-
-目标模块结构：
-    app/services/lessons/
-    ├── __init__.py          # 统一导出
-    ├── generation.py        # 课程生成主逻辑
-    ├── asr_handler.py        # ASR 处理
-    ├── translation.py         # 翻译处理
-    ├── audio.py              # 音频处理
-    └── cache.py              # 缓存管理
+使用 LegacyLessonService 别名访问原始 LessonService。
 """
 from __future__ import annotations
 
@@ -67,7 +58,7 @@ class LessonGenerationService:
 
 __all__ = [
     "LessonGenerationService",
-    "LegacyLessonService",
+    "LegacyLessonService",  # noqa: F822 — provided via __getattr__ for lazy import
 ]
 
 

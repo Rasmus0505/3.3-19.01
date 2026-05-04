@@ -73,8 +73,6 @@ from app.schemas.asr_record import (
 from app.schemas.auth import (
     AuthRequest,
     AuthResponse,
-    DesktopTokenLoginRequest,
-    DesktopTokenLoginResponse,
     LogoutResponse,
     ProfileUpdateRequest,
     RefreshRequest,

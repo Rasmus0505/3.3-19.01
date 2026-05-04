@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     BigInteger,
@@ -19,6 +20,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
 from app.db import Base, schema_fk, table_args
+
+if TYPE_CHECKING:
+    from app.models import User
 
 _RATE_YUAN_QUANTIZER = Decimal("0.0001")
 _RATE_CENT_QUANTIZER = Decimal("0.01")

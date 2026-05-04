@@ -142,7 +142,7 @@ def generate_dictation_lesson(
     )
 
     created_sentences: list[LessonSentence] = []
-    for prepared, analysis in zip(prepared_sentences, vocabulary_analyses):
+    for prepared, analysis in zip(prepared_sentences, vocabulary_analyses, strict=False):
         sentence_record = LessonSentence(
             lesson_id=lesson.id,
             idx=int(prepared["idx"]),

@@ -61,7 +61,7 @@ class VocabularyExplainService:
             words_above: list[dict[str, Any]] = []
             word_levels: dict[str, dict[str, Any]] = {}
 
-            for match, item in zip(matches, classified):
+            for match, item in zip(matches, classified, strict=False):
                 token = str(item.get("token") or match.group())
                 normalized_entry = {
                     "token": token,

@@ -2451,7 +2451,7 @@ class LessonService:
             )
 
             rate = get_model_rate(db, asr_model)
-            segment_target_seconds = max(
+            max(
                 1,
                 int(getattr(rate, "segment_seconds", ASR_SEGMENT_TARGET_SECONDS) or ASR_SEGMENT_TARGET_SECONDS),
             )
@@ -3008,7 +3008,7 @@ class LessonService:
             generated_content_status["vocabulary_annotation"] = vocabulary_state
             generated_content_status["word_explanation"] = explanation_state
 
-        for sentence, runtime_sentence in zip(sentences, runtime_sentences):
+        for sentence, runtime_sentence in zip(sentences, runtime_sentences, strict=False):
             sentence.text_zh = str(runtime_sentence.get("text_zh") or "")
             sentence.vocabulary_analysis_json = runtime_sentence.get("vocabulary_analysis_json")
             sentence.needs_explanation = bool(runtime_sentence.get("needs_explanation"))

@@ -12,6 +12,7 @@ import {
 } from "../uploadConstants";
 import { clampPercent, getDefaultBalancedModelKey, getDefaultUploadModelKey } from "../uploadHelpers";
 import { buildDesktopLinkErrorMessage, getInterruptedLocalAsrStatus, sanitizeDesktopLinkInput, sanitizeUserFacingText } from "../uploadTaskViewModel";
+import { isBlobBackedSourceFile, materializeDesktopSelectedFile, restoreSavedSourceFile } from "../uploadPanelHelpers";
 
 export function useUploadWorkflow(deps) {
   const {
@@ -76,7 +77,6 @@ export function useUploadWorkflow(deps) {
     saveUploadPanelSuccessSnapshot,
     saveActiveGenerationTask,
     resolveDesktopSelectedSourcePath,
-    isBlobBackedSourceFile,
     resetLocalSessionState,
     updateDesktopLinkProgressState,
     clearDesktopLinkTaskTracking,
@@ -85,7 +85,6 @@ export function useUploadWorkflow(deps) {
     clearLocalStageProgressTimer,
     requestDesktopLocalHelper,
     loadDesktopImportedSourceFile,
-    materializeDesktopSelectedFile,
     extractMediaCoverPreview,
     onSelectFile,
     submit,
@@ -222,7 +221,7 @@ export function useUploadWorkflow(deps) {
   }
 
   async function restoreSuccessSnapshot(saved) {
-    const restoredFile = deps.restoreSavedSourceFile(saved);
+    const restoredFile = restoreSavedSourceFile(saved);
     const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
     const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
     const restoredGenerationOptions = saved?.generation_options && typeof saved.generation_options === "object" ? saved.generation_options : null;
@@ -267,7 +266,7 @@ export function useUploadWorkflow(deps) {
   }
 
   async function restorePersistedTaskSnapshot(saved) {
-    const restoredFile = deps.restoreSavedSourceFile(saved);
+    const restoredFile = restoreSavedSourceFile(saved);
     const restoredMode = String(saved?.generation_mode || "").trim().toLowerCase() === "balanced" ? "balanced" : "fast";
     const restoredModelKey = String(saved?.selected_upload_model || configuredDefaultAsrModel || "");
     const restoredGenerationOptions = saved?.generation_options && typeof saved.generation_options === "object" ? saved.generation_options : null;

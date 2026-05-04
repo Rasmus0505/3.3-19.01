@@ -29,7 +29,7 @@ class BillingRepository(Repository[BillingModelRate]):
         return list(
             self.session.scalars(
                 select(BillingModelRate)
-                .where(BillingModelRate.is_active == True)
+                .where(BillingModelRate.is_active)
                 .order_by(BillingModelRate.model_name.asc())
             )
         )

@@ -2,12 +2,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timezone import now_shanghai_naive
 from app.db import Base, schema_fk, table_args
+
+if TYPE_CHECKING:
+    from app.models import User
 
 
 class VoiceProfile(Base):

@@ -62,7 +62,7 @@ def list_active_announcements(db: Session) -> list[Announcement]:
     return (
         db.execute(
             select(Announcement)
-            .where(Announcement.is_active == True)
+            .where(Announcement.is_active)
             .order_by(desc(Announcement.is_pinned), desc(Announcement.created_at))
         )
     ).scalars().all()

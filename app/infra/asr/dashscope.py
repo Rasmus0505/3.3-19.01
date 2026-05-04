@@ -437,7 +437,7 @@ class DashScopeASRProvider(ASRProvider):
         transcripts = result_json.get("transcripts", [])
 
         segments = []
-        for idx, transcript in enumerate(transcripts):
+        for _idx, transcript in enumerate(transcripts):
             if isinstance(transcript, dict):
                 segments.append({
                     "text": str(transcript.get("text", "") or "").strip(),

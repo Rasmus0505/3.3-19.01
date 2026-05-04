@@ -49,7 +49,7 @@ class UserRepository(Repository[User]):
         return self.session.scalar(select(User).where(User.username_normalized == normalized))
 
     def get_admin_users(self) -> list[User]:
-        return list(self.session.scalars(select(User).where(User.is_admin == True).order_by(User.id.asc())))
+        return list(self.session.scalars(select(User).where(User.is_admin).order_by(User.id.asc())))
 
     def update_last_login(self, user_id: int) -> User | None:
         user = self.get(user_id)

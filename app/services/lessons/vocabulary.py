@@ -35,7 +35,7 @@ def process_sentences_with_vocabulary(
     sentence_meta: list[dict] = []
     needs_explanation_queue: list[int] = []
 
-    for index, sentence in enumerate(sentences):
+    for index, _ in enumerate(sentences):
         analysis = analyses[index]
         explanation_words = [item for item in analysis["words_above"] if item.get("band") == "above_i_plus_one"]
         meta = {
@@ -64,7 +64,7 @@ def process_sentences_with_vocabulary(
                 service.generate_explanation(str(sentences[index].get("text_en") or ""), sentence_meta[index]["analysis"]["words_above"])
                 for index in batch_indices
             ]
-        for index, result in zip(batch_indices, batch_results):
+        for index, result in zip(batch_indices, batch_results, strict=False):
             sentence_meta[index]["explanation"] = result
 
     enriched_sentences: list[dict] = []

@@ -255,7 +255,6 @@ def _build_dashboard_stats(db: Session, user_id: int) -> dict:
     # Skill scores (heuristic 0-100)
     listening_score = min(100, int(lesson_completion_rate * 80 + (avg_soe_score * 0.2 if avg_soe_score else 0)))
     reading_score = min(100, int(reading_completion_rate * 90 + total_reading_packs * 1))
-    vocab_target = {"A1": 500, "A2": 1000, "B1": 2000, "B2": 4000, "C1": 8000}
     vocab_score = min(100, int(vocabulary_count / 20 * 10)) if vocabulary_count else 0
     grammar_score = min(100, max(30, int((listening_score + reading_score) / 2 * 0.8)))
     speaking_score = min(100, int(avg_soe_score)) if avg_soe_score else 0

@@ -300,9 +300,52 @@ async function runFetch(path, options = {}, accessToken = "", baseUrl = "") {
   }
 }
 
+const inFlightRequests = new Map();
+const responseCache = new Map();
+const CACHE_TTL_MS = 30_000;
+
+function cacheKey(path, options) {
+  const relevant = { body: options?.body, query: options?.query };
+  return `${options?.method || "GET"}:${path}:${JSON.stringify(relevant)}`;
+}
+
+function isCacheable(method) {
+  return IDEMPOTENT_METHODS.has(method);
+}
+
 export function createApiClient({ baseUrl = "" } = {}) {
   return function apiClient(path, options = {}, accessToken = "") {
-    return runFetch(path, options, accessToken, baseUrl);
+    const method = String(options?.method || "GET").toUpperCase();
+    const skipCache = options?.skipCache === true;
+    const { skipCache: _, ...fetchOptions } = options;
+
+    if (isCacheable(method) && !skipCache) {
+      const key = cacheKey(path, options);
+
+      const cached = responseCache.get(key);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        return Promise.resolve(cached.response.clone());
+      }
+
+      const inflight = inFlightRequests.get(key);
+      if (inflight) {
+        return inflight.then((r) => r.clone());
+      }
+
+      const promise = runFetch(path, fetchOptions, accessToken, baseUrl).then((response) => {
+        responseCache.set(key, { response, timestamp: Date.now() });
+        inFlightRequests.delete(key);
+        return response;
+      }).catch((err) => {
+        inFlightRequests.delete(key);
+        throw err;
+      });
+
+      inFlightRequests.set(key, promise);
+      return promise;
+    }
+
+    return runFetch(path, fetchOptions, accessToken, baseUrl);
   };
 }
 
