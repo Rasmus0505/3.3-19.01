@@ -2404,7 +2404,7 @@ def test_dashscope_403_file_access_retry_task_hides_first_failure_and_skips_fall
             },
         }
 
-    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr("app.infra.dashscope_storage.get_file_signed_url", fake_get_file_signed_url)
     monkeypatch.setattr(lesson_service_module, "transcribe_signed_url", fake_transcribe_signed_url)
     monkeypatch.setattr(lesson_service_module, "persist_lesson_workspace_summary", lambda **_kwargs: None)
     monkeypatch.setattr(
@@ -2566,7 +2566,7 @@ def test_generate_from_dashscope_file_id_uses_builtin_lesson_builder(test_client
         req_dir = tmp_path / "req_dashscope_builder"
         req_dir.mkdir(parents=True, exist_ok=True)
 
-        monkeypatch.setattr(lesson_service_module, "get_file_signed_url", lambda _file_id: "https://signed.example.com/direct")
+        monkeypatch.setattr("app.infra.dashscope_storage.get_file_signed_url", lambda _file_id: "https://signed.example.com/direct")
         monkeypatch.setattr(
             lesson_service_module,
             "transcribe_signed_url",
@@ -3732,11 +3732,11 @@ def test_build_lesson_sentences_splits_on_connectors():
 
 
 def test_split_audio_segments_prefers_silence(monkeypatch, tmp_path):
-    from app.services import lesson_service as lesson_service_module
+    from app.services.lessons import asr_handler as asr_handler_module
 
     monkeypatch.setattr(
-        lesson_service_module,
-        "_detect_silence_ranges",
+        asr_handler_module,
+        "detect_silence_ranges",
         lambda source_audio, search_start_sec, search_end_sec: [(5.2, 5.9)],
     )
 
@@ -3745,9 +3745,9 @@ def test_split_audio_segments_prefers_silence(monkeypatch, tmp_path):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(b"segment")
 
-    monkeypatch.setattr(lesson_service_module, "run_cmd", fake_run_cmd)
+    monkeypatch.setattr(asr_handler_module, "run_cmd", fake_run_cmd)
 
-    segments = lesson_service_module._split_audio_segments(
+    segments = asr_handler_module.split_audio_segments(
         tmp_path / "source.opus",
         tmp_path / "segments",
         target_seconds=5,

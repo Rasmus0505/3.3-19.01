@@ -430,10 +430,11 @@ def test_single_faster_whisper_stall_keeps_waiting_instead_of_failing(monkeypatc
 
 def test_faster_whisper_legacy_single_profile_autofixes_to_parallel(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
+    from app.services.lessons import asr_handler as asr_handler_module
 
     monkeypatch.setattr(
-        lesson_service_module,
-        "_split_audio_segments",
+        asr_handler_module,
+        "split_audio_segments",
         lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
             (0, 0, 160000, tmp_path / "seg0.opus"),
             (1, 160000, 328000, tmp_path / "seg1.opus"),
@@ -1104,6 +1105,7 @@ def test_local_generated_lesson_title_rename_keeps_canonical_history_and_progres
 
 def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     from app.services import lesson_service as lesson_service_module
+    from app.services.lessons import asr_handler as asr_handler_module
 
     single_calls = {"count": 0}
 
@@ -1133,8 +1135,8 @@ def test_parallel_asr_trigger_by_duration(monkeypatch, tmp_path):
     assert payload_single["transcripts"][0]["sentences"][0]["text"] == "single"
 
     monkeypatch.setattr(
-        lesson_service_module,
-        "_split_audio_segments",
+        asr_handler_module,
+        "split_audio_segments",
         lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
             (0, 0, 5000, tmp_path / "seg0.opus"),
             (1, 5000, 10000, tmp_path / "seg1.opus"),
@@ -1193,8 +1195,8 @@ def test_faster_whisper_parallel_threshold_converges_to_five_minutes(monkeypatch
 
     monkeypatch.setattr(lesson_service_module, "transcribe_audio_file", fake_single_transcribe)
     monkeypatch.setattr(
-        lesson_service_module,
-        "_split_audio_segments",
+        asr_handler_module,
+        "split_audio_segments",
         lambda source_audio, segments_dir, target_seconds, search_window_seconds, duration_ms: [
             (0, 0, 160000, tmp_path / "seg0.opus"),
             (1, 160000, 328000, tmp_path / "seg1.opus"),

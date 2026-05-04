@@ -45,7 +45,7 @@ BuildTaskResultMetaFn = Callable[..., dict[str, Any]]
 BuildSubtitleCacheSeedFn = Callable[..., dict[str, Any]]
 
 
-def _resolve_owner_user_collins_level(db: Session, owner_id: int, fallback: int = 3) -> int:
+def resolve_owner_user_collins_level(db: Session, owner_id: int, fallback: int = 3) -> int:
     try:
         from app.models import User
 
@@ -58,7 +58,7 @@ def _resolve_owner_user_collins_level(db: Session, owner_id: int, fallback: int 
     return normalize_collins_level(fallback, default=3) or 3
 
 
-def _append_translation_request_logs_safe(
+def append_translation_request_logs_safe(
     db: Session,
     *,
     trace_id: str,
@@ -163,7 +163,7 @@ def create_lesson_from_local_generation_result(
         local_generation_result.get("effective_generation_options"),
         defaults=requested_generation_options,
     )
-    resolved_user_level = _resolve_owner_user_collins_level(db, owner_id)
+    resolved_user_level = resolve_owner_user_collins_level(db, owner_id)
     vocabulary_state = CONTENT_STATE_GENERATED
     explanation_state = CONTENT_STATE_GENERATED
     if effective_generation_options["vocabulary_annotation"]:
@@ -461,7 +461,7 @@ def build_one_lesson(
 
     errors = _add_runtime_sentences(db, lesson_id=lesson.id, runtime_sentences=runtime_sentences)
     create_progress(db, lesson_id=lesson.id, user_id=owner_id)
-    _append_translation_request_logs_safe(
+    append_translation_request_logs_safe(
         db,
         trace_id=translation_trace_id,
         user_id=owner_id,

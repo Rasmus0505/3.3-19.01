@@ -6,17 +6,14 @@ from types import SimpleNamespace
 import pytest
 
 from app.services import lesson_service as lesson_service_module
+from app.services.lessons import asr_handler as asr_handler_module
 from app.services.asr_dashscope import AsrError
 
 
 def test_resolve_dashscope_asr_source_url_prefers_signed_url_lookup(monkeypatch):
-    monkeypatch.setattr(
-        lesson_service_module,
-        "get_file_signed_url",
-        lambda file_id: f"https://signed.example.com/{file_id}?token=abc123",
-    )
+    monkeypatch.setattr(asr_handler_module, "get_file_signed_url", lambda file_id: f"https://signed.example.com/{file_id}?token=abc123")
 
-    resolved = lesson_service_module._resolve_dashscope_asr_source_url(
+    resolved = asr_handler_module.resolve_dashscope_asr_source_url(
         dashscope_file_id="uploads/20260326/demo.mp4",
         dashscope_file_url="https://oss.example.com/uploads/20260326/demo.mp4",
     )
@@ -28,9 +25,9 @@ def test_resolve_dashscope_asr_source_url_prefers_oss_url_without_signed_lookup(
     def fake_get_file_signed_url(_file_id: str) -> str:
         raise AssertionError("get_file_signed_url should not be called for oss:// fallback")
 
-    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr(asr_handler_module, "get_file_signed_url", fake_get_file_signed_url)
 
-    resolved = lesson_service_module._resolve_dashscope_asr_source_url(
+    resolved = asr_handler_module.resolve_dashscope_asr_source_url(
         dashscope_file_id="dashscope-instant/20260327/demo.mp4",
         dashscope_file_url="oss://dashscope-instant/20260327/demo.mp4",
     )
@@ -42,9 +39,9 @@ def test_resolve_dashscope_asr_source_url_falls_back_to_client_url(monkeypatch):
     def fake_get_file_signed_url(_file_id: str) -> str:
         raise AsrError("DASHSCOPE_STORAGE_FILE_GET_FAILED", "查询 DashScope 文件失败", "boom")
 
-    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr(asr_handler_module, "get_file_signed_url", fake_get_file_signed_url)
 
-    resolved = lesson_service_module._resolve_dashscope_asr_source_url(
+    resolved = asr_handler_module.resolve_dashscope_asr_source_url(
         dashscope_file_id="uploads/20260326/demo.mp4",
         dashscope_file_url="https://oss.example.com/uploads/20260326/demo.mp4",
     )
@@ -56,9 +53,9 @@ def test_resolve_dashscope_asr_source_url_normalizes_fallback_client_url(monkeyp
     def fake_get_file_signed_url(_file_id: str) -> str:
         raise AsrError("DASHSCOPE_STORAGE_FILE_GET_FAILED", "查询 DashScope 文件失败", "boom")
 
-    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr(asr_handler_module, "get_file_signed_url", fake_get_file_signed_url)
 
-    resolved = lesson_service_module._resolve_dashscope_asr_source_url(
+    resolved = asr_handler_module.resolve_dashscope_asr_source_url(
         dashscope_file_id="dashscope-instant/20260327/测试.mp4",
         dashscope_file_url="https://oss.example.com/dashscope-instant/20260327/测试.mp4?token=abc123",
     )
@@ -68,7 +65,7 @@ def test_resolve_dashscope_asr_source_url_normalizes_fallback_client_url(monkeyp
 
 def test_resolve_dashscope_asr_source_url_raises_without_file_id_or_url():
     with pytest.raises(lesson_service_module.MediaError) as exc_info:
-        lesson_service_module._resolve_dashscope_asr_source_url(
+        asr_handler_module.resolve_dashscope_asr_source_url(
             dashscope_file_id="",
             dashscope_file_url="",
         )
@@ -219,7 +216,7 @@ def test_generate_from_dashscope_file_id_dashscope_403_retries_once_and_keeps_ca
             },
         }
 
-    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr(asr_handler_module, "get_file_signed_url", fake_get_file_signed_url)
     monkeypatch.setattr(lesson_service_module, "transcribe_signed_url", fake_transcribe_signed_url)
 
     lesson = lesson_service_module.LessonService.generate_from_dashscope_file_id(
@@ -269,7 +266,7 @@ def test_generate_from_dashscope_file_id_dashscope_403_retry_exhaustion_raises_f
         transcribe_calls.append(signed_url)
         raise failure
 
-    monkeypatch.setattr(lesson_service_module, "get_file_signed_url", fake_get_file_signed_url)
+    monkeypatch.setattr(asr_handler_module, "get_file_signed_url", fake_get_file_signed_url)
     monkeypatch.setattr(lesson_service_module, "transcribe_signed_url", fake_transcribe_signed_url)
 
     with pytest.raises(lesson_service_module.AsrError) as exc_info:

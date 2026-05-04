@@ -1,11 +1,10 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import logging
 import math
 import re
 import shutil
-import subprocess
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime
@@ -24,10 +23,6 @@ from app.core.config import (
     BASE_DATA_DIR,
     DASHSCOPE_API_KEY,
     UPLOAD_MAX_BYTES,
-)
-from app.infra.dashscope_storage import (
-    get_file_signed_url,
-    normalize_dashscope_file_url,
 )
 from app.models import Lesson, LessonSentence, MediaAsset, TranslationRequestLog
 from app.models.billing import BillingModelRate
@@ -98,8 +93,6 @@ from app.services.media import (
     MediaError,
     extract_audio_for_asr,
     probe_audio_duration_ms,
-    resolve_media_command,
-    run_cmd,
     save_upload_file_stream,
     validate_suffix,
 )
@@ -108,12 +101,15 @@ from app.services.translation_qwen_mt import (
     TranslationError,
     translate_sentences_to_zh,
 )
+from app.services.lessons import asr_handler as _asr_handler
+from app.services.lessons.persistence import (
+    append_translation_request_logs_safe as _append_translation_request_logs_safe,
+    resolve_owner_user_collins_level as _resolve_owner_user_collins_level,
+)
 
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[dict[str, Any]], None]
-_SILENCE_START_RE = re.compile(r"silence_start:\s*(?P<value>-?\d+(?:\.\d+)?)")
-_SILENCE_END_RE = re.compile(r"silence_end:\s*(?P<value>-?\d+(?:\.\d+)?)\s*\|\s*silence_duration:\s*(?P<duration>-?\d+(?:\.\d+)?)")
 _TRANSLATION_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 _TRANSLATION_ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 _ASR_RESULT_FILE = "asr_result.json"
@@ -122,53 +118,6 @@ _TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
 _LESSON_RESULT_FILE = "lesson_result.json"
 _SEGMENT_RESULT_DIR = "asr_segment_results"
 
-
-def _resolve_dashscope_asr_source_url(*, dashscope_file_id: str, dashscope_file_url: str | None = None) -> str:
-    normalized_file_id = str(dashscope_file_id or "").strip()
-    normalized_file_url = str(dashscope_file_url or "").strip()
-
-    if normalized_file_url.startswith("oss://"):
-        return normalized_file_url
-
-    if normalized_file_id:
-        try:
-            return normalize_dashscope_file_url(get_file_signed_url(normalized_file_id))
-        except AsrError:
-            if normalized_file_url:
-                logger.warning(
-                    "[DEBUG] lesson.generate_dashscope signed_url_lookup_failed file_id=%s fallback_to_client_url=1",
-                    normalized_file_id,
-                )
-                return normalize_dashscope_file_url(normalized_file_url)
-            raise
-
-    if normalized_file_url:
-        return normalize_dashscope_file_url(normalized_file_url)
-
-    raise MediaError("DASHSCOPE_FILE_ID_REQUIRED", "dashscope_file_id is required", "")
-
-
-def _parse_asr_error_detail(detail: str) -> dict[str, Any]:
-    try:
-        payload = json.loads(str(detail or "").strip())
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _extract_dashscope_403_failure_message(error: AsrError) -> str:
-    detail_payload = _parse_asr_error_detail(getattr(error, "detail", ""))
-    provider_message = str(detail_payload.get("subtask_message") or "").strip()
-    if provider_message:
-        return provider_message
-    return str(getattr(error, "message", "") or str(error) or "").strip()
-
-
-def _is_dashscope_file_access_forbidden(error: AsrError) -> bool:
-    if str(getattr(error, "code", "") or "").strip() != "ASR_TASK_FAILED":
-        return False
-    detail_payload = _parse_asr_error_detail(getattr(error, "detail", ""))
-    return str(detail_payload.get("subtask_code") or "").strip() == "FILE_403_FORBIDDEN"
 
 
 def _read_json_file(path: Path) -> dict[str, Any] | None:
@@ -203,34 +152,6 @@ def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
     except Exception:
         logger.exception("[DEBUG] lesson.progress.emit_failed payload=%s", payload)
 
-
-def _append_translation_request_logs_safe(
-    db: Session,
-    *,
-    trace_id: str,
-    user_id: int | None,
-    task_id: str | None,
-    lesson_id: int | None,
-    records: list[dict[str, Any]] | None,
-) -> None:
-    if not records:
-        return
-    try:
-        append_translation_request_logs(
-            db,
-            trace_id=trace_id,
-            user_id=user_id,
-            task_id=task_id,
-            lesson_id=lesson_id,
-            records=list(records),
-        )
-    except Exception as exc:
-        logger.warning(
-            "[DEBUG] lesson.translation_logs.persist_failed task_id=%s lesson_id=%s detail=%s",
-            task_id,
-            lesson_id,
-            str(exc)[:400],
-        )
 
 
 def _call_transcribe_audio_file(
@@ -330,27 +251,6 @@ def _single_asr_stage_ratio(elapsed_seconds: int) -> float:
     return min(0.84, 0.12 + min(0.72, elapsed_seconds / 120.0 * 0.72))
 
 
-def _normalize_parallel_runtime_config(
-    *,
-    asr_model: str,
-    source_duration_ms: int,
-    parallel_enabled: bool,
-    parallel_threshold_seconds: int,
-    segment_target_seconds: int,
-    max_concurrency: int,
-) -> tuple[bool, int, int, int]:
-    normalized_parallel_enabled = bool(parallel_enabled)
-    normalized_parallel_threshold_seconds = max(1, int(parallel_threshold_seconds or 600))
-    normalized_segment_target_seconds = max(1, int(segment_target_seconds or ASR_SEGMENT_TARGET_SECONDS))
-    normalized_max_concurrency = max(1, int(max_concurrency or 1))
-
-    return (
-        normalized_parallel_enabled,
-        normalized_parallel_threshold_seconds,
-        normalized_segment_target_seconds,
-        normalized_max_concurrency,
-    )
-
 
 def _effective_parallel_threshold_seconds(
     *,
@@ -406,146 +306,6 @@ def _build_parallel_payload(
         ],
     }
 
-
-def _detect_silence_ranges(source_audio: Path, search_start_sec: float, search_end_sec: float) -> list[tuple[float, float]]:
-    if search_end_sec <= search_start_sec:
-        return []
-    ffmpeg_executable = resolve_media_command("ffmpeg")
-    try:
-        proc = subprocess.run(
-            [
-                ffmpeg_executable,
-                "-hide_banner",
-                "-ss",
-                f"{search_start_sec:.3f}",
-                "-to",
-                f"{search_end_sec:.3f}",
-                "-i",
-                str(source_audio),
-                "-af",
-                "silencedetect=n=-30dB:d=0.35",
-                "-f",
-                "null",
-                "-",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-    except FileNotFoundError as exc:
-        raise MediaError("COMMAND_MISSING", "媒体处理依赖缺失", str(exc)[:1000]) from exc
-    except subprocess.TimeoutExpired as exc:
-        raise MediaError("COMMAND_TIMEOUT", "静音检测超时", str(exc)[:1000]) from exc
-
-    output = "\n".join(part for part in (proc.stdout, proc.stderr) if part)
-    ranges: list[tuple[float, float]] = []
-    current_start: float | None = None
-    for line in output.splitlines():
-        start_match = _SILENCE_START_RE.search(line)
-        if start_match:
-            current_start = float(start_match.group("value")) + search_start_sec
-            continue
-        end_match = _SILENCE_END_RE.search(line)
-        if end_match and current_start is not None:
-            silence_end = float(end_match.group("value")) + search_start_sec
-            if silence_end > current_start:
-                ranges.append((current_start, silence_end))
-            current_start = None
-    return ranges
-
-
-def _choose_segment_cut(
-    source_audio: Path,
-    segment_start_sec: float,
-    target_seconds: int,
-    search_window_seconds: int,
-    total_seconds: float,
-) -> float:
-    threshold = min(total_seconds, segment_start_sec + target_seconds)
-    if threshold >= total_seconds:
-        return total_seconds
-
-    search_start = max(segment_start_sec, threshold - search_window_seconds)
-    search_end = min(total_seconds, threshold + search_window_seconds)
-    silence_ranges = _detect_silence_ranges(source_audio, search_start, search_end)
-    candidate_points: list[float] = []
-    for silence_start, silence_end in silence_ranges:
-        cut_at = min(silence_end, silence_start + 0.5)
-        if cut_at <= segment_start_sec + 1:
-            continue
-        if total_seconds - cut_at <= 1:
-            continue
-        candidate_points.append(cut_at)
-    if candidate_points:
-        return min(candidate_points, key=lambda value: abs(value - threshold))
-    return threshold
-
-
-def _split_audio_segments(
-    source_audio: Path,
-    segments_dir: Path,
-    target_seconds: int,
-    search_window_seconds: int,
-    duration_ms: int,
-) -> list[tuple[int, int, int, Path]]:
-    if target_seconds <= 0:
-        raise MediaError("ASR_SEGMENT_CONFIG_INVALID", "分段时长配置无效", str(target_seconds))
-
-    total_seconds = max(1.0, duration_ms / 1000.0)
-    segments_dir.mkdir(parents=True, exist_ok=True)
-    output: list[tuple[int, int, int, Path]] = []
-
-    segment_start_sec = 0.0
-    index = 0
-    while segment_start_sec < total_seconds:
-        if total_seconds - segment_start_sec <= target_seconds:
-            segment_end_sec = total_seconds
-        else:
-            segment_end_sec = _choose_segment_cut(
-                source_audio,
-                segment_start_sec,
-                target_seconds=target_seconds,
-                search_window_seconds=search_window_seconds,
-                total_seconds=total_seconds,
-            )
-        segment_end_sec = max(segment_start_sec + 1, min(total_seconds, segment_end_sec))
-        segment_path = segments_dir / f"segment_{index:04d}.opus"
-        try:
-            run_cmd(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-ss",
-                    f"{segment_start_sec:.3f}",
-                    "-to",
-                    f"{segment_end_sec:.3f}",
-                    "-i",
-                    str(source_audio),
-                    "-ac",
-                    "1",
-                    "-ar",
-                    "16000",
-                    "-c:a",
-                    "libopus",
-                    str(segment_path),
-                ]
-            )
-        except MediaError as exc:
-            raise MediaError("ASR_SEGMENT_SPLIT_FAILED", "ASR 分段切片失败", exc.detail or exc.message) from exc
-        output.append(
-            (
-                index,
-                int(round(segment_start_sec * 1000)),
-                int(round(segment_end_sec * 1000)),
-                segment_path,
-            )
-        )
-        index += 1
-        if segment_end_sec >= total_seconds:
-            break
-        segment_start_sec = segment_end_sec
-
-    return output
 
 
 def _shift_words(word_items: list[dict[str, Any]], offset_ms: int) -> list[dict[str, Any]]:
@@ -709,18 +469,6 @@ def _call_transcribe_segment(
         _write_json_file(result_path, _segment_result_to_payload(*payload))
         return payload
 
-
-def _resolve_owner_user_collins_level(db: Session, owner_id: int, fallback: int = 3) -> int:
-    try:
-        from app.models import User
-
-        user = db.get(User, int(owner_id))
-        normalized = normalize_collins_level(getattr(user, "collins_level", None), default=None)
-        if normalized is not None:
-            return normalized
-    except Exception:
-        logger.warning("[DEBUG] lesson.collins_level.resolve_failed owner_id=%s", owner_id, exc_info=True)
-    return normalize_collins_level(fallback, default=3) or 3
 
 
 class LessonService:
@@ -1454,7 +1202,7 @@ class LessonService:
             parallel_threshold_seconds,
             segment_target_seconds,
             max_concurrency,
-        ) = _normalize_parallel_runtime_config(
+        ) = _asr_handler.normalize_parallel_runtime_config(
             asr_model=asr_model,
             source_duration_ms=source_duration_ms,
             parallel_enabled=parallel_enabled,
@@ -1609,7 +1357,7 @@ class LessonService:
                 "asr_raw": dict(payload["raw_result"]),
             }
 
-        segments = _split_audio_segments(
+        segments = _asr_handler.split_audio_segments(
             opus_path,
             req_dir / "asr_segments",
             segment_target_seconds,
@@ -2437,7 +2185,7 @@ class LessonService:
         try:
             # Browser direct-upload may provide an oss:// resource URL.
             # Prefer that fast path when available, otherwise refresh from file_id.
-            signed_url = _resolve_dashscope_asr_source_url(
+            signed_url = _asr_handler.resolve_dashscope_asr_source_url(
                 dashscope_file_id=dashscope_file_id,
                 dashscope_file_url=dashscope_file_url,
             )
@@ -2468,19 +2216,19 @@ class LessonService:
                     progress_callback=None,
                 )
             except AsrError as exc:
-                if not _is_dashscope_file_access_forbidden(exc):
+                if not _asr_handler.is_dashscope_file_access_forbidden(exc):
                     raise
 
                 dashscope_recovery = {
                     "dashscope_file_id": str(dashscope_file_id or "").strip(),
                     "first_failure_stage": "asr_transcribe",
                     "first_failure_code": str(getattr(exc, "code", "") or "ASR_TASK_FAILED").strip() or "ASR_TASK_FAILED",
-                    "first_failure_message": _extract_dashscope_403_failure_message(exc),
+                    "first_failure_message": _asr_handler.extract_dashscope_403_failure_message(exc),
                     "retry_attempted": True,
                     "retry_outcome": "pending",
                     "final_outcome": "pending",
                 }
-                retry_signed_url = _resolve_dashscope_asr_source_url(
+                retry_signed_url = _asr_handler.resolve_dashscope_asr_source_url(
                     dashscope_file_id=dashscope_file_id,
                     dashscope_file_url=dashscope_file_url,
                 )
@@ -2493,7 +2241,7 @@ class LessonService:
                         progress_callback=None,
                     )
                 except AsrError as retry_exc:
-                    if _is_dashscope_file_access_forbidden(retry_exc):
+                    if _asr_handler.is_dashscope_file_access_forbidden(retry_exc):
                         dashscope_recovery["retry_outcome"] = "failed"
                         dashscope_recovery["final_outcome"] = "cloud_file_access_failed"
                         raise AsrError(
