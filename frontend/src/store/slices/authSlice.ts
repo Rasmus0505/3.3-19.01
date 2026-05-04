@@ -2,6 +2,19 @@
 import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY, writeCollinsLevel, readCollinsLevel } from "../../app/authStorage";
 import type { Getter, Setter } from "../types";
 
+export function handleAuthError(
+  resp: { status: number },
+  data: Record<string, unknown>,
+  get: Getter,
+  fallbackMsg: string,
+): boolean {
+  if (resp.status !== 401 && resp.status !== 403) return false;
+  const message = toErrorText(data, fallbackMsg);
+  console.debug("[DEBUG] auth failed", { status: resp.status });
+  get().markAuthExpired(message);
+  return true;
+}
+
 function readStoredAccessToken() {
   if (typeof localStorage === "undefined") return "";
   return localStorage.getItem(TOKEN_KEY) || "";

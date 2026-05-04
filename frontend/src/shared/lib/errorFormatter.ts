@@ -38,13 +38,7 @@ function normalizeStatus(source) {
   return Number(source.status);
 }
 
-export async function parseJsonSafely(response) {
-  try {
-    return await response.json();
-  } catch (_) {
-    return {};
-  }
-}
+export { parseResponse as parseJsonSafely } from "../api/client";
 
 export function formatError(source, context = {}) {
   const responseBody = source?.responseBody ?? source?.data ?? null;

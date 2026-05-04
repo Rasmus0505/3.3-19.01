@@ -1,4 +1,4 @@
-﻿import { api } from "../../../shared/api/client";
+﻿import { api, parseResponse } from "../../../shared/api/client";
 
 export interface AuthPayload {
   email?: string;
@@ -38,19 +38,6 @@ export function extractAuthMessage(data: unknown, fallbackMessage = "请求失�
   return fallbackMessage;
 }
 
-async function parseJsonSafely(response: Response): Promise<Record<string, unknown>> {
-  const text = await response.text();
-  if (!text.trim()) {
-    return {};
-  }
-  try {
-    const data = JSON.parse(text);
-    return data && typeof data === "object" ? data : {};
-  } catch {
-    return { detail: text };
-  }
-}
-
 export async function postAuthJson<T = any>(
   path: string,
   payload: AuthPayload,
@@ -64,7 +51,7 @@ export async function postAuthJson<T = any>(
       },
       body: JSON.stringify(payload),
     });
-    const data = await parseJsonSafely(response);
+    const data = await parseResponse(response);
     return {
       ok: response.ok,
       status: response.status,

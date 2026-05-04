@@ -9,7 +9,16 @@ from typing import Any
 
 import jwt
 
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-change-me").strip()
+from app.core.config import is_production_environment
+
+_raw_secret = os.getenv("JWT_SECRET", "").strip()
+if not _raw_secret:
+    if is_production_environment():
+        raise RuntimeError("JWT_SECRET environment variable is required in production")
+    import warnings
+    warnings.warn("JWT_SECRET not set, using insecure default 'dev-only-change-me' for development only", stacklevel=2)
+    _raw_secret = "dev-only-change-me"
+JWT_SECRET = _raw_secret
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "120"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "15"))

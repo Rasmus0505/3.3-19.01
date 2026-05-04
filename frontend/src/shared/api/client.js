@@ -480,10 +480,12 @@ export async function uploadWithProgress(path, options = {}, accessToken = "", b
 }
 
 export async function parseResponse(resp) {
+  const text = await resp.text();
+  if (!text.trim()) return {};
   try {
-    return await resp.json();
+    return JSON.parse(text);
   } catch (_) {
-    return {};
+    return { detail: text };
   }
 }
 

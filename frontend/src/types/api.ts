@@ -36,15 +36,3 @@ export interface RedeemCodeResponse {
   redeemed_points?: number;
   message?: string;
 }
-export type {
-  ApiErrorResponse,
-  AuthTokens,
-  AuthResponse,
-  RedeemCodeRequest,
-  RedeemCodeResponse,
-  WalletBalance,
-  WalletResponse,
-} from "../shared/api/types";
-
-
-

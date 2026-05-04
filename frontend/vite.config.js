@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import compression from "vite-plugin-compression";
+import { visualizer } from "rollup-plugin-visualizer";
 
 const desktopRendererBuild = String(process.env.BOTTLE_DESKTOP_RENDERER_BUILD || "").trim() === "1";
 
@@ -11,6 +12,7 @@ export default defineConfig({
     tailwindcss(),
     compression({ algorithm: "gzip", ext: ".gz" }),
     compression({ algorithm: "brotliCompress", ext: ".br" }),
+    visualizer({ filename: "dist/stats.html", open: false, gzipSize: true }),
   ],
   base: desktopRendererBuild ? "./" : "/static/",
   build: {

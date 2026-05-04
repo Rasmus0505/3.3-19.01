@@ -1,0 +1,1 @@
+import{j as a}from"./vendor-motion-CErlG3NZ.js";import{c as o}from"./index.admin-CV-bFkMf.js";function n({className:e,...t}){return a.jsx("textarea",{"data-slot":"textarea",className:o("cn-textarea placeholder:text-muted-foreground flex min-h-36 w-full outline-none disabled:cursor-not-allowed disabled:opacity-50",e),...t})}export{n as T};
