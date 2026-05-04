@@ -1,5 +1,5 @@
 ﻿import { ArrowLeft, ArrowRight, BookOpen, Loader2, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { api, parseResponse } from "../../shared/api/client";
 import { getLessonMedia } from "../../shared/media/localMediaStore";
@@ -34,7 +34,7 @@ async function readErrorPayload(resp) {
   }
 }
 
-export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
+function PracticePanel({ lesson, accessToken, onProgressSynced }) {
   const [idx, setIdx] = useState(0);
   const [completedIndexes, setCompletedIndexes] = useState([]);
   const [answer, setAnswer] = useState("");
@@ -422,6 +422,7 @@ export function PracticePanel({ lesson, accessToken, onProgressSynced }) {
     </Card>
   );
 }
-
+const PracticePanelMemo = memo(PracticePanel);
+export { PracticePanelMemo as PracticePanel };
 
 

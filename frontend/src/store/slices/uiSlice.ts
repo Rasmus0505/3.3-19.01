@@ -1,4 +1,4 @@
-﻿type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
+﻿import type { Setter } from "../types";
 
 export const uiInitialState = {
   globalStatus: "",

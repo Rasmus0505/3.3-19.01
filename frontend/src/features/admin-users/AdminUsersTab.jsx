@@ -1,5 +1,5 @@
 ﻿import { Activity, ArrowUpDown, CalendarDays, RefreshCcw, Trash2, UserRound, Wallet } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -101,7 +101,7 @@ function formatRangeText(mode, singleDate, rangeStart, rangeEnd) {
   return "-";
 }
 
-export function AdminUsersTab({ apiCall }) {
+function AdminUsersTab({ apiCall }) {
   const now = getBeijingNowForPicker();
   const defaultSingleDate = toDateValue(now);
   const defaultRangeEnd = toDateValue(now);
@@ -793,5 +793,7 @@ export function AdminUsersTab({ apiCall }) {
     </div>
   );
 }
+const AdminUsersTabMemo = memo(AdminUsersTab);
+export { AdminUsersTabMemo as AdminUsersTab };
 
 

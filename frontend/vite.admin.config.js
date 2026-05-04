@@ -11,6 +11,13 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: path.resolve(__dirname, "index.admin.html"),
+      output: {
+        manualChunks: {
+          "vendor-charts": ["recharts"],
+          "vendor-motion": ["framer-motion"],
+          "vendor-icons": ["lucide-react"],
+        },
+      },
     },
   },
 });

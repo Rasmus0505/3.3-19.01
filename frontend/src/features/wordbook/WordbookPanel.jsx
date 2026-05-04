@@ -1,5 +1,5 @@
 ﻿import { BookOpenText, Languages, Play, Trash2, Loader2, Volume2, AlertCircle } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { parseResponse, toErrorText } from "../../shared/api/client";
@@ -54,7 +54,7 @@ function formatMemoryScore(value) {
   return `${Math.round(safeValue * 100)}%`;
 }
 
-export function WordbookPanel({ apiCall, refreshToken = 0 }) {
+function WordbookPanel({ apiCall, refreshToken = 0 }) {
   const [items, setItems] = useState([]);
   const [availableLessons, setAvailableLessons] = useState([]);
   const [reviewQueue, setReviewQueue] = useState([]);
@@ -920,5 +920,6 @@ export function WordbookPanel({ apiCall, refreshToken = 0 }) {
     </Card>
   );
 }
-
+const WordbookPanelMemo = memo(WordbookPanel);
+export { WordbookPanelMemo as WordbookPanel };
 

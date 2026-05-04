@@ -1,5 +1,5 @@
 ﻿import { CheckCircle2, FileJson, Loader2, RefreshCcw, Unlock, UploadCloud } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -976,7 +976,7 @@ function isMobileUploadViewport() {
   return Boolean(navigator.userAgentData?.mobile) || /Android|iPhone|iPad|iPod|Mobile/i.test(userAgent);
 }
 
-export function UploadPanel({
+function UploadPanel({
   accessToken,
   isActivePanel = true,
   onCreated,
@@ -6533,6 +6533,8 @@ export function UploadPanel({
     </Card>
   );
 }
+const UploadPanelMemo = memo(UploadPanel);
+export { UploadPanelMemo as UploadPanel };
 
 
 

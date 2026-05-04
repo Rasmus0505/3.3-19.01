@@ -1,9 +1,7 @@
 ﻿import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { deleteLessonMedia } from "../../shared/media/localMediaStore";
 import { deleteLessonSubtitleCache, saveLessonSubtitleCacheSeed } from "../../shared/media/localSubtitleStore.js";
-
-type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
-type Getter = () => any;
+import type { Getter, Setter } from "../types";
 
 function buildProgressSnapshot(progressData: any = {}) {
   return {

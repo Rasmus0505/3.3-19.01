@@ -1,12 +1,30 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import compression from "vite-plugin-compression";
 
 const desktopRendererBuild = String(process.env.BOTTLE_DESKTOP_RENDERER_BUILD || "").trim() === "1";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    compression({ algorithm: "gzip", ext: ".gz" }),
+    compression({ algorithm: "brotliCompress", ext: ".br" }),
+  ],
   base: desktopRendererBuild ? "./" : "/static/",
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-charts": ["recharts"],
+          "vendor-pdf": ["pdfjs-dist"],
+          "vendor-motion": ["framer-motion"],
+          "vendor-icons": ["lucide-react"],
+        },
+      },
+    },
+  },
   // 本地 dev：代理到同一个本机 FastAPI 后端，保持和 start-local.bat 的默认端口一致。
   server: desktopRendererBuild
     ? undefined

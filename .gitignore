@@ -28,6 +28,9 @@ app/data/vocab/vocabulary.sqlite
 
 run_asr_matrix.py
 run_filetrans_via_dashscope_files.py
+
+frontend-dev*.log
+scripts/legacy/
 /Desktop/models
 /Docx/中文翻译
 

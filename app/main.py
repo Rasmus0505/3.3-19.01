@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
@@ -634,7 +635,16 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
     app = FastAPI(title=SERVICE_NAME, version="0.3.0", lifespan=app_lifespan if enable_lifespan else None)
     app.state.runtime_status = RuntimeStatus()
 
+    app.add_middleware(GZipMiddleware, minimum_size=512)
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+    @app.middleware("http")
+    async def add_immutable_cache_headers(request: Request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/static/assets/") and response.status_code < 400:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
     @app.middleware("http")
     async def block_api_requests_when_database_not_ready(request: Request, call_next):

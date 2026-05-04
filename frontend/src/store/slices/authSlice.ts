@@ -1,8 +1,6 @@
 ﻿import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { clearAuthStorage, restoreCachedAuthSession, TOKEN_KEY, USER_EMAIL_KEY, USER_ID_KEY, USER_IS_ADMIN_KEY, USER_USERNAME_KEY, writeCollinsLevel, readCollinsLevel } from "../../app/authStorage";
-
-type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
-type Getter = () => any;
+import type { Getter, Setter } from "../types";
 
 function readStoredAccessToken() {
   if (typeof localStorage === "undefined") return "";

@@ -1,5 +1,5 @@
 ﻿import { History } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, parseResponse, toErrorText } from "../../shared/api/client";
 import { hasLessonMedia } from "../../shared/media/localMediaStore";
@@ -37,7 +37,7 @@ import "../immersive/immersive.css";
 /** @typedef {import("./types").Lesson} Lesson */
 /** @typedef {import("./types").LessonSentence} LessonSentence */
 
-export function LessonList({
+function LessonList({
   accessToken,
   lessons,
   totalLessons = 0,
@@ -730,5 +730,7 @@ export function LessonList({
     </Card>
   );
 }
+const LessonListMemo = memo(LessonList);
+export { LessonListMemo as LessonList };
 
 

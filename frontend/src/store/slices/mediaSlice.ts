@@ -1,7 +1,5 @@
 ﻿import { getLessonMediaPreview, hasLessonMedia } from "../../shared/media/localMediaStore";
-
-type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
-type Getter = () => any;
+import type { Getter, Setter } from "../types";
 type LessonId = string | number;
 
 export function getDefaultMediaPreview(lessonId: LessonId) {
