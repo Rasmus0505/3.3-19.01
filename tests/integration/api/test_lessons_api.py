@@ -63,7 +63,7 @@ def test_lessons_detail_404_for_nonexistent(authenticated_client, test_user):
 
 def test_vocabulary_extract_from_sentences():
     """测试从句子中提取 Collins 词汇信息"""
-    from app.services.lesson_service import extract_vocabulary_analysis_from_sentences
+    from app.services.lessons.vocabulary import extract_vocabulary_analysis_from_sentences
 
     sentences = [
         "The subsequent transformation of urban landscapes continues.",

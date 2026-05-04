@@ -92,15 +92,7 @@ from app.services.lessons.variants import (
 from app.services.lessons.variants import (
     normalize_runtime_sentences as _normalize_runtime_sentences_impl,
 )
-from app.services.lessons.vocabulary import (
-    extract_vocabulary_analysis_from_sentences as _extract_vocabulary_analysis_from_sentences_impl,
-)
-from app.services.lessons.vocabulary import (
-    generate_vocabulary_explanation as _generate_vocabulary_explanation_impl,
-)
-from app.services.lessons.vocabulary import (
-    process_sentences_with_vocabulary as _process_sentences_with_vocabulary_impl,
-)
+from app.services.lessons.vocabulary import process_sentences_with_vocabulary
 from app.services.llm_usage_service import log_llm_usage
 from app.services.media import (
     MediaError,
@@ -3038,23 +3030,4 @@ class LessonService:
         return lesson
 
 
-def extract_vocabulary_analysis_from_sentences(sentences: list[str], target_level: int) -> list[dict]:
-    return _extract_vocabulary_analysis_from_sentences_impl(sentences, target_level)
-
-
-def generate_vocabulary_explanation(
-    sentence: str,
-    words_above: list[dict],
-    target_level: int
-) -> dict:
-    return _generate_vocabulary_explanation_impl(sentence, words_above, target_level)
-
-
-def process_sentences_with_vocabulary(
-    sentences: list[dict],
-    target_level: int,
-    user_level: int | None = None,
-    include_explanations: bool = True,
-) -> list[dict]:
-    return _process_sentences_with_vocabulary_impl(sentences, target_level, user_level, include_explanations)
 

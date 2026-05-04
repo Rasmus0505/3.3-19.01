@@ -57,6 +57,7 @@ from app.core.config import (
     is_weak_confirm_text,
 )
 from app.core.errors import error_response
+from app.exceptions.base import AppError
 from app.core.logging import setup_logging
 from app.db import (
     BUSINESS_TABLES,
@@ -656,6 +657,10 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
         if path.startswith("/api/") and runtime_status.checked_at and not runtime_status.db_ready:
             return _build_database_not_ready_response(runtime_status)
         return await call_next(request)
+
+    @app.exception_handler(AppError)
+    async def handle_app_error(_request: Request, exc: AppError) -> JSONResponse:
+        return error_response(exc.status_code, exc.code, exc.message, exc.detail)
 
     @app.exception_handler(OperationalError)
     @app.exception_handler(ProgrammingError)

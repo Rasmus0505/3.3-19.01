@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import compression from "vite-plugin-compression";
 import { visualizer } from "rollup-plugin-visualizer";
+import { VitePWA } from "vite-plugin-pwa";
 
 const desktopRendererBuild = String(process.env.BOTTLE_DESKTOP_RENDERER_BUILD || "").trim() === "1";
 
@@ -13,6 +14,26 @@ export default defineConfig({
     compression({ algorithm: "gzip", ext: ".gz" }),
     compression({ algorithm: "brotliCompress", ext: ".br" }),
     visualizer({ filename: "dist/stats.html", open: false, gzipSize: true }),
+    VitePWA({
+      registerType: "autoUpdate",
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        runtimeCaching: [
+          {
+            urlPattern: /^https?:\/\/.*\/api\/.*/i,
+            handler: "NetworkFirst",
+            options: { cacheName: "api-cache", expiration: { maxEntries: 50, maxAgeSeconds: 300 } },
+          },
+        ],
+      },
+      manifest: {
+        name: "Bottle - English Learning",
+        short_name: "Bottle",
+        description: "English Sentence Spelling Trainer",
+        theme_color: "#000000",
+        display: "standalone",
+      },
+    }),
   ],
   base: desktopRendererBuild ? "./" : "/static/",
   build: {

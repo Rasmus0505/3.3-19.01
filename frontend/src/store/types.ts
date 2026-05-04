@@ -1,2 +1,4 @@
-export type Setter = (partial: Record<string, unknown> | ((state: any) => Record<string, unknown>)) => void;
-export type Getter = () => any;
+import type { StoreApi } from "zustand";
+
+export type Setter = StoreApi<Record<string, unknown>>["setState"];
+export type Getter = StoreApi<Record<string, unknown>>["getState"];
