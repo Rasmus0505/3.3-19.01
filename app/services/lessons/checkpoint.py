@@ -6,15 +6,18 @@
 """
 from __future__ import annotations
 
-import json
 import logging
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 from app.services.lesson_task_manager import (
     patch_task_artifacts,
     persist_lesson_workspace_summary,
+)
+from app.services.lessons.asr_handler import (
+    json_default as _json_default,
+    read_json_file,
+    write_json_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,55 +27,6 @@ _VARIANT_RESULT_FILE = "variant_result.json"
 _TRANSLATION_CHECKPOINT_FILE = "translation_checkpoint.json"
 _LESSON_RESULT_FILE = "lesson_result.json"
 _SEGMENT_RESULT_DIR = "asr_segment_results"
-
-
-def read_json_file(path: Path) -> dict[str, Any] | None:
-    """读取 JSON 文件。
-
-    Args:
-        path: 文件路径
-
-    Returns:
-        解析后的字典，读取失败返回 None
-    """
-    try:
-        if not path.exists():
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else None
-    except Exception:
-        logger.warning("[DEBUG] lesson.checkpoint.read_failed path=%s", path)
-        return None
-
-
-def write_json_file(path: Path, payload: dict[str, Any]) -> None:
-    """写入 JSON 文件。
-
-    Args:
-        path: 文件路径
-        payload: 要写入的数据
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
-
-
-def _json_default(value: Any) -> str:
-    """JSON 序列化默认值处理器。
-
-    Args:
-        value: 无法序列化的值
-
-    Returns:
-        字符串表示
-
-    Raises:
-        TypeError: 无法处理的类型
-    """
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
 
 
 class CheckpointManager:

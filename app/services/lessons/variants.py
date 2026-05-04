@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from collections.abc import Callable
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +17,7 @@ from app.services.lesson_builder import (
     normalize_learning_english_text,
     tokenize_learning_sentence,
 )
+from app.services.lessons import asr_handler as _asr_handler
 from app.services.lessons.content_options import normalize_generation_options
 from app.services.media import MediaError
 from app.services.translation_qwen_mt import (
@@ -39,28 +38,9 @@ _TRANSLATION_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
 _TRANSLATION_ZERO_WIDTH_RE = re.compile(r"[\u200B-\u200D\uFEFF]")
 
 
-def _read_json_file(path: Path) -> dict[str, Any] | None:
-    try:
-        if not path.exists():
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else None
-    except Exception:
-        logger.warning("[DEBUG] lesson.checkpoint.read_failed path=%s", path, exc_info=True)
-        return None
-
-
-def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
-
-
-def _json_default(value: Any) -> str:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+_read_json_file = _asr_handler.read_json_file
+_write_json_file = _asr_handler.write_json_file
+_json_default = _asr_handler.json_default
 
 
 def _sanitize_translation_text(text: str) -> str:

@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rm -rf .local-data/static/assets/*)",
+      "Bash(rm -f .local-data/static/index.html)",
+      "Bash(rm -f .local-data/static/sw.js .local-data/static/workbox-*.js)",
+      "Bash(rm -f .local-data/static/registerSW.js)",
+      "Bash(rm -f .local-data/static/manifest.webmanifest)",
+      "Bash(cp frontend/dist/assets/* .local-data/static/assets/)",
+      "Bash(cp frontend/dist/workbox-*.js .local-data/static/)",
+      "Bash(read f *)",
+      "Bash([ -f \".local-data/static/$f\" ])",
+      "Bash(rm -f .local-data/static/sw.js .local-data/static/workbox-*.js .local-data/static/registerSW.js .local-data/static/manifest.webmanifest)"
+    ]
+  }
+}

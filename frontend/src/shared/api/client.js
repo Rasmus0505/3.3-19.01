@@ -333,7 +333,7 @@ export function createApiClient({ baseUrl = "" } = {}) {
       }
 
       const promise = runFetch(path, fetchOptions, accessToken, baseUrl).then((response) => {
-        responseCache.set(key, { response, timestamp: Date.now() });
+        responseCache.set(key, { response: response.clone(), timestamp: Date.now() });
         inFlightRequests.delete(key);
         return response;
       }).catch((err) => {

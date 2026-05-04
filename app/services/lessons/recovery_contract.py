@@ -7,6 +7,7 @@ from typing import Any
 
 from app.services.lessons.content_options import normalize_generation_options
 
+
 CHECKPOINT_SCHEMA_NAME = "lesson_generation_checkpoint"
 CHECKPOINT_SCHEMA_VERSION = 1
 

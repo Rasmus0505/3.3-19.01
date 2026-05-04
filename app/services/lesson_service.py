@@ -7,7 +7,6 @@ import re
 import shutil
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -29,7 +28,6 @@ from app.models.billing import BillingModelRate
 from app.repositories.progress import create_progress
 from app.services.asr_dashscope import (
     AsrError,
-    transcribe_audio_file,
     transcribe_signed_url,
 )
 from app.services.billing_service import (
@@ -46,7 +44,6 @@ from app.services.billing_service import (
 )
 from app.services.collins_levels import normalize_collins_level
 from app.services.lesson_builder import (
-    compose_text_from_words,
     estimate_duration_ms,
     extract_sentences,
     extract_word_items,
@@ -87,7 +84,6 @@ from app.services.lessons.variants import (
 from app.services.lessons.variants import (
     normalize_runtime_sentences as _normalize_runtime_sentences_impl,
 )
-from app.services.lessons.vocabulary import process_sentences_with_vocabulary
 from app.services.llm_usage_service import log_llm_usage
 from app.services.media import (
     MediaError,
@@ -120,355 +116,26 @@ _SEGMENT_RESULT_DIR = "asr_segment_results"
 
 
 
-def _read_json_file(path: Path) -> dict[str, Any] | None:
-    try:
-        if not path.exists():
-            return None
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return payload if isinstance(payload, dict) else None
-    except Exception:
-        logger.warning("[DEBUG] lesson.checkpoint.read_failed path=%s", path, exc_info=True)
-        return None
-
-
-def _write_json_file(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
-
-
-def _json_default(value: Any) -> str:
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
-
-
-def _emit_progress(callback: ProgressCallback | None, **payload: Any) -> None:
-    if not callback:
-        return
-    try:
-        callback(payload)
-    except Exception:
-        logger.exception("[DEBUG] lesson.progress.emit_failed payload=%s", payload)
-
-
-
-def _call_transcribe_audio_file(
-    audio_path: str,
-    *,
-    model: str,
-    known_duration_ms: int | None = None,
-    progress_callback: Callable[[dict[str, Any]], None] | None = None,
-) -> dict[str, Any]:
-    kwargs: dict[str, Any] = {"model": model}
-    if known_duration_ms is not None:
-        kwargs["known_duration_ms"] = max(1, int(known_duration_ms))
-    if progress_callback is not None:
-        kwargs["progress_callback"] = progress_callback
-    try:
-        return transcribe_audio_file(audio_path, **kwargs)
-    except TypeError as exc:
-        if "unexpected keyword argument" not in str(exc):
-            raise
-        legacy_kwargs: dict[str, Any] = {"model": model}
-        if progress_callback is not None:
-            legacy_kwargs["progress_callback"] = progress_callback
-        try:
-            return transcribe_audio_file(audio_path, **legacy_kwargs)
-        except TypeError as fallback_exc:
-            if "unexpected keyword argument" not in str(fallback_exc):
-                raise
-            return transcribe_audio_file(audio_path, model=model)
-
-
-def _progress_percent_by_stage(stage_key: str, ratio: float = 1.0) -> int:
-    ratio = max(0.0, min(1.0, ratio))
-    if stage_key == "convert_audio":
-        return int(12 * ratio)
-    if stage_key == "asr_transcribe":
-        return int(12 + 36 * ratio)
-    if stage_key == "build_lesson":
-        return int(48 + 20 * ratio)
-    if stage_key == "translate_zh":
-        return int(68 + 17 * ratio)
-    if stage_key == "vocabulary_annotation":
-        return int(85 + 5 * ratio)
-    if stage_key == "word_explanation":
-        return int(90 + 5 * ratio)
-    if stage_key == "write_lesson":
-        return int(95 + 5 * ratio)
-    return 0
-
-
-def _apply_generation_content_selection(
-    *,
-    sentences: list[dict[str, Any]],
-    user_level: int,
-    generation_options: dict[str, Any] | None,
-) -> tuple[list[dict[str, Any]], str, str]:
-    normalized_generation_options = normalize_generation_options(generation_options)
-    if not normalized_generation_options["vocabulary_annotation"]:
-        return [
-            clear_sentence_generated_content(
-                sentence,
-                clear_translation=False,
-                clear_vocabulary=True,
-                clear_explanation=True,
-            )
-            for sentence in sentences
-        ], CONTENT_STATE_SKIPPED, CONTENT_STATE_SKIPPED
-
-    vocabulary_state = CONTENT_STATE_GENERATED
-    explanation_state = CONTENT_STATE_GENERATED if normalized_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
-    try:
-        enriched = process_sentences_with_vocabulary(
-            sentences=sentences,
-            target_level=user_level,
-            user_level=user_level,
-            include_explanations=normalized_generation_options["word_explanation"],
-        )
-    except Exception:
-        logger.exception("[DEBUG] lesson.vocabulary_processing_failed, continuing without explanation")
-        fallback = [
-            clear_sentence_generated_content(
-                sentence,
-                clear_translation=False,
-                clear_vocabulary=True,
-                clear_explanation=True,
-            )
-            for sentence in sentences
-        ]
-        return fallback, CONTENT_STATE_PENDING_REGENERATE, (
-            CONTENT_STATE_PENDING_REGENERATE if normalized_generation_options["word_explanation"] else CONTENT_STATE_SKIPPED
-        )
-    return enriched, vocabulary_state, explanation_state
-
-
-def _single_asr_stage_ratio(elapsed_seconds: int) -> float:
-    if elapsed_seconds <= 0:
-        return 0.12
-    return min(0.84, 0.12 + min(0.72, elapsed_seconds / 120.0 * 0.72))
-
-
-
-def _effective_parallel_threshold_seconds(
-    *,
-    parallel_enabled: bool,
-    parallel_threshold_seconds: int,
-) -> int:
-    threshold_seconds = max(1, int(parallel_threshold_seconds))
-    return threshold_seconds
-
-
-def _serialize_word_items(words: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "text": str(item.get("text") or ""),
-            "surface": str(item.get("surface") or ""),
-            "punctuation": str(item.get("punctuation") or ""),
-            "begin_time": int(item["begin_ms"]),
-            "end_time": int(item["end_ms"]),
-        }
-        for item in words
-    ]
-
-
-def _build_parallel_payload(
-    duration_ms: int,
-    merged_words: list[dict[str, Any]],
-    fallback_sentences: list[dict[str, Any]],
-) -> dict[str, Any]:
-    transcript_sentences: list[dict[str, Any]] = []
-    for idx, sentence in enumerate(fallback_sentences):
-        transcript_sentences.append(
-            {
-                "sentence_id": idx,
-                "begin_time": int(sentence["begin_ms"]),
-                "end_time": int(sentence["end_ms"]),
-                "text": str(sentence["text"]),
-            }
-        )
-
-    transcript_text = compose_text_from_words(merged_words)
-    if not transcript_text:
-        transcript_text = " ".join(item["text"] for item in fallback_sentences).strip()
-
-    return {
-        "properties": {"original_duration_in_milliseconds": int(duration_ms)},
-        "transcripts": [
-            {
-                "channel_id": 0,
-                "text": transcript_text,
-                "words": _serialize_word_items(merged_words),
-                "sentences": transcript_sentences,
-            }
-        ],
-    }
-
-
-
-def _shift_words(word_items: list[dict[str, Any]], offset_ms: int) -> list[dict[str, Any]]:
-    shifted: list[dict[str, Any]] = []
-    for item in word_items:
-        shifted.append(
-            {
-                "text": item["text"],
-                "surface": item.get("surface") or item["text"],
-                "punctuation": item.get("punctuation") or "",
-                "begin_ms": int(item["begin_ms"]) + offset_ms,
-                "end_ms": int(item["end_ms"]) + offset_ms,
-            }
-        )
-    return shifted
-
-
-def _shift_sentences(sentence_items: list[dict[str, Any]], offset_ms: int) -> list[dict[str, Any]]:
-    shifted: list[dict[str, Any]] = []
-    for item in sentence_items:
-        shifted.append(
-            {
-                "text": item["text"],
-                "begin_ms": int(item["begin_ms"]) + offset_ms,
-                "end_ms": int(item["end_ms"]) + offset_ms,
-            }
-        )
-    return shifted
-
-
-def _segment_result_to_payload(
-    segment_index: int,
-    segment_words: list[dict[str, Any]],
-    segment_sentences: list[dict[str, Any]],
-    usage_seconds: int | None,
-    raw_result: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload = {
-        "segment_index": int(segment_index),
-        "segment_words": list(segment_words),
-        "segment_sentences": list(segment_sentences),
-        "usage_seconds": int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
-    }
-    if isinstance(raw_result, dict) and raw_result:
-        payload["raw_result"] = dict(raw_result)
-    return payload
-
-
-def _build_asr_cache_meta(
-    *,
-    opus_path: Path,
-    source_duration_ms: int,
-    parallel_enabled: bool,
-    parallel_threshold_seconds: int,
-    segment_target_seconds: int,
-    max_concurrency: int,
-) -> dict[str, Any]:
-    return {
-        "opus_path": str(opus_path),
-        "source_duration_ms": int(source_duration_ms),
-        "parallel_enabled": bool(parallel_enabled),
-        "parallel_threshold_seconds": int(parallel_threshold_seconds),
-        "segment_target_seconds": int(segment_target_seconds),
-        "max_concurrency": int(max_concurrency),
-    }
-
-
-def _is_asr_cache_compatible(
-    cached_result: dict[str, Any] | None,
-    *,
-    opus_path: Path,
-    source_duration_ms: int,
-    parallel_enabled: bool,
-    parallel_threshold_seconds: int,
-    segment_target_seconds: int,
-    max_concurrency: int,
-) -> bool:
-    if not isinstance(cached_result, dict):
-        return False
-    cache_meta = cached_result.get("cache_meta")
-    if not isinstance(cache_meta, dict):
-        return False
-    expected = _build_asr_cache_meta(
-        opus_path=opus_path,
-        source_duration_ms=source_duration_ms,
-        parallel_enabled=parallel_enabled,
-        parallel_threshold_seconds=parallel_threshold_seconds,
-        segment_target_seconds=segment_target_seconds,
-        max_concurrency=max_concurrency,
-    )
-    return all(cache_meta.get(key) == value for key, value in expected.items())
-
-
-def _load_segment_result(result_path: Path) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None] | None:
-    payload = _read_json_file(result_path)
-    if not payload:
-        return None
-    return (
-        int(payload.get("segment_index", 0)),
-        [dict(item) for item in list(payload.get("segment_words") or []) if isinstance(item, dict)],
-        [dict(item) for item in list(payload.get("segment_sentences") or []) if isinstance(item, dict)],
-        int(payload["usage_seconds"]) if isinstance(payload.get("usage_seconds"), int) and int(payload.get("usage_seconds")) > 0 else None,
-        dict(payload.get("raw_result") or {}) if isinstance(payload.get("raw_result"), dict) else None,
-    )
-
-
-def _transcribe_segment(
-    segment_index: int,
-    segment_start_ms: int,
-    segment_end_ms: int,
-    segment_path: Path,
-    asr_model: str,
-    result_path: Path | None = None,
-) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None]:
-    if result_path:
-        cached = _load_segment_result(result_path)
-        if cached:
-            return cached
-    asr_result = _call_transcribe_audio_file(
-        str(segment_path),
-        model=asr_model,
-        known_duration_ms=max(1, int(segment_end_ms) - int(segment_start_ms)),
-    )
-    segment_payload = asr_result["asr_result_json"]
-    usage_seconds = asr_result.get("usage_seconds")
-    segment_words = _shift_words(extract_word_items(segment_payload), segment_start_ms)
-    segment_sentences = _shift_sentences(extract_sentences(segment_payload), segment_start_ms)
-    payload = (
-        segment_index,
-        segment_words,
-        segment_sentences,
-        int(usage_seconds) if isinstance(usage_seconds, int) and usage_seconds > 0 else None,
-        dict(asr_result),
-    )
-    if result_path:
-        _write_json_file(result_path, _segment_result_to_payload(*payload))
-    return payload
-
-
-def _call_transcribe_segment(
-    segment_index: int,
-    segment_start_ms: int,
-    segment_end_ms: int,
-    segment_path: Path,
-    asr_model: str,
-    result_path: Path | None = None,
-) -> tuple[int, list[dict[str, Any]], list[dict[str, Any]], int | None, dict[str, Any] | None]:
-    try:
-        return _transcribe_segment(
-            segment_index,
-            segment_start_ms,
-            segment_end_ms,
-            segment_path,
-            asr_model,
-            result_path=result_path,
-        )
-    except TypeError as exc:
-        if result_path is None or "unexpected keyword argument" not in str(exc):
-            raise
-        payload = _transcribe_segment(segment_index, segment_start_ms, segment_end_ms, segment_path, asr_model)
-        _write_json_file(result_path, _segment_result_to_payload(*payload))
-        return payload
-
+# ASR helper aliases (migrated to asr_handler module)
+_read_json_file = _asr_handler.read_json_file
+_write_json_file = _asr_handler.write_json_file
+_json_default = _asr_handler.json_default
+_emit_progress = _asr_handler.emit_progress
+_call_transcribe_audio_file = _asr_handler.call_transcribe_audio_file
+_progress_percent_by_stage = _asr_handler.progress_percent_by_stage
+_apply_generation_content_selection = _asr_handler.apply_generation_content_selection
+_single_asr_stage_ratio = _asr_handler.single_asr_stage_ratio
+_effective_parallel_threshold_seconds = _asr_handler.effective_parallel_threshold_seconds
+_serialize_word_items = _asr_handler.serialize_word_items
+_build_parallel_payload = _asr_handler.build_parallel_payload
+_shift_words = _asr_handler.shift_words
+_shift_sentences = _asr_handler.shift_sentences
+_segment_result_to_payload = _asr_handler.segment_result_to_payload
+_build_asr_cache_meta = _asr_handler.build_asr_cache_meta
+_is_asr_cache_compatible = _asr_handler.is_asr_cache_compatible
+_load_segment_result = _asr_handler.load_segment_result
+_transcribe_segment = _asr_handler.transcribe_segment
+_call_transcribe_segment = _asr_handler.call_transcribe_segment
 
 
 class LessonService:
