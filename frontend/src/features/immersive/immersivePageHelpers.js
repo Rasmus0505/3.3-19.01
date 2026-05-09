@@ -542,6 +542,69 @@ function pruneRevealComparableIndicesForInputs(wordInputs, prevArrays) {
   return changed ? next : prevArrays;
 }
 
+/**
+ * 匹配 expectedTokens 中需要自动显示的词/短语索引。
+ * 短语必须连续 token 完全匹配（normalize 后比较）。
+ * @param {string[]} tokens
+ * @param {Array<{type:string, value:string}>} autoDisplayEntries
+ * @returns {Set<number>} 需要自动显示的 token 下标集合
+ */
+function resolveAutoDisplayIndices(tokens, autoDisplayEntries) {
+  const autoSet = new Set();
+  if (!Array.isArray(tokens) || !Array.isArray(autoDisplayEntries) || !autoDisplayEntries.length) {
+    return autoSet;
+  }
+
+  // 构建条目列表：单词条目 { type, words: [single] }，短语条目 { type, words: [multi] }
+  const entries = [];
+  for (const entry of autoDisplayEntries) {
+    if (!entry.value) continue;
+    const words = String(entry.value).trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) continue;
+    entries.push({ type: entry.type, words });
+  }
+
+  // 按短语长度降序排序（长短语优先匹配）
+  entries.sort((a, b) => b.words.length - a.words.length);
+
+  // 跳过已匹配的下标，避免短语与单词冲突
+  const skip = new Set();
+
+  for (const entry of entries) {
+    const wordCount = entry.words.length;
+    if (wordCount === 1) {
+      // 单词条目：扫描所有 token
+      for (let i = 0; i < tokens.length; i++) {
+        if (skip.has(i)) continue;
+        const normalized = normalizeComparableToken(tokens[i]);
+        if (normalized === entry.words[0]) {
+          autoSet.add(i);
+          skip.add(i);
+        }
+      }
+    } else {
+      // 短语条目：滑动窗口匹配连续 token
+      for (let i = 0; i <= tokens.length - wordCount; i++) {
+        if (skip.has(i)) continue;
+        let match = true;
+        for (let j = 0; j < wordCount; j++) {
+          if (skip.has(i + j)) { match = false; break; }
+          const normalized = normalizeComparableToken(tokens[i + j]);
+          if (normalized !== entry.words[j]) { match = false; break; }
+        }
+        if (match) {
+          for (let j = 0; j < wordCount; j++) {
+            autoSet.add(i + j);
+            skip.add(i + j);
+          }
+        }
+      }
+    }
+  }
+
+  return autoSet;
+}
+
 function createWordState(tokens) {
   const safeTokens = Array.isArray(tokens) ? tokens.filter((t) => typeof t === "string" && t.trim()) : [];
   return {
@@ -1002,6 +1065,7 @@ export {
   buildLetterSlots,
   formatSoeAssessErrorMessage,
   resolveImmersiveShellHeightPx,
+  resolveAutoDisplayIndices,
   addSentenceCefrTokensToMap,
   addTokenLevelToMap,
   lookupBandFromMap,

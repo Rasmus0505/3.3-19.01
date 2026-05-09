@@ -26,20 +26,20 @@ export function UploadGenerationOptions({
   onOptionChange,
 }: UploadGenerationOptionsProps) {
   return (
-    <div className="space-y-3 rounded-2xl border bg-muted/10 px-4 py-4">
+    <div className="space-y-3 rounded-2xl border bg-muted/10 px-4 py-3">
       <div className="space-y-1">
         <p className="text-sm font-medium">生成内容</p>
         <p className="text-xs text-muted-foreground">英文字幕为必选项。关闭不需要的内容可以减少本次消耗。</p>
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
-        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-2">
           <input type="checkbox" checked readOnly disabled className="mt-0.5 size-4 rounded border-input accent-primary" />
           <span className="space-y-1">
             <span className="block text-sm font-medium">英文字幕</span>
             <span className="block text-xs text-muted-foreground">课程最终使用句级时间戳；开启本地对齐后将覆盖 ASR 原始时间轴</span>
           </span>
         </label>
-        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-2">
           <input
             type="checkbox"
             checked={Boolean(options.zh_translation)}
@@ -54,7 +54,7 @@ export function UploadGenerationOptions({
             </span>
           </span>
         </label>
-        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-2">
           <input
             type="checkbox"
             checked={Boolean(options.vocabulary_annotation)}
@@ -73,7 +73,7 @@ export function UploadGenerationOptions({
             <span className="block text-xs text-muted-foreground">生成 Collins 难度与重点词数据</span>
           </span>
         </label>
-        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-2">
           <input
             type="checkbox"
             checked={Boolean(options.forced_alignment)}
@@ -86,7 +86,7 @@ export function UploadGenerationOptions({
             <span className="block text-xs text-muted-foreground">使用本机 Qwen3-ForcedAligner 重算词级和句级时间戳；若失败，本次生成将直接失败</span>
           </span>
         </label>
-        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-3">
+        <label className="flex items-start gap-3 rounded-xl border bg-background/80 px-3 py-2">
           <input
             type="checkbox"
             checked={Boolean(options.word_explanation)}

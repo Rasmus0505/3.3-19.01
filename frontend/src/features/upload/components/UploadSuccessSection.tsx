@@ -40,7 +40,7 @@ export function UploadSuccessSection({
   if (!show) return null;
 
   return (
-    <div className={cn("space-y-3 rounded-2xl border p-4", surfaceClassName)}>
+    <div className={cn("space-y-2 rounded-2xl border px-4 py-3", surfaceClassName)}>
       <div className="flex items-start gap-3">
         <CheckCircle2 className={cn("mt-0.5 size-5", textClassName)} />
         <div className="space-y-1">

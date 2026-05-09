@@ -17,6 +17,7 @@ import { useWordbookSelection } from "./hooks/useWordbookSelection";
 export * from "./immersiveTypes";
 
 import { parseResponse } from "../../shared/api/client";
+import { toast } from "sonner";
 import { classifyTokensByCollins } from "../../shared/api/dictionaryApi";
 import { getStorageEstimate, getLessonMedia, readMediaDurationSeconds, requestPersistentStorage, saveLessonMedia } from "../../shared/media/localMediaStore";
 import {
@@ -26,6 +27,7 @@ import {
   CardTitle,
 } from "../../shared/ui";
 import {
+  addAutoDisplayEntry,
   getShortcutLabel,
   readLearningSettings,
 } from "./learningSettings";
@@ -100,6 +102,7 @@ import {
   normalizeComparableToken,
   pruneRevealComparableIndicesForInputs,
   readErrorPayload,
+  resolveAutoDisplayIndices,
   resolveImmersiveShellHeightPx,
   resolveInteractiveWordbookContext,
   resolveMediaModeByTypeAndName,
@@ -551,6 +554,12 @@ export function ImmersiveLessonPage({
     translationDisplayMode === "current_answered" ? currentSentence : previousSentence;
   const entryHintItems = useMemo(() => buildImmersiveEntryHintItems(learningSettings), [learningSettings]);
   const expectedTokens = useMemo(() => (Array.isArray(currentSentence?.tokens) ? currentSentence.tokens.filter((t) => typeof t === "string" && t.trim()) : []), [currentSentence?.tokens]);
+  const autoDisplayIndices = useMemo(() => {
+    const entries = learningSettings?.autoDisplayEntries;
+    return Array.isArray(entries) && entries.length > 0 && expectedTokens.length > 0
+      ? resolveAutoDisplayIndices(expectedTokens, entries)
+      : new Set();
+  }, [expectedTokens, learningSettings?.autoDisplayEntries]);
   const currentSentenceTokens = useMemo(
     () => buildSelectableSentenceTokens(currentSentence),
     [currentSentence?.text_en, currentSentence?.tokens],
@@ -934,12 +943,62 @@ export function ImmersiveLessonPage({
 
   const resetWordTyping = useCallback(
     (sentence, playbackRequired = true) => {
-      const next = createWordState(sentence?.tokens || []);
+      // 先过滤掉空 token，确保与 createWordState 内部一致
+      const tokens = (sentence?.tokens || []).filter((t) => typeof t === "string" && t.trim());
+      const next = createWordState(tokens);
+
+      // 自动显示预填：匹配的单词/短语直接标记为正确
+      const settings = readLearningSettings();
+      const autoEntries = settings.autoDisplayEntries;
+      if (Array.isArray(autoEntries) && autoEntries.length > 0 && tokens.length > 0) {
+        const autoIndices = resolveAutoDisplayIndices(tokens, autoEntries);
+        if (autoIndices.size > 0) {
+          for (const idx of autoIndices) {
+            if (idx < tokens.length) {
+              next.wordInputs[idx] = String(tokens[idx] || "");
+              next.wordStatuses[idx] = "correct";
+            }
+          }
+          let firstNonAuto = 0;
+          while (autoIndices.has(firstNonAuto) && firstNonAuto < tokens.length) {
+            firstNonAuto++;
+          }
+          if (firstNonAuto < tokens.length) {
+            next.activeWordIndex = firstNonAuto;
+            next.wordStatuses[firstNonAuto] = "active";
+          } else {
+            next.activeWordIndex = tokens.length;
+          }
+        }
+      }
+
       applyWordSnapshot(next);
-      setWordRevealComparableIndices([]); // 重置 reveal 追踪
+      setWordRevealComparableIndices([]);
       resetSentenceGate(playbackRequired);
+
+      // 所有词都自动显示时完成句子
+      if (tokens.length > 0 && next.activeWordIndex >= tokens.length) {
+        dispatchSession({
+          type: ANSWER_COMPLETED,
+          translationDisplayMode: "current_answered",
+        });
+      }
     },
-    [applyWordSnapshot, resetSentenceGate],
+    [applyWordSnapshot, dispatchSession, resetSentenceGate],
+  );
+
+  const handleAddToAutoDisplay = useCallback(
+    (token) => {
+      const value = String(token || "").trim().toLowerCase();
+      if (!value) return;
+      const added = addAutoDisplayEntry({ type: "word", value });
+      if (added) {
+        toast.success(`「${value}」已加入自动显示列表`, { duration: 2000 });
+      } else {
+        toast.error(`「${value}」已在自动显示列表中`, { duration: 2000 });
+      }
+    },
+    [],
   );
 
   useEffect(() => {
@@ -2332,6 +2391,7 @@ export function ImmersiveLessonPage({
         isPlaying,
         isPlaybackPaused,
         expectedTokens,
+        autoDisplayIndices,
         wordStatuses,
         wordInputs,
         wordRowLines,
@@ -2404,6 +2464,7 @@ export function ImmersiveLessonPage({
         isTouchDevice,
         shouldKeepControlFocus,
         onStartPostLesson: handleStartPostLesson,
+        onAddToAutoDisplay: handleAddToAutoDisplay,
       }}
       explanationProps={{
         sentence: currentSentence,

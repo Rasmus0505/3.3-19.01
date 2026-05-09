@@ -4317,7 +4317,7 @@ function UploadPanel({
   ];
   const workspaceModeSwitchDisabled = uploadActionBusy || asrOnlyBusy;
   const workspaceModeToggle = (
-    <div className="space-y-2">
+    <div className="space-y-1">
       <div className="inline-flex w-fit rounded-2xl border bg-muted/20 p-1">
         <button
           type="button"
@@ -4362,7 +4362,7 @@ function UploadPanel({
             <CardDescription>左侧保留课程生成模式，右侧补上多文件 ASR 文本识别与复制能力。</CardDescription>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-3">
           {workspaceModeToggle}
           <UploadAsrOnlyPanel
             accessToken={accessToken}
@@ -4401,7 +4401,7 @@ function UploadPanel({
           </div>
         ) : null}
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         <UploadDesktopUpdateBanner
           updateState={desktopUpdateState}
           dismissed={updateBannerDismissed}
@@ -4434,7 +4434,7 @@ function UploadPanel({
             <p className="text-base font-semibold text-foreground">选择学习素材质量</p>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
             {resolvedUploadModelOptions.map((item) => {
               const selected = selectedUploadModel === item.key;
               const isFasterWhisper = item.key === FASTER_WHISPER_MODEL;
@@ -4558,7 +4558,7 @@ function UploadPanel({
                   role="button"
                   tabIndex={0}
                   className={cn(
-                    "flex min-h-[220px] flex-col gap-3 rounded-2xl border p-4 text-left transition-colors",
+                    "flex min-h-[160px] flex-col gap-3 rounded-2xl border p-4 text-left transition-colors",
                     modelCardToneStyles.surface,
                     selected ? "shadow-sm" : "bg-background/80",
                     uploadActionBusy || bottle1WebBlocked ? "cursor-not-allowed opacity-80" : "cursor-pointer",
@@ -4748,13 +4748,13 @@ function UploadPanel({
         />
 
         <form
-          className="space-y-4"
+          className="space-y-3"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
           }}
         >
-          <div className="grid gap-3" data-guide-id="upload-select-file">
+          <div className="grid gap-2" data-guide-id="upload-select-file">
             {desktopRuntimeAvailable ? (
               <div className="inline-flex w-fit rounded-2xl border bg-muted/20 p-1">
                 <button
@@ -4815,7 +4815,7 @@ function UploadPanel({
               disabled={loading || localModeBusy || importBusy}
             />
             {desktopLinkModeActive ? (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 <div className="w-full md:w-1/3">
                   <input
                     type="text"
@@ -5048,7 +5048,7 @@ function UploadPanel({
         />
 
         {phase === "error" && status ? (
-          <div className={cn("space-y-3 rounded-2xl border p-4", getUploadToneStyles(taskTone).surface)}>
+          <div className={cn("space-y-2 rounded-2xl border px-4 py-3", getUploadToneStyles(taskTone).surface)}>
             <p className={cn("text-sm", getUploadToneStyles(taskTone).text)}>{status}</p>
             {desktopLinkModeActive ? (
               <div className="space-y-1 text-xs text-muted-foreground">

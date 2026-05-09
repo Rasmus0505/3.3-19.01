@@ -39,7 +39,7 @@ export function UploadDesktopUpdateBanner({
 
   return (
     <>
-      <div className="mb-3 flex items-start justify-between rounded-lg border border-blue-200 bg-blue-50 p-3">
+      <div className="flex items-start justify-between rounded-lg border border-blue-200 bg-blue-50 p-3">
         {updateState?.downloading ? (
           <div className="w-full">
             <div className="flex items-center gap-2">
@@ -98,7 +98,7 @@ export function UploadDesktopUpdateBanner({
       </div>
 
       {updateState?.status === "error" && (
-        <div className="mb-3 flex items-start justify-between rounded-lg border border-red-200 bg-red-50 p-3">
+        <div className="flex items-start justify-between rounded-lg border border-red-200 bg-red-50 p-3">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium text-red-900">更新失败</span>

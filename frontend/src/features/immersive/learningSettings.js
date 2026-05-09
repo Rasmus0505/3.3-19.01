@@ -382,11 +382,53 @@ export function getShortcutCompleteness(learningSettings) {
   return result;
 }
 
+export function sanitizeAutoDisplayEntries(rawEntries) {
+  if (!Array.isArray(rawEntries)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const entry of rawEntries) {
+    if (!entry || typeof entry !== "object") continue;
+    const type = entry.type === "phrase" ? "phrase" : "word";
+    const value = String(entry.value || "").trim().toLowerCase();
+    if (!value) continue;
+    const key = `${type}:${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ type, value });
+  }
+  return result;
+}
+
+export function addAutoDisplayEntry(entry) {
+  const settings = readLearningSettings();
+  const entries = sanitizeAutoDisplayEntries(settings.autoDisplayEntries);
+  const type = entry.type === "phrase" ? "phrase" : "word";
+  const value = String(entry.value || "").trim().toLowerCase();
+  if (!value) return false;
+  if (entries.some((e) => e.type === type && e.value === value)) return false;
+  entries.push({ type, value });
+  settings.autoDisplayEntries = entries;
+  writeLearningSettings(settings);
+  return true;
+}
+
+export function removeAutoDisplayEntry(type, value) {
+  const settings = readLearningSettings();
+  const entries = sanitizeAutoDisplayEntries(settings.autoDisplayEntries);
+  const key = `${type}:${String(value || "").trim().toLowerCase()}`;
+  const filtered = entries.filter((e) => `${e.type}:${e.value}` !== key);
+  if (filtered.length === entries.length) return false;
+  settings.autoDisplayEntries = filtered;
+  writeLearningSettings(settings);
+  return true;
+}
+
 export function sanitizeLearningSettings(rawSettings = {}) {
   return {
     shortcuts: sanitizeShortcutMap(rawSettings?.shortcuts),
     uiPreferences: sanitizeUiPreferences(rawSettings?.uiPreferences),
     playbackPreferences: sanitizePlaybackPreferences(rawSettings?.playbackPreferences),
+    autoDisplayEntries: sanitizeAutoDisplayEntries(rawSettings?.autoDisplayEntries),
   };
 }
 

@@ -1,5 +1,5 @@
-﻿import { Bell, ChevronDown, ChevronRight } from "lucide-react";
-import { useEffect, useState } from "react";
+﻿import { Bell, ChevronDown, ChevronRight, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { CircleUserRound, Save } from "lucide-react";
 import { toast } from "sonner";
 
@@ -8,6 +8,7 @@ import { parseResponse, toErrorText } from "../../shared/api/client";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, RadioGroup, RadioGroupItem, ScrollArea } from "../../shared/ui";
 import { useAppStore } from "../../store";
 import { RedeemCodePanel } from "../wallet/components/RedeemCodePanel";
+import { addAutoDisplayEntry as addAutoEntry, readLearningSettings, removeAutoDisplayEntry as removeAutoEntry } from "../../features/immersive/learningSettings";
 
 function formatDate(isoString) {
   if (!isoString) return "";
@@ -207,6 +208,9 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
         </CardContent>
       </Card>
 
+      {/* Auto-display Words/Phrases */}
+      <AutoDisplaySettingsCard apiCall={apiCall} />
+
       <RedeemCodePanel apiCall={apiCall} onWalletChanged={onWalletChanged} />
 
       {/* Changelog section */}
@@ -264,8 +268,146 @@ export function AccountPanel({ apiCall, currentUser, onWalletChanged }) {
           )}
         </CardContent>
       </Card>
+
+      <AutoDisplaySettingsCard apiCall={apiCall} />
+
     </div>
   );
 }
 
+function AutoDisplaySettingsCard({ apiCall }) {
+  const [entries, setEntries] = useState(() => readLearningSettings().autoDisplayEntries || []);
+  const [inputValue, setInputValue] = useState("");
+  const [inputType, setInputType] = useState("word");
+  const refreshEntries = useCallback(() => {
+    setEntries(readLearningSettings().autoDisplayEntries || []);
+  }, []);
+
+  useEffect(() => {
+    const handler = () => refreshEntries();
+    window.addEventListener("immersive-learning-settings-updated", handler);
+    return () => window.removeEventListener("immersive-learning-settings-updated", handler);
+  }, [refreshEntries]);
+
+  function handleAdd() {
+    const value = String(inputValue || "").trim();
+    if (!value) {
+      toast.error("请输入要添加的单词或短语");
+      return;
+    }
+    if (addAutoEntry({ type: inputType, value })) {
+      toast.success(`已添加「${value}」`);
+      setInputValue("");
+      refreshEntries();
+    } else {
+      toast.error("该条目已存在");
+    }
+  }
+
+  function handleRemove(type, value) {
+    removeAutoEntry(type, value);
+    refreshEntries();
+  }
+
+  const wordEntries = entries.filter((e) => e.type === "word");
+  const phraseEntries = entries.filter((e) => e.type === "phrase");
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <span className="size-4" />
+          自动显示设置
+        </CardTitle>
+        <CardDescription>
+          设置在沉浸学习中自动显示（无需手动输入）的单词或短语。短语需完整连续出现才触发。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex-1 space-y-1">
+            <p className="text-xs text-muted-foreground">单词或短语</p>
+            <Input
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="例如: um 或 you know"
+              onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+            />
+          </div>
+          <div className="flex items-center gap-1 rounded-lg border p-0.5">
+            <button
+              type="button"
+              onClick={() => setInputType("word")}
+              className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${inputType === "word" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              单词
+            </button>
+            <button
+              type="button"
+              onClick={() => setInputType("phrase")}
+              className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${inputType === "phrase" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              短语
+            </button>
+          </div>
+          <Button size="sm" className="h-9 gap-1" onClick={handleAdd}>
+            <Plus className="size-3.5" />
+            添加
+          </Button>
+        </div>
+
+        {entries.length === 0 ? (
+          <p className="py-2 text-center text-xs text-muted-foreground">暂无设置，输入单词或短语后添加</p>
+        ) : (
+          <div className="space-y-2">
+            {wordEntries.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">单词 ({wordEntries.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {wordEntries.map((entry) => (
+                    <span
+                      key={`word:${entry.value}`}
+                      className="inline-flex items-center gap-1 rounded-full border bg-muted/30 px-2.5 py-1 text-xs"
+                    >
+                      {entry.value}
+                      <button
+                        type="button"
+                        onClick={() => handleRemove("word", entry.value)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {phraseEntries.length > 0 && (
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-muted-foreground">短语 ({phraseEntries.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {phraseEntries.map((entry) => (
+                    <span
+                      key={`phrase:${entry.value}`}
+                      className="inline-flex items-center gap-1 rounded-full border bg-blue-50/50 px-2.5 py-1 text-xs text-blue-800"
+                    >
+                      <span className="font-medium">{entry.value}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove("phrase", entry.value)}
+                        className="text-blue-400 hover:text-red-500 transition-colors"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 

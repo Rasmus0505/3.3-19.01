@@ -30,7 +30,7 @@ export function UploadPausedSection({
   if (!show) return null;
 
   return (
-    <div className={cn("space-y-3 rounded-2xl border p-4", surfaceClassName)}>
+    <div className={cn("space-y-2 rounded-2xl border px-4 py-3", surfaceClassName)}>
       <p className={cn("text-sm", textClassName)}>{statusText || "上传已暂停，可继续上传当前素材。"}</p>
       <div className="flex flex-wrap gap-2">
         {hasLocalFile ? (

@@ -538,6 +538,45 @@ body.immersive-scroll-lock {
   background: transparent;
 }
 
+/* 自动显示词槽：虚下划线 + 灰色调区分于手动输入的正确词 */
+.immersive-word-slot--auto .immersive-letter-cell {
+  border-bottom-color: color-mix(in oklch, var(--color-muted-foreground) 50%, transparent) !important;
+  border-bottom-style: dashed;
+}
+.immersive-word-slot--auto .immersive-letter-char {
+  color: color-mix(in oklch, var(--color-muted-foreground) 65%, var(--color-foreground) 35%);
+}
+
+/* 词槽悬浮添加按钮 */
+.immersive-word-slot__add-btn {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  transition: color 120ms ease, background-color 120ms ease;
+  z-index: 5;
+}
+.immersive-word-slot {
+  position: relative;
+}
+.immersive-word-slot:hover .immersive-word-slot__add-btn {
+  display: flex;
+}
+.immersive-word-slot__add-btn:hover {
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 10%, var(--color-card));
+}
+
 .immersive-letter-row {
   display: flex;
   align-items: flex-end;

@@ -1,5 +1,5 @@
 ﻿import React, { forwardRef } from "react";
-import { GraduationCap, Loader2, Volume2 } from "lucide-react";
+import { GraduationCap, Loader2, Plus, Volume2 } from "lucide-react";
 import { toast } from "sonner";
 
 import AudioRecorder from "../../shared/components/AudioRecorder";
@@ -64,9 +64,12 @@ function renderWordSlots({
   handleWordbookTokenPointerDown,
   handleWordbookTokenPointerEnter,
   canRenderInteractiveWordbook,
+  autoDisplayIndices,
+  onAddToAutoDisplay,
 }) {
   const renderToken = (token, index) => {
     const status = wordStatuses[index] || "pending";
+    const isAutoDisplayed = autoDisplayIndices?.has(index);
     // 句子已完成时，只保留 correct 状态的单词，隐藏其余（pending/active）
     if (sentenceTypingDone && status !== "correct") return null;
     const slots = buildLetterSlots(token, wordInputs[index] || "", wordRevealComparableIndices[index] || []);
@@ -76,6 +79,7 @@ function renderWordSlots({
         key={`${token}-${index}`}
         className={cn(
           `immersive-word-slot immersive-word-slot--${status} immersive-word-slot--underline`,
+          isAutoDisplayed ? "immersive-word-slot--auto" : "",
           computeDifficultyClassName(
             lookupBandFromMap(currentSentenceBandMap, token, difficultyAnalyzerRef.current),
             collinsLevel,
@@ -126,6 +130,21 @@ function renderWordSlots({
             </span>
           ))}
         </div>
+        {/* 非自动显示、非 wordbook 选择模式、句子未完成时显示添加按钮 */}
+        {!isAutoDisplayed && !canRenderInteractiveWordbook && !sentenceTypingDone && onAddToAutoDisplay && (
+          <button
+            type="button"
+            className="immersive-word-slot__add-btn"
+            title="加入自动显示"
+            onClick={(event) => {
+              event.stopPropagation();
+              onAddToAutoDisplay(token);
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <Plus className="size-3" />
+          </button>
+        )}
       </div>
     );
   };
@@ -154,6 +173,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     isPlaying,
     isPlaybackPaused,
     expectedTokens,
+    autoDisplayIndices,
     wordStatuses,
     wordInputs,
     wordRowLines,
@@ -216,6 +236,7 @@ const TypingPanel = forwardRef(function TypingPanel(
     isTouchDevice,
     shouldKeepControlFocus,
     onStartPostLesson,
+    onAddToAutoDisplay,
     sessionControlsContent,
   },
   ref,
@@ -254,6 +275,8 @@ const TypingPanel = forwardRef(function TypingPanel(
           handleWordbookTokenPointerDown,
           handleWordbookTokenPointerEnter,
           canRenderInteractiveWordbook,
+          autoDisplayIndices,
+          onAddToAutoDisplay,
         })}
       </div>
 

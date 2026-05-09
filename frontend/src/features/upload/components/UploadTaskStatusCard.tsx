@@ -47,7 +47,7 @@ export function UploadTaskStatusCard({
   if (!show) return null;
 
   return (
-    <div className={cn("space-y-3 rounded-2xl border p-4", surfaceClassName)}>
+    <div className={cn("space-y-2 rounded-2xl border px-4 py-3", surfaceClassName)}>
       <div className="space-y-1">
         <p className="text-sm font-medium">任务状态</p>
         <p className={cn("text-sm", textClassName)}>{statusText}</p>
