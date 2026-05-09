@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 
 import {
+  Badge,
   Button,
   Card,
   CardContent,
@@ -63,6 +64,12 @@ const VideoPanel = forwardRef(function VideoPanel(
     handleTogglePlaybackRatePinned,
     isPlaying,
     isPlaybackPaused,
+    learningTimerLabel,
+    learningTimerStatusLabel,
+    learningTimerPaused,
+    learningTimerBusy,
+    onPauseLearningTimer,
+    onResumeLearningTimer,
     showSessionControls = true,
   },
   ref,
@@ -93,6 +100,31 @@ const VideoPanel = forwardRef(function VideoPanel(
                   </Button>
                 ) : null}
                 <h1 className="immersive-stage__title">{lessonTitle || "课程视频"}</h1>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs">
+                  {learningTimerStatusLabel || "学习中"}
+                </Badge>
+                <Badge className="rounded-full bg-slate-950 px-3 py-1 text-xs text-white hover:bg-slate-950">
+                  {learningTimerLabel || "00:00"}
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={learningTimerBusy}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (learningTimerPaused) {
+                      void onResumeLearningTimer?.();
+                    } else {
+                      void onPauseLearningTimer?.();
+                    }
+                  }}
+                >
+                  {learningTimerPaused ? "继续计时" : "暂停计时"}
+                </Button>
               </div>
             </div>
 

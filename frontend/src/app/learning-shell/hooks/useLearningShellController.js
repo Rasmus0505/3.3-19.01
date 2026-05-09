@@ -290,8 +290,7 @@ export function useLearningShellController({
     const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
     if (!complete) {
       const names = missingActions.map((a) => a.label).join("、");
-      setGlobalStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
-      return;
+      setGlobalStatus(`快捷键未配置完整：${names}。已先进入学习页面，你可以稍后再补齐这些快捷键。`);
     }
     lastNonImmersivePanelRef.current = activePanel;
     navigate(`/immersive/${lessonId}`);
@@ -302,8 +301,7 @@ export function useLearningShellController({
     const { complete, missingActions } = getShortcutCompleteness(readLearningSettings());
     if (!complete) {
       const names = missingActions.map((a) => a.label).join("、");
-      setGlobalStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
-      return;
+      setGlobalStatus(`快捷键未配置完整：${names}。已先进入学习页面，你可以稍后再补齐这些快捷键。`);
     }
     lastNonImmersivePanelRef.current = "history";
     navigate(getPanelPath("history"));

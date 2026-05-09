@@ -21,6 +21,7 @@ from app.models.lesson import (
     WordbookEntry,
     WordbookEntrySource,
 )
+from app.models.learning_session import LearningSession
 from app.models.llm_usage import LLMUsageLog
 from app.models.reading_pack import ReadingPack
 from app.models.soe_result import SOEResult
@@ -41,6 +42,7 @@ __all__ = [
     "MediaAsset",
     "WordbookEntry",
     "WordbookEntrySource",
+    "LearningSession",
     "WalletAccount",
     "WalletLedger",
     "BillingModelRate",

@@ -204,8 +204,7 @@ function LessonList({
     const { complete, missingActions } = getShortcutCompleteness(learningSettings);
     if (!complete) {
       const names = missingActions.map((action) => action.label).join("、");
-      setStatus(`快捷键未配置完整：${names}。请先在下方「学习参数」区域配置好所有快捷键，再开始学习。`);
-      return;
+      setStatus(`快捷键未配置完整：${names}。已先进入学习页面，你可以稍后在下方「学习参数」区域补齐配置。`);
     }
     void onStartLesson?.(lessonId);
   }
@@ -732,5 +731,4 @@ function LessonList({
 }
 const LessonListMemo = memo(LessonList);
 export { LessonListMemo as LessonList };
-
 

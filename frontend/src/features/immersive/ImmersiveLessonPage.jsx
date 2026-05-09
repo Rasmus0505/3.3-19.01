@@ -10,6 +10,7 @@ import ImmersiveLessonShell from "./components/ImmersiveLessonShell";
 export { useImmersivePlayer } from "./hooks";
 import { useExplanation, useDifficultyHighlight } from "./hooks";
 import { useImmersiveKeyboard } from "./hooks/useImmersiveKeyboard";
+import { useLearningSessionTimer } from "./hooks/useLearningSessionTimer";
 import { useImmersivePreferences } from "./hooks/useImmersivePreferences";
 import { useWordbookSelection } from "./hooks/useWordbookSelection";
 
@@ -1095,6 +1096,15 @@ export function ImmersiveLessonPage({
       resolveSelectedPlaybackRate: readCommittedSessionPlaybackRate,
     });
 
+  const learningSessionTimer = useLearningSessionTimer({
+    apiClient,
+    accessToken,
+    lessonId: lesson?.id,
+    lessonTitle: lesson?.title || "",
+    immersiveActive,
+    isPlaying,
+  });
+
   const tryPlayCurrentSentence = useCallback(
     async ({ manual = false, playbackKind = "initial", playbackPlan = null, source = "unknown" } = {}) => {
       if (!currentSentence) return;
@@ -1707,6 +1717,7 @@ export function ImmersiveLessonPage({
 
   const commitCorrectWord = useCallback(
     (typedWord) => {
+      learningSessionTimer.registerTypingActivity();
       playCorrectSound();
       const snapshot = cloneWordSnapshot(activeWordIndexRef.current, currentWordInputRef.current, wordInputsRef.current, wordStatusesRef.current);
       const activeIndex = snapshot.activeWordIndex;
@@ -1731,24 +1742,26 @@ export function ImmersiveLessonPage({
       applyWordSnapshot(snapshot);
       return snapshot.activeWordIndex;
     },
-    [applyWordSnapshot, expectedTokens, playCorrectSound],
+    [applyWordSnapshot, expectedTokens, learningSessionTimer, playCorrectSound],
   );
 
   const commitWrongWord = useCallback(() => {
+    learningSessionTimer.registerTypingActivity();
     playWrongSound();
     clearActiveWordInput();
-  }, [clearActiveWordInput, playWrongSound]);
+  }, [clearActiveWordInput, learningSessionTimer, playWrongSound]);
 
   const exitImmersive = useCallback(
     async (source = "button") => {
       const handler = typeof onExitImmersive === "function" ? onExitImmersive : onBack;
       if (typeof handler !== "function") return;
+      await learningSessionTimer.finishSession("route_change");
       if (fullscreenStudyMode) {
         setFullscreenStudyMode(false);
       }
       handler(source);
     },
-    [fullscreenStudyMode, onBack, onExitImmersive, setFullscreenStudyMode],
+    [fullscreenStudyMode, learningSessionTimer, onBack, onExitImmersive, setFullscreenStudyMode],
   );
 
   const interruptCurrentSentencePlayback = useCallback(
@@ -2164,6 +2177,7 @@ export function ImmersiveLessonPage({
     expectedTokens,
     commitCorrectWord,
     commitWrongWord,
+    onActivitySignal: learningSessionTimer.registerTypingActivity,
   });
 
   const handleTranslationMaskPointerDown = useCallback(
@@ -2383,6 +2397,12 @@ export function ImmersiveLessonPage({
         handleTogglePlaybackRatePinned,
         isPlaying,
         isPlaybackPaused,
+        learningTimerLabel: learningSessionTimer.timerLabel,
+        learningTimerStatusLabel: learningSessionTimer.statusLabel,
+        learningTimerPaused: learningSessionTimer.status !== "active",
+        learningTimerBusy: learningSessionTimer.busy,
+        onPauseLearningTimer: learningSessionTimer.pauseManually,
+        onResumeLearningTimer: learningSessionTimer.resumeManually,
       }}
       typingPanelProps={{
         ref: typingPanelRef,

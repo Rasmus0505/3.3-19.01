@@ -38,6 +38,7 @@ export function useImmersiveKeyboard({
   expectedTokens,
   commitCorrectWord,
   commitWrongWord,
+  onActivitySignal,
 }) {
   const handleShortcutCommand = useCallback(
     (event) => {
@@ -171,6 +172,7 @@ export function useImmersiveKeyboard({
 
       if (key === "Backspace") {
         event.preventDefault();
+        onActivitySignal?.();
         playKeySound();
         const currentActiveIndex = activeWordIndexRef.current;
         const nextInput = currentWordInputRef.current.slice(0, -1);
@@ -194,6 +196,7 @@ export function useImmersiveKeyboard({
       if (key.length !== 1) return;
 
       event.preventDefault();
+      onActivitySignal?.();
       playKeySound();
       const currentActiveIndex = activeWordIndexRef.current;
       const expected = expectedTokens[currentActiveIndex] || "";
@@ -247,6 +250,7 @@ export function useImmersiveKeyboard({
       setWordStatuses,
       showEntryHintOverlay,
       typingEnabled,
+      onActivitySignal,
       wordInputsRef,
       wordStatusesRef,
     ],

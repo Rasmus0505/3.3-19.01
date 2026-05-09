@@ -14,6 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import get_current_user
+from app.api.routers.learning_sessions import get_study_time_dashboard as _get_study_time_dashboard
 from app.api.routers.llm_shared import _require_api_key
 from app.db import get_db
 from app.models import (
@@ -25,6 +26,7 @@ from app.models import (
     User,
     WordbookEntry,
 )
+from app.schemas.learning_session import DashboardStudyTimeResponse
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +295,14 @@ def get_dashboard_stats(
     db: Session = Depends(get_db),
 ):
     return _build_dashboard_stats(db, current_user.id)
+
+
+@router.get("/study-time", response_model=DashboardStudyTimeResponse)
+def get_dashboard_study_time(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _get_study_time_dashboard(db=db, current_user=current_user)
 
 
 # ---------------------------------------------------------------------------

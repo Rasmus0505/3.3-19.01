@@ -32,6 +32,7 @@ from app.api.routers.dictation import router as dictation_router
 from app.api.routers.dictionary import router as dictionary_router
 from app.api.routers.extract import router as extract_router
 from app.api.routers.learning_dashboard import router as dashboard_router
+from app.api.routers.learning_sessions import router as learning_sessions_router
 from app.api.routers.lesson_chat import router as lesson_chat_router
 from app.api.routers.lessons.cloud_transcribe import router as cloud_transcribe_router
 from app.api.routers.lessons.router import router as lessons_router
@@ -778,6 +779,7 @@ def create_app(*, enable_lifespan: bool = True) -> FastAPI:
 
     app.include_router(reading_packs_router)
     app.include_router(dashboard_router)
+    app.include_router(learning_sessions_router)
     app.include_router(lesson_chat_router)
 
     @app.get("/{full_path:path}", include_in_schema=False)
